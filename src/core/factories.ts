@@ -11,7 +11,7 @@ import { PromptClient } from './PromptClient.js'
  * Create the headless prompt {@link PromptInterface} BROKER — it parks each prompt call as a
  * pending prompt and resolves it when {@link PromptInterface.answer} arrives (or rejects on
  * timeout). The tri-surface's headless arm: subscribe `emitter.on('pending', …)` to forward each
- * prompt to whoever can answer (an SSE transport, an MCP elicitation), then route the answer back
+ * prompt to whoever can answer (an SSE transport, a remote terminal), then route the answer back
  * through `answer(id, value)`.
  *
  * @param options - See {@link PromptOptions}

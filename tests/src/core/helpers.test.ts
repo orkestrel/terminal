@@ -24,7 +24,6 @@ import {
 	createInputState,
 	createPasswordState,
 	createSelectState,
-	createStyler,
 	dispatchPendingPrompt,
 	editLine,
 	editorReduce,
@@ -33,13 +32,11 @@ import {
 	inputReduce,
 	inputView,
 	isCheckboxChoice,
-	isNumber,
 	isPendingPrompt,
 	isPendingPromptStatus,
 	isPrintable,
 	isPromptChoice,
 	isPromptType,
-	isString,
 	normalizeCheckboxChoice,
 	normalizeChoice,
 	parseKey,
@@ -54,9 +51,10 @@ import {
 	serializeChoices,
 	serializePromptOptions,
 	serializeValidationRules,
-	strip,
 	toggleIndex,
 } from '@src/core'
+import { createStyler, strip } from '@orkestrel/console'
+import { isNumber, isString } from '@orkestrel/contract'
 import { describe, expect, it } from 'vitest'
 
 // The PURE prompt core — parseKey (a total key decoder), the validation engine

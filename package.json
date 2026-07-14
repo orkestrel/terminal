@@ -1,23 +1,21 @@
 {
-	"name": "@orkestrel/mcp",
+	"name": "@orkestrel/terminal",
 	"version": "0.0.1",
-	"description": "A typed Model Context Protocol client/server with pluggable HTTP, WebSocket, and stdio transports. Part of the @orkestrel line.",
+	"description": "An interactive terminal-prompt toolkit — a headless prompt state-machine broker, an SSE client bridge, and a raw-mode terminal driver. Part of the @orkestrel line.",
 	"keywords": [
-		"json-rpc",
-		"mcp",
-		"model-context-protocol",
-		"sse",
-		"stdio",
-		"transport",
-		"typescript",
-		"websocket"
+		"cli",
+		"prompt",
+		"readline",
+		"terminal",
+		"tty",
+		"typescript"
 	],
-	"homepage": "https://github.com/orkestrel/mcp#readme",
-	"bugs": "https://github.com/orkestrel/mcp/issues",
+	"homepage": "https://github.com/orkestrel/terminal#readme",
+	"bugs": "https://github.com/orkestrel/terminal/issues",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/orkestrel/mcp.git"
+		"url": "git+https://github.com/orkestrel/terminal.git"
 	},
 	"files": [
 		"dist",
@@ -77,17 +75,14 @@
 		"prepublishOnly": "npm run format:check && npm run lint:check && npm run check && npm run check:src && npm run build && npm test"
 	},
 	"dependencies": {
-		"@orkestrel/agent": "^0.0.2",
+		"@orkestrel/console": "^0.0.1",
 		"@orkestrel/contract": "^0.0.1",
 		"@orkestrel/emitter": "^0.0.1",
-		"@orkestrel/sse": "^0.0.1",
-		"@orkestrel/websocket": "^0.0.1"
+		"@orkestrel/sse": "^0.0.1"
 	},
 	"devDependencies": {
 		"@microsoft/api-extractor": "^7.58.9",
 		"@orkestrel/guide": "^0.0.1",
-		"@orkestrel/router": "^0.0.1",
-		"@orkestrel/server": "^0.0.2",
 		"@types/node": "^26.1.1",
 		"oxfmt": "^0.58.0",
 		"oxlint": "^1.73.0",
@@ -95,10 +90,6 @@
 		"vite": "^8.1.4",
 		"vite-plugin-dts": "^5.0.3",
 		"vitest": "^4.1.10"
-	},
-	"peerDependencies": {
-		"@orkestrel/router": "^0.0.1",
-		"@orkestrel/server": "^0.0.2"
 	},
 	"engines": {
 		"node": ">=24"

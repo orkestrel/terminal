@@ -1,8 +1,8 @@
-# Terminals
+# Terminal
 
-> The interactive prompt system — `input` / `password` / `confirm` / `select` / `checkbox` / `editor`, with ONE async contract (`PromptFormInterface`) and THREE implementations riding one pure prompt core. The TRI-SURFACE: the server TTY `Terminal` answers a prompt at this machine's keyboard (raw-mode stdin, live in-place re-render, a `node:readline` fallback when piped); the headless `Prompt` broker PARKS each prompt as a Promise and resolves it when an answer arrives over a transport (remote / programmatic / MCP elicitation); the `PromptClient` SSE bridge receives prompts parked elsewhere and dispatches each to a LOCAL terminal. All three sit on ONE pure prompt core — the `parseKey` key decoder, the six event-free `(state, key) → PromptStep` reducers, and the declarative validation engine — and that core is universal (no `node:*`, no TTY, no I/O). The ONLY impure part of the whole stack is the server `Terminal`'s raw-mode / readline driver.
+> The interactive prompt system — `input` / `password` / `confirm` / `select` / `checkbox` / `editor`, with ONE async contract (`PromptFormInterface`) and THREE implementations riding one pure prompt core. The TRI-SURFACE: the server TTY `Terminal` answers a prompt at this machine's keyboard (raw-mode stdin, live in-place re-render, a `node:readline` fallback when piped); the headless `Prompt` broker PARKS each prompt as a Promise and resolves it when an answer arrives over a transport (remote / programmatic / a host elicitation bridge); the `PromptClient` SSE bridge receives prompts parked elsewhere and dispatches each to a LOCAL terminal. All three sit on ONE pure prompt core — the `parseKey` key decoder, the six event-free `(state, key) → PromptStep` reducers, and the declarative validation engine — and that core is universal (no `node:*`, no TTY, no I/O). The ONLY impure part of the whole stack is the server `Terminal`'s raw-mode / readline driver.
 >
-> The design is **one pure core, three drivers**. The cross-environment core ([`src/core/terminals`](../../src/core/terminals), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server/terminals`](../../src/server/terminals), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
+> The design is **one pure core, three drivers**. The cross-environment core ([`src/core`](../../src/core), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server`](../../src/server), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
 
 ## Surface
 
@@ -33,84 +33,84 @@ The core is **pure + total**: every reducer is a `(state, key) → PromptStep` t
 
 ### Pure prompt core
 
-The universal logic — the key decoder, the six event-free reducers + their state factories + view renderers, the declarative validation engine, the choice normalizers, and the broker/bridge wiring helpers ([`src/core/terminals`](../../src/core/terminals)). All pure, all exported, all unit-tested (AGENTS §5); no `node:*`, no I/O.
+The universal logic — the key decoder, the six event-free reducers + their state factories + view renderers, the declarative validation engine, the choice normalizers, and the broker/bridge wiring helpers ([`src/core`](../../src/core)). All pure, all exported, all unit-tested (AGENTS §5); no `node:*`, no I/O.
 
-| API                          | Kind      | Summary                                                                                                                                                    |
-| ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KeyEvent`                   | interface | One decoded keypress — `name` / `sequence` / `ctrl` / `meta` / `shift`; the TTY-agnostic unit a reducer reads (data-only).                                 |
-| `parseKey`                   | function  | Decode one keypress's bytes (`string` / `Uint8Array`) into a `KeyEvent` — TOTAL; an unknown sequence yields `name: ''`, never throws.                      |
-| `isPrintable`                | function  | Whether a single character is printable (non-control) — `parseKey`'s char-fallback test (excludes C0 controls + DEL).                                      |
-| `Validator`                  | type      | The atomic input check `(input) => true \| string` — `true` passes, a string is the error message it carries; total, pure.                                 |
-| `ValidationRules`            | interface | Declarative validation — `required` / `minimum` / `maximum` / `pattern` / `email` / `url` / `numeric` / `integer` / `alphanumeric` / `custom` (data-only). |
-| `resolveValidation`          | function  | Compile a `Validator` or `ValidationRules` (or nothing) into ONE composed `Validator` — always returns a validator (always-passing when empty).            |
-| `evaluateRule`               | function  | Evaluate ONE built-in rule against an input — its error message on failure, else `undefined`; the atomic check the engine wraps.                           |
-| `buildRuleValidator`         | function  | Wrap a named rule + its primitive check into a `Validator` (returns `true` or the rule's message).                                                         |
-| `appendRule`                 | function  | Append a rule-backed `Validator` to a list when the rule is enabled — a `false` / `undefined` rule skipped, a function added verbatim.                     |
-| `composeValidators`          | function  | Compose several `Validator`s into ONE short-circuiting validator — returns the FIRST error, or `true` when all pass (empty passes).                        |
-| `passing`                    | function  | The always-passing `Validator` — the resolved validator when no rules were supplied.                                                                       |
-| `PromptChoice`               | interface | A select choice — `name` / `value` / optional `description` (data-only).                                                                                   |
-| `CheckboxChoice`             | interface | A checkbox choice — a `PromptChoice` plus an optional initial `checked` (data-only).                                                                       |
-| `normalizeChoice`            | function  | Normalize a select choice input into a full `PromptChoice` (a bare string becomes both `name` and `value`).                                                |
-| `normalizeCheckboxChoice`    | function  | Normalize a checkbox choice input into a full `CheckboxChoice` (a bare string becomes both `name` and `value`).                                            |
-| `promptHeader`               | function  | The styled prompt-message header (`? message`) — the leading line every active prompt view shares.                                                         |
-| `submitHeader`               | function  | The styled submit line (`✔ message`) — the committed header shown once a prompt resolves.                                                                  |
-| `errorLine`                  | function  | The styled error line (`✖ message`) — appended beneath a view when the last submit failed validation.                                                      |
-| `PromptStatus`               | type      | A `PromptStep`'s discriminant — `active` / `submit` / `cancel` (names the prompt's progression, not `kind`).                                               |
-| `PromptStep`                 | interface | One reducer step's output — the next `state`, the rendered `view`, the `status`, and (on submit) the `value` (data-only).                                  |
-| `InputOptions`               | interface | A single-line text `inputReduce` prompt's options — `message` / `default?` / `validate?` / `styler?` (data-only).                                          |
-| `InputState`                 | interface | A text input prompt's immutable state — options + resolved validator/styler + accumulated `value` + current `error` (data-only).                           |
-| `createInputState`           | function  | Build the initial `InputState` from `InputOptions` — resolving the validator + styler, seeding an empty value.                                             |
-| `inputView`                  | function  | Render an `InputState` as a styled view — header, typed value (or dimmed default hint), and any error.                                                     |
-| `inputReduce`                | function  | The pure input reducer `(state, key) → PromptStep<string>` — printable extends, backspace shrinks, ctrl-u clears, return submits.                          |
-| `PasswordOptions`            | interface | A masked-password `passwordReduce` prompt's options — `message` / `mask?` / `validate?` / `styler?` (data-only).                                           |
-| `PasswordState`              | interface | A password prompt's immutable state — like `InputState` but with a `mask` the view renders per character (data-only).                                      |
-| `createPasswordState`        | function  | Build the initial `PasswordState` from `PasswordOptions` — resolving the validator + styler + mask, seeding an empty value.                                |
-| `passwordView`               | function  | Render a `PasswordState` as a styled view — header, value masked to `mask` repeated, and any error.                                                        |
-| `passwordReduce`             | function  | The pure password reducer `(state, key) → PromptStep<string>` — identical line-editing to input, but the view masks the value.                             |
-| `ConfirmOptions`             | interface | A yes/no `confirmReduce` prompt's options — `message` / `default?` / `styler?` (data-only).                                                                |
-| `ConfirmState`               | interface | A confirm prompt's immutable state — `message` / `default` / `styler` (data-only).                                                                         |
-| `createConfirmState`         | function  | Build the initial `ConfirmState` from `ConfirmOptions` — defaulting the answer to `false`.                                                                 |
-| `confirmView`                | function  | Render a `ConfirmState` as a styled view — header plus a `(Y/n)` hint with the default letter emphasized.                                                  |
-| `confirmReduce`              | function  | The pure confirm reducer `(state, key) → PromptStep<boolean>` — `y`/`n` submit, return takes the default, ctrl-c cancels.                                  |
-| `SelectOptions`              | interface | A single-selection `selectReduce` prompt's options — `message` / `choices` / `default?` / `styler?` (data-only).                                           |
-| `SelectState`                | interface | A select prompt's immutable state — normalized choices, styler, and the `focused` index (data-only).                                                       |
-| `createSelectState`          | function  | Build the initial `SelectState` from `SelectOptions` — normalizing choices and pre-focusing the default.                                                   |
-| `selectView`                 | function  | Render a `SelectState` as a MULTI-LINE styled view — header then one row per choice, the focused row marked.                                               |
-| `selectReduce`               | function  | The pure select reducer `(state, key) → PromptStep<string>` — up/down move the focus (wrapping), return submits the focused value.                         |
-| `CheckboxOptions`            | interface | A multi-selection `checkboxReduce` prompt's options — `message` / `choices` / `min?` / `max?` / `styler?` (data-only).                                     |
-| `CheckboxState`              | interface | A checkbox prompt's immutable state — choices, styler, `focused`, the `checked` index list, `min` / `max`, and `error` (data-only).                        |
-| `createCheckboxState`        | function  | Build the initial `CheckboxState` from `CheckboxOptions` — normalizing choices, seeding the checked set, carrying min/max.                                 |
-| `checkboxView`               | function  | Render a `CheckboxState` as a MULTI-LINE styled view — header, one box per choice (focused + checked marked), a count, and any error.                      |
-| `checkboxReduce`             | function  | The pure checkbox reducer `(state, key) → PromptStep<readonly string[]>` — space toggles, return submits in choice order gated by min/max.                 |
-| `toggleIndex`                | function  | Toggle an index in a readonly index list — copy-on-write, returning the new list (the checkbox check-set primitive).                                       |
-| `gateSelection`              | function  | The min/max gate for a checkbox submit — the rejection message when the count is out of range, else `undefined`.                                           |
-| `EditorOptions`              | interface | A multi-line `editorReduce` prompt's options (terminated by ctrl-d) — `message` / `default?` / `validate?` / `styler?` (data-only).                        |
-| `EditorState`                | interface | An editor prompt's immutable state — committed `lines`, in-progress `current`, resolved validator/styler, default, and `error` (data-only).                |
-| `createEditorState`          | function  | Build the initial `EditorState` from `EditorOptions` — resolving the validator + styler, seeding empty lines.                                              |
-| `editorView`                 | function  | Render an `EditorState` as a MULTI-LINE styled view — header (with a Ctrl+D hint), committed lines, the in-progress line, and any error.                   |
-| `editorReduce`               | function  | The pure editor reducer `(state, key) → PromptStep<string>` — printable extends, return commits a line, ctrl-d finishes through the validator.             |
-| `editLine`                   | function  | Apply one line-editing `KeyEvent` to a text buffer (the input/password/editor shared editing) — `undefined` when the key doesn't edit.                     |
-| `PromptType`                 | type      | The six prompt KINDS — `input` / `password` / `confirm` / `select` / `checkbox` / `editor` (a named set; the broker dispatches on it).                     |
-| `serializePromptOptions`     | function  | The WIRE-SAFE form of a prompt's options — drops the styler + function validators, KEEPS the declarative rules + choices/default/mask.                     |
-| `serializeValidationRules`   | function  | Flatten a `validate` option to wire-safe `ValidationRules` DATA — a function rule becomes `true`; a bare-function validate yields `undefined`.             |
-| `serializeChoices`           | function  | Strip functions from a `choices` option — each choice keeps its plain fields; a bare string passes through.                                                |
-| `reconstructValidationRules` | function  | Rebuild a wire-decoded `validate` payload into a `ValidationRules` bag — keeps only primitive rule values; the inverse of serialize.                       |
-| `resolveOption`              | function  | Read one wire option by key, narrowed by a guard — `undefined` when absent or off-shape (§14, never an `as`).                                              |
-| `resolveChoices`             | function  | Read a wire `choices` option as bare strings / full choices — each element narrowed by a guard, off-shape elements stringified.                            |
-| `isPromptType`               | function  | Narrow an unknown value to a `PromptType` — one of the six prompt forms (a §14 wire guard, total).                                                         |
-| `isPendingPromptStatus`      | function  | Narrow an unknown value to a `PendingPromptStatus` — `pending` / `answered` / `expired` (a §14 wire guard, total).                                         |
-| `isPendingPrompt`            | function  | Narrow an unknown wire value to a `PendingPrompt` — the guard a `PromptClient` applies to each decoded SSE `pending` payload (§14, never an `as`).         |
-| `isPromptChoice`             | function  | Narrow an unknown value to a `PromptChoice` — the wire guard `resolveChoices` filters a select `choices` payload through (§14, total).                     |
-| `isCheckboxChoice`           | function  | Narrow an unknown value to a `CheckboxChoice` — the wire guard `resolveChoices` filters a checkbox `choices` payload through (§14, total).                 |
-| `dispatchPendingPrompt`      | function  | Dispatch a `PendingPrompt` to the matching `PromptFormInterface` method — the bridge step that drives a local terminal with a remote prompt.               |
-| `defaultTimer`               | function  | The default `TimerHandler` — a thin host `setTimeout` / `clearTimeout` wrapper (the broker expiry + client backoff seam).                                  |
-| `globalFetch`                | function  | The default `FetchHandler` — the global `fetch` adapted to the minimal injected shape the `PromptClient` uses.                                             |
-| `isAbortError`               | function  | Whether a caught value is an `AbortError` — so the client treats a deliberate `disconnect` as a quiet exit, not a fault.                                   |
-| `parseWireJSON`              | function  | Parse a JSON wire string TOTAL — a malformed / empty payload yields `undefined` (never a throw); the client decodes SSE data through it.                   |
+| API                          | Kind      | Summary                                                                                                                                                                  |
+| ---------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `KeyEvent`                   | interface | One decoded keypress — `name` / `sequence` / `ctrl` / `meta` / `shift`; the TTY-agnostic unit a reducer reads (data-only).                                               |
+| `parseKey`                   | function  | Decode one keypress's bytes (`string` / `Uint8Array`) into a `KeyEvent` — TOTAL; an unknown sequence yields `name: ''`, never throws.                                    |
+| `isPrintable`                | function  | Whether a single character is printable (non-control) — `parseKey`'s char-fallback test (excludes C0 controls + DEL).                                                    |
+| `Validator`                  | type      | The atomic input check `(input) => true \| string` — `true` passes, a string is the error message it carries; total, pure.                                               |
+| `ValidationRules`            | interface | Declarative validation — `required` / `minimum` / `maximum` / `pattern` / `email` / `url` / `numeric` / `integer` / `alphanumeric` / `custom` (data-only).               |
+| `resolveValidation`          | function  | Compile a `Validator` or `ValidationRules` (or nothing) into ONE composed `Validator` — always returns a validator (always-passing when empty).                          |
+| `evaluateRule`               | function  | Evaluate ONE built-in rule against an input — its error message on failure, else `undefined`; the atomic check the engine wraps.                                         |
+| `buildRuleValidator`         | function  | Wrap a named rule + its primitive check into a `Validator` (returns `true` or the rule's message).                                                                       |
+| `appendRule`                 | function  | Append a rule-backed `Validator` to a list when the rule is enabled — a `false` / `undefined` rule skipped, a function added verbatim.                                   |
+| `composeValidators`          | function  | Compose several `Validator`s into ONE short-circuiting validator — returns the FIRST error, or `true` when all pass (empty passes).                                      |
+| `passing`                    | function  | The always-passing `Validator` — the resolved validator when no rules were supplied.                                                                                     |
+| `PromptChoice`               | interface | A select choice — `name` / `value` / optional `description` (data-only).                                                                                                 |
+| `CheckboxChoice`             | interface | A checkbox choice — a `PromptChoice` plus an optional initial `checked` (data-only).                                                                                     |
+| `normalizeChoice`            | function  | Normalize a select choice input into a full `PromptChoice` (a bare string becomes both `name` and `value`).                                                              |
+| `normalizeCheckboxChoice`    | function  | Normalize a checkbox choice input into a full `CheckboxChoice` (a bare string becomes both `name` and `value`).                                                          |
+| `promptHeader`               | function  | The styled prompt-message header (`? message`) — the leading line every active prompt view shares.                                                                       |
+| `submitHeader`               | function  | The styled submit line (`✔ message`) — the committed header shown once a prompt resolves.                                                                                |
+| `errorLine`                  | function  | The styled error line (`✖ message`) — appended beneath a view when the last submit failed validation.                                                                    |
+| `PromptStatus`               | type      | A `PromptStep`'s discriminant — `active` / `submit` / `cancel` (names the prompt's progression, not `kind`).                                                             |
+| `PromptStep`                 | interface | One reducer step's output — the next `state`, the rendered `view`, the `status`, and (on submit) the `value` (data-only).                                                |
+| `InputOptions`               | interface | A single-line text `inputReduce` prompt's options — `message` / `default?` / `validate?` / `styler?` (data-only).                                                        |
+| `InputState`                 | interface | A text input prompt's immutable state — options + resolved validator/styler + accumulated `value` + current `error` (data-only).                                         |
+| `createInputState`           | function  | Build the initial `InputState` from `InputOptions` — resolving the validator + styler, seeding an empty value.                                                           |
+| `inputView`                  | function  | Render an `InputState` as a styled view — header, typed value (or dimmed default hint), and any error.                                                                   |
+| `inputReduce`                | function  | The pure input reducer `(state, key) → PromptStep<string>` — printable extends, backspace shrinks, ctrl-u clears, return submits.                                        |
+| `PasswordOptions`            | interface | A masked-password `passwordReduce` prompt's options — `message` / `mask?` / `validate?` / `styler?` (data-only).                                                         |
+| `PasswordState`              | interface | A password prompt's immutable state — like `InputState` but with a `mask` the view renders per character (data-only).                                                    |
+| `createPasswordState`        | function  | Build the initial `PasswordState` from `PasswordOptions` — resolving the validator + styler + mask, seeding an empty value.                                              |
+| `passwordView`               | function  | Render a `PasswordState` as a styled view — header, value masked to `mask` repeated, and any error.                                                                      |
+| `passwordReduce`             | function  | The pure password reducer `(state, key) → PromptStep<string>` — identical line-editing to input, but the view masks the value.                                           |
+| `ConfirmOptions`             | interface | A yes/no `confirmReduce` prompt's options — `message` / `default?` / `styler?` (data-only).                                                                              |
+| `ConfirmState`               | interface | A confirm prompt's immutable state — `message` / `default` / `styler` (data-only).                                                                                       |
+| `createConfirmState`         | function  | Build the initial `ConfirmState` from `ConfirmOptions` — defaulting the answer to `false`.                                                                               |
+| `confirmView`                | function  | Render a `ConfirmState` as a styled view — header plus a `(Y/n)` hint with the default letter emphasized.                                                                |
+| `confirmReduce`              | function  | The pure confirm reducer `(state, key) → PromptStep<boolean>` — `y`/`n` submit, return takes the default, ctrl-c cancels.                                                |
+| `SelectOptions`              | interface | A single-selection `selectReduce` prompt's options — `message` / `choices` / `default?` / `styler?` (data-only).                                                         |
+| `SelectState`                | interface | A select prompt's immutable state — normalized choices, styler, and the `focused` index (data-only).                                                                     |
+| `createSelectState`          | function  | Build the initial `SelectState` from `SelectOptions` — normalizing choices and pre-focusing the default.                                                                 |
+| `selectView`                 | function  | Render a `SelectState` as a MULTI-LINE styled view — header then one row per choice, the focused row marked.                                                             |
+| `selectReduce`               | function  | The pure select reducer `(state, key) → PromptStep<string>` — up/down move the focus (wrapping), return submits the focused value.                                       |
+| `CheckboxOptions`            | interface | A multi-selection `checkboxReduce` prompt's options — `message` / `choices` / `min?` / `max?` / `styler?` (data-only).                                                   |
+| `CheckboxState`              | interface | A checkbox prompt's immutable state — choices, styler, `focused`, the `checked` index list, `min` / `max`, and `error` (data-only).                                      |
+| `createCheckboxState`        | function  | Build the initial `CheckboxState` from `CheckboxOptions` — normalizing choices, seeding the checked set, carrying min/max.                                               |
+| `checkboxView`               | function  | Render a `CheckboxState` as a MULTI-LINE styled view — header, one box per choice (focused + checked marked), a count, and any error.                                    |
+| `checkboxReduce`             | function  | The pure checkbox reducer `(state, key) → PromptStep<readonly string[]>` — space toggles, return submits in choice order gated by min/max.                               |
+| `toggleIndex`                | function  | Toggle an index in a readonly index list — copy-on-write, returning the new list (the checkbox check-set primitive).                                                     |
+| `gateSelection`              | function  | The min/max gate for a checkbox submit — the rejection message when the count is out of range, else `undefined`.                                                         |
+| `EditorOptions`              | interface | A multi-line `editorReduce` prompt's options (terminated by ctrl-d) — `message` / `default?` / `validate?` / `styler?` (data-only).                                      |
+| `EditorState`                | interface | An editor prompt's immutable state — committed `lines`, in-progress `current`, resolved validator/styler, default, and `error` (data-only).                              |
+| `createEditorState`          | function  | Build the initial `EditorState` from `EditorOptions` — resolving the validator + styler, seeding empty lines.                                                            |
+| `editorView`                 | function  | Render an `EditorState` as a MULTI-LINE styled view — header (with a Ctrl+D hint), committed lines, the in-progress line, and any error.                                 |
+| `editorReduce`               | function  | The pure editor reducer `(state, key) → PromptStep<string>` — printable extends, return commits a line, ctrl-d finishes through the validator.                           |
+| `editLine`                   | function  | Apply one line-editing `KeyEvent` to a text buffer (the input/password/editor shared editing) — `undefined` when the key doesn't edit.                                   |
+| `PromptType`                 | type      | The six prompt KINDS — `input` / `password` / `confirm` / `select` / `checkbox` / `editor` (a named set; the broker dispatches on it).                                   |
+| `serializePromptOptions`     | function  | The WIRE-SAFE form of a prompt's options — drops the styler + function validators, KEEPS the declarative rules + choices/default/mask.                                   |
+| `serializeValidationRules`   | function  | Flatten a `validate` option to wire-safe `ValidationRules` DATA — a function rule becomes `true`; a bare-function validate yields `undefined`.                           |
+| `serializeChoices`           | function  | Strip functions from a `choices` option — each choice keeps its plain fields; a bare string passes through.                                                              |
+| `reconstructValidationRules` | function  | Rebuild a wire-decoded `validate` payload into a `ValidationRules` bag — keeps only primitive rule values; the inverse of serialize.                                     |
+| `resolveOption`              | function  | Read one wire option by key, narrowed by a guard — `undefined` when absent or off-shape (§14, never an `as`).                                                            |
+| `resolveChoices`             | function  | Read a wire `choices` option as bare strings / full choices — each element narrowed by a guard, off-shape elements stringified.                                          |
+| `isPromptType`               | const     | Narrow an unknown value to a `PromptType` — one of the six prompt forms (a §14 wire guard, total; built via `literalOf`).                                                |
+| `isPendingPromptStatus`      | const     | Narrow an unknown value to a `PendingPromptStatus` — `pending` / `answered` / `expired` (a §14 wire guard, total; built via `literalOf`).                                |
+| `isPendingPrompt`            | const     | Narrow an unknown wire value to a `PendingPrompt` — the guard a `PromptClient` applies to each decoded SSE `pending` payload (§14, never an `as`; built via `recordOf`). |
+| `isPromptChoice`             | function  | Narrow an unknown value to a `PromptChoice` — the wire guard `resolveChoices` filters a select `choices` payload through (§14, total).                                   |
+| `isCheckboxChoice`           | function  | Narrow an unknown value to a `CheckboxChoice` — the wire guard `resolveChoices` filters a checkbox `choices` payload through (§14, total).                               |
+| `dispatchPendingPrompt`      | function  | Dispatch a `PendingPrompt` to the matching `PromptFormInterface` method — the bridge step that drives a local terminal with a remote prompt.                             |
+| `defaultTimer`               | function  | The default `TimerHandler` — a thin host `setTimeout` / `clearTimeout` wrapper (the broker expiry + client backoff seam).                                                |
+| `globalFetch`                | function  | The default `FetchHandler` — the global `fetch` adapted to the minimal injected shape the `PromptClient` uses.                                                           |
+| `isAbortError`               | function  | Whether a caught value is an `AbortError` — so the client treats a deliberate `disconnect` as a quiet exit, not a fault.                                                 |
+| `parseWireJSON`              | function  | Parse a JSON wire string TOTAL — a malformed / empty payload yields `undefined` (never a throw); the client decodes SSE data through it.                                 |
 
 ### The pure-core constants
 
-The decode tables, default mask, validation patterns, prompt-view glyphs, rule messages, and broker / SSE-bridge defaults the core reads ([`src/core/terminals`](../../src/core/terminals)). UPPER_SNAKE, `Object.freeze`d data; control bytes built via `String.fromCharCode` so no raw control character appears in source.
+The decode tables, default mask, validation patterns, prompt-view glyphs, rule messages, and broker / SSE-bridge defaults the core reads ([`src/core`](../../src/core)). UPPER_SNAKE, `Object.freeze`d data; control bytes built via `String.fromCharCode` so no raw control character appears in source.
 
 | API                          | Kind  | Summary                                                                                                                            |
 | ---------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -146,7 +146,7 @@ The decode tables, default mask, validation patterns, prompt-view glyphs, rule m
 
 ### The terminal error
 
-A real error type (AGENTS §12) a parked broker prompt rejects with, or the server `Terminal` rejects with on ctrl-c ([`src/core/terminals`](../../src/core/terminals)).
+A real error type (AGENTS §12) a parked broker prompt rejects with, or the server `Terminal` rejects with on ctrl-c ([`src/core`](../../src/core)).
 
 | API                 | Kind     | Summary                                                                                                                          |
 | ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -156,7 +156,7 @@ A real error type (AGENTS §12) a parked broker prompt rejects with, or the serv
 
 ### The headless broker
 
-The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` with no terminal, parking each call and resolving it when an answer arrives over a transport ([`src/core/terminals`](../../src/core/terminals)). Observable (§13).
+The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` with no terminal, parking each call and resolving it when an answer arrives over a transport ([`src/core`](../../src/core)). Observable (§13).
 
 | API                      | Kind      | Summary                                                                                                                                  |
 | ------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -175,7 +175,7 @@ The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` 
 
 ### The SSE bridge
 
-The client-side counterpart to the broker — connects to a remote broker's SSE endpoint, dispatches each received prompt to a LOCAL `PromptFormInterface`, and POSTs the answer back ([`src/core/terminals`](../../src/core/terminals)). Observable (§13); universal (`fetch` + SSE are web-standard).
+The client-side counterpart to the broker — connects to a remote broker's SSE endpoint, dispatches each received prompt to a LOCAL `PromptFormInterface`, and POSTs the answer back ([`src/core`](../../src/core)). Observable (§13); universal (`fetch` + SSE are web-standard).
 
 | API                     | Kind      | Summary                                                                                                                                                 |
 | ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -189,7 +189,7 @@ The client-side counterpart to the broker — connects to a remote broker's SSE 
 
 ### The server Terminal (TTY driver)
 
-The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface and the ONLY impure part of the stack ([`src/server/terminals`](../../src/server/terminals), surfaced through `@src/server`). Reads raw-mode stdin, drives the pure core reducers, renders each view in place, and falls back to `node:readline` when piped. The core owns every prompt contract (imported, never redeclared); this module owns only the raw-mode / readline mechanics + the stream-boundary types.
+The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface and the ONLY impure part of the stack ([`src/server`](../../src/server), surfaced through `@src/server`). Reads raw-mode stdin, drives the pure core reducers, renders each view in place, and falls back to `node:readline` when piped. The core owns every prompt contract (imported, never redeclared); this module owns only the raw-mode / readline mechanics + the stream-boundary types.
 
 | API                     | Kind      | Summary                                                                                                                                            |
 | ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -210,7 +210,7 @@ The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface
 
 ### The server-Terminal constants
 
-The cursor / line-clear ANSI control sequences the `Terminal` writes to redraw a view in place, plus the readline-fallback hints ([`src/server/terminals`](../../src/server/terminals)). UPPER_SNAKE, `Object.freeze`d; sequences built from a named ESC byte so no raw control character appears in source.
+The cursor / line-clear ANSI control sequences the `Terminal` writes to redraw a view in place, plus the readline-fallback hints ([`src/server`](../../src/server)). UPPER_SNAKE, `Object.freeze`d; sequences built from a named ESC byte so no raw control character appears in source.
 
 | API                      | Kind  | Summary                                                                                                                    |
 | ------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -227,7 +227,7 @@ The cursor / line-clear ANSI control sequences the `Terminal` writes to redraw a
 
 ## Methods
 
-The public methods of each behavioral interface — one table per type, keyed by its backticked name, every call-signature member listed. Each type's `readonly` data members (`PromptInterface`'s `emitter` / `count`, `PromptClientInterface`'s `emitter` / `url` / `connected`) stay in the Surface rows above and are not repeated here. Each implementing class implements its interface exactly, so this doubles as the per-instance method surface (AGENTS §22).
+The public methods of each behavioral interface — one table per type, keyed by its backticked name (or, where an interface extends another and a class implements both directly, by the CLASS name — see `Prompt` below), every call-signature member listed. Each type's `readonly` data members (`PromptInterface`'s `emitter` / `count`, `PromptClientInterface`'s `emitter` / `url` / `connected`) stay in the Surface rows above and are not repeated here. Each implementing class implements its interface exactly, so this doubles as the per-instance method surface (AGENTS §22).
 
 **Data-only surfaces (no `## Methods` subsection).** Every `*Options` / `*State` / `*EventMap` / `KeyEvent` / `PromptStep` / `PromptChoice` / `CheckboxChoice` / `PendingPrompt` / `FetchInit` / `InputStreamInterface` / `OutputStreamInterface` row is a data / options / record shape with no behavioral methods. `PromptStatus` / `PendingPromptStatus` / `PromptType` / `TerminalErrorCode` / `Validator` / `TimerHandler` / `TimerCancel` / `FetchHandler` are unions / function types, not method-bearing interfaces. `Validator`, `TimerHandler`, `TimerCancel`, and `FetchHandler` are CALLABLE function types (a single call signature, no named methods), so they carry no method table either.
 
@@ -244,15 +244,21 @@ The shared async contract all three surfaces (`Terminal` / `Prompt` / a `PromptC
 | `checkbox` | `Promise<readonly string[]>` | Prompt to pick MANY choices — resolves the checked values in choice order.   |
 | `editor`   | `Promise<string>`            | Prompt for multi-line text (finished by ctrl-d / EOF).                       |
 
-#### `PromptInterface`
+#### `Prompt`
 
-The headless broker — its own lifecycle methods (plus the six inherited `PromptFormInterface` forms above).
+`PromptInterface` extends `PromptFormInterface`, and the `Prompt` class implements every member of both directly, so its full instance method surface (the six inherited prompt forms plus its own broker lifecycle) is documented here, keyed by the CLASS name rather than `PromptInterface` — this one table is the exact, exhaustive surface a `Prompt` instance exposes (AGENTS §22).
 
-| Method    | Returns                                                   | Behavior                                                                                                          |
-| --------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `pending` | `readonly PendingPrompt[]` / `PendingPrompt \| undefined` | List all parked prompts (`pending()`) / look one up by id (`pending(id)`) (§9.1).                                 |
-| `answer`  | `boolean`                                                 | Validate + type-check an answer for a parked prompt; on accept resolve its Promise (else `false`, stays pending). |
-| `destroy` | `void`                                                    | Tear down — expire every still-pending prompt (their Promises reject) and destroy the emitter.                    |
+| Method     | Returns                                                   | Behavior                                                                                                          |
+| ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `input`    | `Promise<string>`                                         | Prompt for a single line of text (empty falls back to the default) — parks it as a `PendingPrompt`.               |
+| `password` | `Promise<string>`                                         | Prompt for masked text (no echoed default) — parks it as a `PendingPrompt`.                                       |
+| `confirm`  | `Promise<boolean>`                                        | Prompt yes/no (return takes the default) — parks it as a `PendingPrompt`.                                         |
+| `select`   | `Promise<string>`                                         | Prompt to pick ONE choice — parks it as a `PendingPrompt`.                                                        |
+| `checkbox` | `Promise<readonly string[]>`                              | Prompt to pick MANY choices — parks it as a `PendingPrompt`.                                                      |
+| `editor`   | `Promise<string>`                                         | Prompt for multi-line text (finished by ctrl-d / EOF) — parks it as a `PendingPrompt`.                            |
+| `pending`  | `readonly PendingPrompt[]` / `PendingPrompt \| undefined` | List all parked prompts (`pending()`) / look one up by id (`pending(id)`) (§9.1).                                 |
+| `answer`   | `boolean`                                                 | Validate + type-check an answer for a parked prompt; on accept resolve its Promise (else `false`, stays pending). |
+| `destroy`  | `void`                                                    | Tear down — expire every still-pending prompt (their Promises reject) and destroy the emitter.                    |
 
 #### `PromptClientInterface`
 
@@ -270,9 +276,9 @@ The interactive TTY driver. `TerminalInterface` IS exactly `PromptFormInterface`
 
 ## Contract
 
-These invariants hold across `src/core/terminals` ↔ `src/server/terminals` ↔ `terminals.md`:
+These invariants hold across `src/core` ↔ `src/server` ↔ `terminal.md`:
 
-1. **DOC ↔ SOURCE bijection.** Every `function` / `const` / `class` / `interface` / `type` row in the `## Surface` tables is a real export of the terminals source trees (`src/core/terminals` plus the `src/server/terminals` env backend), and every export appears as a Surface row — exhaustive, both directions (AGENTS §22). (`ESCAPE` is exported by BOTH modules' `constants.ts` as the same ESC byte; the parity gate concatenates the trees and dedupes, so the one Surface row covers both.)
+1. **DOC ↔ SOURCE bijection.** Every `function` / `const` / `class` / `interface` / `type` row in the `## Surface` tables is a real export of the terminal source trees (`src/core` plus the `src/server` env backend), and every export appears as a Surface row — exhaustive, both directions (AGENTS §22). (`ESCAPE` is exported by BOTH modules' `constants.ts` as the same ESC byte; the parity gate concatenates the trees and dedupes, so the one Surface row covers both.)
 2. **DOC ↔ SOURCE method bijection.** Every behavioral interface's `## Methods` table lists exactly its public methods (call-signature members) — exhaustive, both directions — and each implementing class (`Prompt` / `PromptClient` / `Terminal`) implements every method of its interface and adds none beyond it (AGENTS §22). A renamed / added / removed method breaks the gate until the table is reconciled.
 3. **The reducers are pure, total, copy-on-write.** Each `*Reduce` is a total `(state, key) → PromptStep` — it never throws, never mutates `state` (it builds a NEW state on every transition), and always returns a rendered `view` + a `status`. A reducer that doesn't consume the key returns the state unchanged with `status: 'active'`. The driver applies `step.state`, writes `step.view`, and (when `status === 'submit'`) reads `step.value`; the `value` is present ONLY on a `submit` step.
 4. **`parseKey` totality.** `parseKey` decodes any input (`string` / `Uint8Array`) into a `KeyEvent` and NEVER throws — a known control byte / escape sequence maps to its canonical `name` (via `CONTROL_NAMES` / `SEQUENCE_NAMES`), a printable character names itself (with `shift` for an uppercase letter), and an unrecognized sequence yields `name: ''` with the raw `sequence` preserved. The driver can therefore never crash on a stray byte.
@@ -283,7 +289,7 @@ These invariants hold across `src/core/terminals` ↔ `src/server/terminals` ↔
 9. **The server `Terminal`: raw-mode leak-freedom + cancel → `TerminalError('CANCEL')` + masking + the non-TTY fallback.** The driver enters raw mode exactly ONCE per prompt and ALWAYS cleans up — on submit, on cancel, and on a throw inside a step — leaving no raw mode and no leaked `'data'` listener (the cleanup closure is invoked on every exit path). Between keystrokes it re-renders the view IN PLACE (climb over the previous view's `lineCount` lines via `redrawPrefix`, clear down, write the new view), hiding the cursor for the duration and restoring it after. A ctrl-c cancels: the awaited prompt call rejects with a `TerminalError(code: 'CANCEL')` so a caller branches on `error.code`. A password's `view` masks the value (the real value is never echoed). When `input` is not a TTY (`isRawCapable` is `false`), raw mode is unavailable, so the prompts fall back to `node:readline` line input (still validating) — `select` / `checkbox` present a numbered list read via a readline line, and `editor` reads lines until EOF. The streams are resolved through their §14 guards (`isInputStream` / `isOutputStream`, never an `as`), so a test drives every prompt with a fake TTY emitting scripted key chunks and recording the rendered output.
 10. **The core / server split — universal logic, one impure driver.** The cross-environment core owns EVERYTHING universal: the `parseKey` decoder, the six reducers + their state factories + view renderers, the declarative validation, the broker, and the SSE bridge — all pure types + functions + immutable state, no `node:*`, no TTY, no I/O. The server module owns ONLY the `Terminal` raw-mode / readline driver — the one piece that touches a real `process.stdin` / `process.stdout` — and the stream-boundary types; it imports every prompt contract from `@src/core` (never redeclares them). The view is rendered through the shared console `StylerInterface` (one style engine), so swapping the byte source (TTY vs. wire) never touches the prompt logic.
 
-Deliberately **not** part of this surface yet, by the same "build only what earns its keep" discipline: the SSE-server END of the bridge (the broker emits `pending` on its `emitter` — a consumer mounts it on the HTTP spine's [`openSSEStream`](http.md) seam + answers via a POST route), and a cursor-movement / line-edit-within-a-line capability (the reducers edit at the END of the buffer — `ctrl-a` / `ctrl-e` decode but no left/right insertion is modelled).
+Deliberately **not** part of this surface yet, by the same "build only what earns its keep" discipline: the SSE-server END of the bridge (the broker emits `pending` on its `emitter` — a consumer mounts it on their own HTTP spine's SSE-stream seam + answers via a POST route; this package ships the bridge, not that spine), and a cursor-movement / line-edit-within-a-line capability (the reducers edit at the END of the buffer — `ctrl-a` / `ctrl-e` decode but no left/right insertion is modelled).
 
 ## Patterns
 
@@ -331,6 +337,7 @@ const answer = prompt.input({ message: 'Your name', validate: { required: true }
 const accepted = prompt.answer(id, 'Ada') // true; resolves the awaited input() above
 prompt.pending() // the still-parked prompts
 const name = await answer // 'Ada'
+prompt.destroy() // expire every still-pending prompt (their Promises reject) and destroy the emitter
 ```
 
 ### The SSE bridge (remote prompt → local terminal)
@@ -347,6 +354,7 @@ const client = createPromptClient({
 })
 await client.connect() // streams remote prompts to the terminal, POSTs answers back; reconnects on drop
 client.disconnect() // stop streaming AND stop reconnecting
+client.destroy() // disconnect(), drop in-flight ids, and destroy the emitter
 ```
 
 ### Driving a reducer directly (the pure path)
@@ -380,22 +388,199 @@ validate('a@b.co') // true
 // and the client rebuilds this exact validator from them.
 ```
 
+### The validation engine's building blocks
+
+```ts
+import {
+	appendRule,
+	buildRuleValidator,
+	composeValidators,
+	evaluateRule,
+	isPrintable,
+	passing,
+} from '@src/core'
+
+isPrintable('a') // true — a printable, non-control character
+isPrintable('\x7f') // false — DEL
+evaluateRule('required', true, '') // 'This field is required'
+evaluateRule('minimum', 3, 'ab') // 'Must be at least 3 characters'
+const required = buildRuleValidator('required', true) // wraps ONE named rule into a Validator
+
+const validators: Array<(input: string) => true | string> = []
+appendRule(validators, 'required', true) // pushes the wrapped rule (a `false` / `undefined` check is skipped)
+appendRule(validators, 'email', true)
+const validate = composeValidators(...validators) // short-circuits on the FIRST failing rule
+validate('') // 'This field is required'
+validate('not-an-email') // 'Must be a valid email address'
+
+passing('anything') // true — the always-passing Validator resolveValidation falls back to
+```
+
+### Driving every reducer directly (the pure path, each form)
+
+```ts
+import {
+	createCheckboxState,
+	createConfirmState,
+	createEditorState,
+	createPasswordState,
+	createSelectState,
+	checkboxReduce,
+	checkboxView,
+	confirmReduce,
+	confirmView,
+	editLine,
+	editorReduce,
+	editorView,
+	gateSelection,
+	normalizeChoice,
+	normalizeCheckboxChoice,
+	parseKey,
+	passing,
+	passwordReduce,
+	passwordView,
+	promptHeader,
+	selectReduce,
+	selectView,
+	submitHeader,
+	errorLine,
+	toggleIndex,
+	inputView,
+} from '@src/core'
+
+// Passwords — identical line-editing to input(), but the view masks the value.
+let password = createPasswordState({ message: 'Token' })
+password = passwordReduce(password, parseKey('s')).state
+passwordView(password) // the header + the masked value
+
+// Confirm — y/n or return-takes-default.
+const confirm = createConfirmState({ message: 'Continue?', default: true })
+confirmView(confirm) // the header + a `(Y/n)` hint
+confirmReduce(confirm, parseKey('y')) // { status: 'submit', value: true, ... }
+
+// Select — up/down move the focus, wrapping.
+let select = createSelectState({ message: 'Pick', choices: ['a', 'b', normalizeChoice('c')] })
+select = selectReduce(select, parseKey('\x1b[B')).state // down
+selectView(select) // a MULTI-LINE view, the focused row marked
+
+// Checkbox — space toggles, return submits (gated by min/max).
+let checkbox = createCheckboxState({ choices: ['x', normalizeCheckboxChoice('y')], min: 1 })
+checkbox = checkboxReduce(checkbox, parseKey(' ')).state // toggles the focused index
+checkboxView(checkbox) // a MULTI-LINE view with a selected-count summary
+toggleIndex(checkbox.checked, 0) // copy-on-write toggle (the primitive `checkboxReduce` calls)
+gateSelection(checkbox.checked.length, 1, undefined) // undefined once the min is met
+
+// Editor — return commits a line, ctrl-d finishes through the validator.
+let editor = createEditorState({ message: 'Notes' })
+editor = editorReduce(editor, parseKey('h')).state
+editorView(editor) // the committed lines + the in-progress line
+
+// The shared header/error line renderers + the line-editing primitive:
+promptHeader(select.styler, 'Pick') // '? Pick'
+submitHeader(select.styler, 'Pick') // '✔ Pick'
+errorLine(select.styler, 'bad input') // '✖ bad input'
+inputView({ message: 'x', default: '', validator: passing, styler: select.styler, value: 'hi' })
+editLine('hi', parseKey('!')) // 'hi!' — undefined when the key doesn't edit
+```
+
+### The wire serialize / reconstruct round-trip (T-b)
+
+```ts
+import {
+	defaultTimer,
+	dispatchPendingPrompt,
+	globalFetch,
+	isAbortError,
+	isCheckboxChoice,
+	isPendingPrompt,
+	isPendingPromptStatus,
+	isPromptChoice,
+	isPromptType,
+	parseWireJSON,
+	reconstructValidationRules,
+	resolveChoices,
+	resolveOption,
+	serializeChoices,
+	serializePromptOptions,
+	serializeValidationRules,
+} from '@src/core'
+import { isString } from '@orkestrel/contract'
+
+// A broker serializes a prompt's raw options for the wire (drops the styler + function validators):
+const wire = serializePromptOptions({ message: 'Name', validate: { required: true } })
+serializeValidationRules({ required: true, custom: () => true }) // { required: true, custom: true }
+serializeChoices(['a', { name: 'B', value: 'b' }]) // function-stripped, plain fields kept
+
+// A client reconstructs the validator + choices from that wire data:
+reconstructValidationRules(wire.validate) // { required: true } — primitives only
+resolveOption(wire, 'message', isString) // 'Name', or undefined when absent/off-shape
+resolveChoices({ choices: ['a', { name: 'B', value: 'b' }] }, isPromptChoice) // narrowed per element
+
+// The §14 wire guards a decoded payload is narrowed through before use:
+isPromptType('select') // true
+isPendingPromptStatus('pending') // true
+isPendingPrompt({ id: '1', form: 'input', message: 'x', options: {}, status: 'pending', time: 0 }) // true
+isCheckboxChoice({ name: 'x', value: 'x' }) // true
+
+// The bridge dispatch step + its wiring seams:
+import { createTerminal } from '@src/server'
+const pending = {
+	id: '1',
+	form: 'input' as const,
+	message: 'Name',
+	options: wire,
+	status: 'pending' as const,
+	time: Date.now(),
+}
+await dispatchPendingPrompt(createTerminal(), pending) // routes to the matching prompt form, returns its value
+
+const cancel = defaultTimer(() => {}, 1_000) // the default TimerHandler (host setTimeout/clearTimeout)
+cancel() // idempotent, safe after the timer fired
+await globalFetch('http://host/prompts') // the default FetchHandler (the global fetch, adapted)
+isAbortError(new DOMException('aborted', 'AbortError')) // true — a deliberate disconnect, not a fault
+parseWireJSON('{"a":1}') // { a: 1 } — malformed / empty input yields undefined, never a throw
+```
+
+### The server stream + cursor helpers directly
+
+```ts
+import {
+	isInputStream,
+	isOutputStream,
+	isRawCapable,
+	isReadable,
+	isWritable,
+	lineCount,
+	moveUp,
+	redrawPrefix,
+} from '@src/server'
+
+isInputStream(process.stdin) // true — callable on/off
+isOutputStream(process.stdout) // true — callable write
+isReadable(process.stdin) // true — the node:readline `input` boundary
+isWritable(process.stdout) // true — the node:readline `output` boundary
+isRawCapable(process.stdin) // true on a real TTY with setRawMode; false off a TTY (selects the readline fallback)
+
+lineCount('one\ntwo\nthree') // 3
+moveUp(2) // the ESC[2A cursor-up sequence, or '' when count <= 0
+redrawPrefix(3) // climb 2 lines, return to column 0, erase to end of screen — the in-place redraw prefix
+```
+
 ## Tests
 
-- [`tests/guides/parity.test.ts`](../../tests/guides/src/parity.test.ts) — the `## Surface` ↔ source bijection across `src/core/terminals` and the `src/server/terminals` backend (value + type exports), plus each interface ↔ implementing-class method bijection.
-- [`tests/src/core/terminals/helpers.test.ts`](../../tests/src/core/terminals/helpers.test.ts) — the pure core: `parseKey` totality (control bytes / arrow sequences both forms / printable / unknown), the validation engine (each built-in rule + composition + `resolveValidation`), the choice normalizers, the six reducers (every key path + copy-on-write + submit/cancel), the wire serialize/reconstruct round-trip + the §14 wire guards, and the broker/bridge wiring helpers.
-- [`tests/src/core/terminals/Prompt.test.ts`](../../tests/src/core/terminals/Prompt.test.ts) — the broker: park-as-Promise + `pending` accessors + `count`, `answer` validate + type-check (accept / reject stays pending), timeout → `expire` → reject (manual timer), `destroy` expiry, and the `pending` / `answer` / `expire` events + emit-safety.
-- [`tests/src/core/terminals/PromptClient.test.ts`](../../tests/src/core/terminals/PromptClient.test.ts) — the SSE bridge over a scripted `fetch`: connect + dispatch a `pending` to a local terminal + POST the answer, the replay dedupe (same id in flight ignored), `expire` / `shutdown` server signals, reconnect backoff (manual timer), `disconnect` stops the reconnect loop, and the `connect` / `disconnect` / `error` events.
-- [`tests/src/core/terminals/factories.test.ts`](../../tests/src/core/terminals/factories.test.ts) — `createPrompt` / `createPromptClient` each return a working instance of their interface.
-- [`tests/src/server/terminals/Terminal.test.ts`](../../tests/src/server/terminals/Terminal.test.ts) — the driver over a fake TTY emitting scripted key chunks: each prompt form resolves its value, cancel-on-ctrl-c rejects a `TerminalError('CANCEL')`, raw mode entered exactly once + always cleaned up (no leak), the in-place re-render output, password masking, and the non-TTY readline fallback (numbered list / EOF editor).
-- [`tests/src/server/terminals/helpers.test.ts`](../../tests/src/server/terminals/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `isRawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
-- [`tests/src/server/terminals/factories.test.ts`](../../tests/src/server/terminals/factories.test.ts) — `createTerminal` returns a working `TerminalInterface` over the resolved (or injected) streams.
+- [`tests/guides/src/parity.test.ts`](../../tests/guides/src/parity.test.ts) — the `## Surface` ↔ source bijection across `src/core` and the `src/server` backend (value + type exports), plus each interface ↔ implementing-class method bijection.
+- [`tests/src/core/helpers.test.ts`](../../tests/src/core/helpers.test.ts) — the pure core: `parseKey` totality (control bytes / arrow sequences both forms / printable / unknown), the validation engine (each built-in rule + composition + `resolveValidation`), the choice normalizers, the six reducers (every key path + copy-on-write + submit/cancel), the wire serialize/reconstruct round-trip + the §14 wire guards, and the broker/bridge wiring helpers.
+- [`tests/src/core/Prompt.test.ts`](../../tests/src/core/Prompt.test.ts) — the broker: park-as-Promise + `pending` accessors + `count`, `answer` validate + type-check (accept / reject stays pending), timeout → `expire` → reject (manual timer), `destroy` expiry, and the `pending` / `answer` / `expire` events + emit-safety.
+- [`tests/src/core/PromptClient.test.ts`](../../tests/src/core/PromptClient.test.ts) — the SSE bridge over a scripted `fetch`: connect + dispatch a `pending` to a local terminal + POST the answer, the replay dedupe (same id in flight ignored), `expire` / `shutdown` server signals, reconnect backoff (manual timer), `disconnect` stops the reconnect loop, and the `connect` / `disconnect` / `error` events.
+- [`tests/src/core/factories.test.ts`](../../tests/src/core/factories.test.ts) — `createPrompt` / `createPromptClient` each return a working instance of their interface.
+- [`tests/src/server/Terminal.test.ts`](../../tests/src/server/Terminal.test.ts) — the driver over a fake TTY emitting scripted key chunks: each prompt form resolves its value, cancel-on-ctrl-c rejects a `TerminalError('CANCEL')`, raw mode entered exactly once + always cleaned up (no leak), the in-place re-render output, password masking, and the non-TTY readline fallback (numbered list / EOF editor).
+- [`tests/src/server/helpers.test.ts`](../../tests/src/server/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `isRawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
+- [`tests/src/server/factories.test.ts`](../../tests/src/server/factories.test.ts) — `createTerminal` returns a working `TerminalInterface` over the resolved (or injected) streams.
 
 ## See also
 
 - [`AGENTS.md`](../../AGENTS.md) — the rules; §11 immutability (copy-on-write reducers), §13 the emitter pattern (the broker / client listener isolation), §14 boundary narrowing (the wire + stream guards), §21 minimal interface (the stream shapes), §22 documentation-as-contracts.
 - [`console.md`](console.md) — the `StylerInterface` the reducers render their `view` through (one style engine), and the `strip` / `width` the views are measured against.
-- [`emitters.md`](emitters.md) — the typed emitter the `Prompt` broker / `PromptClient` own for their `pending` / `answer` / `expire` / `connect` events.
-- [`parsers.md`](parsers.md) — the `SSEParser` the `PromptClient` decodes the broker's event stream with.
-- [`http.md`](http.md) — the `openSSEStream` seam a consumer mounts the broker's `pending` events on (the server END of the bridge).
-- [`README.md`](README.md) — the guides index.
+- [`emitter.md`](emitter.md) — the typed emitter the `Prompt` broker / `PromptClient` own for their `pending` / `answer` / `expire` / `connect` events.
+- [`sse.md`](sse.md) — the `SSEParser` the `PromptClient` decodes the broker's event stream with.
+- [`README.md`](../README.md) — the guides index.

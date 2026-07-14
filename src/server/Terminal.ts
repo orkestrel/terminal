@@ -7,8 +7,8 @@ import type {
 	PasswordOptions,
 	PromptStep,
 	SelectOptions,
-	StylerInterface,
 } from '@src/core'
+import type { StylerInterface } from '@orkestrel/console'
 import type {
 	InputStreamInterface,
 	OutputStreamInterface,
@@ -22,7 +22,6 @@ import {
 	createInputState,
 	createPasswordState,
 	createSelectState,
-	createStyler,
 	checkboxReduce,
 	confirmReduce,
 	editorReduce,
@@ -33,6 +32,7 @@ import {
 	selectReduce,
 	TerminalError,
 } from '@src/core'
+import { createStyler } from '@orkestrel/console'
 import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 import {

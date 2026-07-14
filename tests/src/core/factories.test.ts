@@ -1,5 +1,5 @@
 import { createPrompt, createPromptClient } from '@src/core'
-import { createManualTimer } from '../../../setup.js'
+import { createManualTimer } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The terminals factories are thin constructors — these tests assert each returns a working

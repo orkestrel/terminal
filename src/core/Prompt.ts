@@ -13,19 +13,19 @@ import type {
 	SelectOptions,
 	TimerHandler,
 } from './types.js'
-import type { EmitterInterface } from '../emitters/index.js'
+import type { EmitterInterface } from '@orkestrel/emitter'
 import { DEFAULT_PROMPT_TIMEOUT_MS } from './constants.js'
 import { TerminalError } from './errors.js'
 import { defaultTimer, resolveValidation, serializePromptOptions } from './helpers.js'
-import { Emitter } from '../emitters/index.js'
-import { isArray, isBoolean, isString } from '../contracts/index.js'
+import { Emitter } from '@orkestrel/emitter'
+import { isArray, isBoolean, isString } from '@orkestrel/contract'
 
 /**
  * The headless prompt BROKER (observable §13) — parks each {@link PromptInterface} call as a
  * pending prompt and returns a Promise that resolves when the prompt is {@link answer}ed (or
  * rejects on timeout / teardown). The tri-surface's headless arm: there is no terminal here, so a
  * transport forwards each `pending` event to whoever can answer, and {@link answer} resolves the
- * parked Promise — for environments where direct user access is unavailable (an MCP server on
+ * parked Promise — for environments where direct user access is unavailable (a headless server on
  * stdio, a browser with no TTY, a prompt issued on one machine answered on another).
  *
  * @remarks

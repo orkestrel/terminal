@@ -1,6 +1,6 @@
 import type { PendingPrompt, PromptInterface } from '@src/core'
 import { createPrompt, isTerminalError } from '@src/core'
-import { createManualTimer, createRecorder, recordEmitterEvents } from '../../../setup.js'
+import { createManualTimer, createRecorder, recordEmitterEvents } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The headless prompt BROKER, driven deterministically: every prompt is PARKED as a Promise that

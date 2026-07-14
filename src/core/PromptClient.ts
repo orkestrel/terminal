@@ -8,8 +8,8 @@ import type {
 	TimerCancel,
 	TimerHandler,
 } from './types.js'
-import type { EmitterInterface } from '../emitters/index.js'
-import type { SSEEvent } from '../parsers/index.js'
+import type { EmitterInterface } from '@orkestrel/emitter'
+import type { SSEEvent } from '@orkestrel/sse'
 import {
 	ACCEPT_EVENT_STREAM,
 	DEFAULT_RECONNECT_DELAY_MS,
@@ -24,9 +24,9 @@ import {
 	isPendingPrompt,
 	parseWireJSON,
 } from './helpers.js'
-import { Emitter } from '../emitters/index.js'
-import { createSSEParser } from '../parsers/index.js'
-import { isRecord, isString } from '../contracts/index.js'
+import { Emitter } from '@orkestrel/emitter'
+import { createSSEParser } from '@orkestrel/sse'
+import { isRecord, isString } from '@orkestrel/contract'
 
 /**
  * The SSE prompt BRIDGE (observable §13) — the client-side counterpart to

@@ -1,15 +1,10 @@
-import type { FakeTTYInterface } from '../../../setupServer.js'
+import type { FakeTTYInterface } from '../../setupServer.js'
 import type { OutputStreamInterface } from '@src/server'
 import { describe, expect, it } from 'vitest'
 import { Readable } from 'node:stream'
 import { isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
-import {
-	assertCleanExit,
-	createFakeTTY,
-	createStreamTarget,
-	rawOutput,
-} from '../../../setupServer.js'
+import { assertCleanExit, createFakeTTY, createStreamTarget, rawOutput } from '../../setupServer.js'
 
 // Behavioral coverage for the T-c interactive `Terminal` driver (AGENTS §16) — it DRIVES the pure
 // core reducers over a SCRIPTED FAKE TTY: each test calls a prompt, pushes scripted key chunks, and

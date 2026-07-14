@@ -1,5 +1,5 @@
-import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '../emitters/index.js'
-import type { StylerInterface } from '../console/index.js'
+import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
+import type { StylerInterface } from '@orkestrel/console'
 
 // The PURE, UNIVERSAL prompt core — a key decoder, a declarative validation engine, and
 // the six interactive prompts modelled as EVENT-FREE pure state machines. No `node:*`, no

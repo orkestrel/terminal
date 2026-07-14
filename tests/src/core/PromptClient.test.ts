@@ -12,7 +12,7 @@ import {
 	createSSEResponse,
 	recordEmitterEvents,
 	waitForDelay,
-} from '../../../setup.js'
+} from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The SSE prompt BRIDGE, driven deterministically by an INJECTED fetch returning a controlled SSE

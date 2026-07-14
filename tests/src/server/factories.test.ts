@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Readable } from 'node:stream'
 import { createTerminal } from '@src/server'
-import { createFakeTTY, createStreamTarget } from '../../../setupServer.js'
+import { createFakeTTY, createStreamTarget } from '../../setupServer.js'
 
 // Factory coverage for the T-c server-terminals branch (AGENTS §16) — `createTerminal` builds a
 // working `TerminalInterface` over the injected streams and exposes exactly the six prompt forms;

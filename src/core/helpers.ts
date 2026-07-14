@@ -24,8 +24,8 @@ import type {
 	ValidationRules,
 	Validator,
 } from './types.js'
-import type { Guard } from '../contracts/index.js'
-import type { StylerInterface } from '../console/index.js'
+import type { Guard } from '@orkestrel/contract'
+import type { StylerInterface } from '@orkestrel/console'
 import {
 	ALPHANUMERIC_PATTERN,
 	CONTROL_NAMES,
@@ -46,8 +46,8 @@ import {
 	isString,
 	literalOf,
 	recordOf,
-} from '../contracts/index.js'
-import { createStyler, STATUS_ICONS } from '../console/index.js'
+} from '@orkestrel/contract'
+import { createStyler, STATUS_ICONS } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested (AGENTS §5):
 // the key decoder, the validation rule engine, the choice normalizers, the per-prompt view
@@ -236,7 +236,7 @@ export function composeValidators(...validators: Validator[]): Validator {
  * → custom) and composed; absent / empty input yields an always-passing validator. Pure.
  *
  * @remarks
- * Unlike scsr's variant (which returned `Validator | undefined`), this ALWAYS returns a
+ * Unlike a prior variant (which returned `Validator | undefined`), this ALWAYS returns a
  * `Validator` — an absent or empty rule set yields a validator that returns `true` for every
  * input. That keeps a prompt's state unconditional (it always holds a real validator to apply on
  * submit), with no `undefined` branch at the call site.

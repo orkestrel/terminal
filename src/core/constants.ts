@@ -147,8 +147,8 @@ export const RULE_MESSAGES = Object.freeze({
 /**
  * The prompt-view icon glyphs the reducers render the prompt line and choice rows with. PLAIN
  * glyphs — color is applied by the {@link import('./types.js').PromptState}'s
- * {@link import('../console/index.js').StylerInterface} at render time, never baked into the
- * constant (AGENTS — styling orthogonal to data; the rework fixes scsr's ANSI-in-the-icon).
+ * {@link import('@orkestrel/console').StylerInterface} at render time, never baked into the
+ * constant (AGENTS — styling orthogonal to data; the rework fixes the terminal's ANSI-in-the-icon).
  * Frozen.
  *
  * @remarks
@@ -190,7 +190,7 @@ export const SSE_EVENTS = Object.freeze({
 })
 
 /** The auth-token request header the {@link import('./types.js').PromptClient} sends when a `token` is configured. */
-export const HEADER_TOKEN = 'x-taverna-token'
+export const HEADER_TOKEN = 'x-orkestrel-token'
 
 /** The `Accept` header value that opens the broker's SSE stream. */
 export const ACCEPT_EVENT_STREAM = 'text/event-stream'
