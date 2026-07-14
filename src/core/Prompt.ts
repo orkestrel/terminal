@@ -16,7 +16,13 @@ import type {
 import type { EmitterInterface } from '@orkestrel/emitter'
 import { DEFAULT_PROMPT_TIMEOUT_MS } from './constants.js'
 import { TerminalError } from './errors.js'
-import { defaultTimer, resolveValidation, serializePromptOptions } from './helpers.js'
+import {
+	defaultTimer,
+	normalizeCheckboxChoice,
+	normalizeChoice,
+	resolveValidation,
+	serializePromptOptions,
+} from './helpers.js'
 import { Emitter } from '@orkestrel/emitter'
 import { isArray, isBoolean, isString } from '@orkestrel/contract'
 
@@ -124,15 +130,24 @@ export class Prompt implements PromptInterface {
 	}
 
 	select(options: SelectOptions): Promise<string> {
+		const values = new Set(options.choices.map(normalizeChoice).map((choice) => choice.value))
 		return this.#park('select', options.message, options, (value) =>
-			isString(value) ? value : undefined,
+			isString(value) && values.has(value) ? value : undefined,
 		)
 	}
 
 	checkbox(options: CheckboxOptions): Promise<readonly string[]> {
-		return this.#park('checkbox', options.message, options, (value) =>
-			isArray(value) && value.every(isString) ? value : undefined,
+		const values = new Set(
+			options.choices.map(normalizeCheckboxChoice).map((choice) => choice.value),
 		)
+		const { min, max } = options
+		return this.#park('checkbox', options.message, options, (value) => {
+			if (!isArray(value) || !value.every(isString)) return undefined
+			if (!value.every((item) => values.has(item))) return undefined
+			if (min !== undefined && value.length < min) return undefined
+			if (max !== undefined && value.length > max) return undefined
+			return value
+		})
 	}
 
 	editor(options: EditorOptions): Promise<string> {

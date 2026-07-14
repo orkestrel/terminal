@@ -47,7 +47,7 @@ import {
 	literalOf,
 	recordOf,
 } from '@orkestrel/contract'
-import { createStyler, STATUS_ICONS } from '@orkestrel/console'
+import { createStyler, STATUS_ICONS, stripControls } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested (AGENTS §5):
 // the key decoder, the validation rule engine, the choice normalizers, the per-prompt view
@@ -160,16 +160,23 @@ export function evaluateRule(
 			if (check === true && input.trim().length === 0) return RULE_MESSAGES.required
 			break
 		case 'minimum':
-			if (isNumber(check) && input.length < check)
+			if (isNumber(check) && [...input].length < check)
 				return RULE_MESSAGES.minimum.replace('{count}', String(check))
 			break
 		case 'maximum':
-			if (isNumber(check) && input.length > check)
+			if (isNumber(check) && [...input].length > check)
 				return RULE_MESSAGES.maximum.replace('{count}', String(check))
 			break
 		case 'pattern':
-			if (isString(check) && !new RegExp(check).test(input))
-				return RULE_MESSAGES.pattern.replace('{pattern}', check)
+			if (isString(check)) {
+				let compiled: RegExp | undefined
+				try {
+					compiled = new RegExp(check)
+				} catch {
+					return RULE_MESSAGES.pattern.replace('{pattern}', check)
+				}
+				if (!compiled.test(input)) return RULE_MESSAGES.pattern.replace('{pattern}', check)
+			}
 			break
 		case 'email':
 			if (check === true && !EMAIL_PATTERN.test(input)) return RULE_MESSAGES.email
@@ -831,6 +838,10 @@ export function reconstructValidationRules(value: unknown): ValidationRules | un
 	const rules: Record<string, boolean | number | string> = {}
 	let count = 0
 	for (const [rule, item] of Object.entries(value)) {
+		// `pattern` is dropped here: it is the only string-valued rule, and copying an untrusted
+		// wire-supplied regex source into a client-side `RegExp` risks ReDoS. The broker still
+		// re-validates authoritatively via its own answer() gate, so dropping it here is safe.
+		if (rule === 'pattern') continue
 		if (isBoolean(item) || isNumber(item) || isString(item)) {
 			rules[rule] = item
 			count += 1
@@ -880,6 +891,27 @@ export function resolveChoices<TChoice extends PromptChoice | CheckboxChoice>(
 }
 
 /**
+ * Sanitize a list of resolved choices' human-readable labels (`name` + `description`) with
+ * {@link stripControls} — shared by the `select` and `checkbox` branches of
+ * {@link dispatchPendingPrompt} so a remote-supplied choice can never inject raw control bytes
+ * into the local terminal's rendered view.
+ *
+ * @param choices - The resolved choices (bare strings or full {@link PromptChoice} /
+ *   {@link CheckboxChoice} objects) as returned by {@link resolveChoices}
+ * @returns The same choices with every `name` / `description` control-stripped
+ */
+export function sanitizeChoiceLabels<TChoice extends PromptChoice | CheckboxChoice>(
+	choices: readonly (string | TChoice)[],
+): readonly (string | TChoice)[] {
+	return choices.map((choice) => {
+		if (isString(choice)) return stripControls(choice)
+		const description =
+			choice.description === undefined ? undefined : stripControls(choice.description)
+		return { ...choice, name: stripControls(choice.name), description }
+	})
+}
+
+/**
  * Dispatch a {@link PendingPrompt} to the matching {@link PromptFormInterface} method — the bridge
  * step a {@link PromptClient} runs to drive a LOCAL terminal with a prompt issued elsewhere.
  * Reconstructs typed options from the wire-safe {@link PendingPrompt.options} (every field
@@ -896,43 +928,52 @@ export function dispatchPendingPrompt(
 ): Promise<string | boolean | readonly string[]> {
 	const options = pending.options
 	const validate = reconstructValidationRules(options.validate)
+	const message = stripControls(pending.message)
 	switch (pending.form) {
-		case 'input':
+		case 'input': {
+			const value = resolveOption(options, 'default', isString)
 			return terminal.input({
-				message: pending.message,
-				default: resolveOption(options, 'default', isString),
+				message,
+				default: value === undefined ? undefined : stripControls(value),
 				validate,
 			})
-		case 'password':
+		}
+		case 'password': {
+			const value = resolveOption(options, 'mask', isString)
 			return terminal.password({
-				message: pending.message,
-				mask: resolveOption(options, 'mask', isString),
+				message,
+				mask: value === undefined ? undefined : stripControls(value),
 				validate,
 			})
+		}
 		case 'confirm':
 			return terminal.confirm({
-				message: pending.message,
+				message,
 				default: resolveOption(options, 'default', isBoolean),
 			})
-		case 'select':
+		case 'select': {
+			const value = resolveOption(options, 'default', isString)
 			return terminal.select({
-				message: pending.message,
-				choices: resolveChoices(options, isPromptChoice),
-				default: resolveOption(options, 'default', isString),
+				message,
+				choices: sanitizeChoiceLabels(resolveChoices(options, isPromptChoice)),
+				default: value === undefined ? undefined : stripControls(value),
 			})
+		}
 		case 'checkbox':
 			return terminal.checkbox({
-				message: pending.message,
-				choices: resolveChoices(options, isCheckboxChoice),
+				message,
+				choices: sanitizeChoiceLabels(resolveChoices(options, isCheckboxChoice)),
 				min: resolveOption(options, 'min', isNumber),
 				max: resolveOption(options, 'max', isNumber),
 			})
-		case 'editor':
+		case 'editor': {
+			const value = resolveOption(options, 'default', isString)
 			return terminal.editor({
-				message: pending.message,
-				default: resolveOption(options, 'default', isString),
+				message,
+				default: value === undefined ? undefined : stripControls(value),
 				validate,
 			})
+		}
 	}
 }
 
@@ -976,4 +1017,36 @@ export function parseWireJSON(text: string): unknown {
 	} catch {
 		return undefined
 	}
+}
+
+/**
+ * Whether `url` is an INSECURE remote endpoint — a plain `http://` URL whose host is NOT a
+ * loopback address. Pure string parsing (no `URL` global), so it stays total on malformed input.
+ *
+ * @remarks
+ * A loopback host (`localhost`, `127.0.0.1`, `[::1]`) over `http://` is exempt (local
+ * development has no network hop to eavesdrop on); every other `http://` host is insecure.
+ * An `https://` URL (or any non-`http://` scheme) is never flagged.
+ *
+ * @param url - The candidate endpoint URL
+ * @returns `true` when `url` is a non-loopback `http://` endpoint
+ *
+ * @example
+ * ```ts
+ * isInsecureRemote('http://example.com')     // true
+ * isInsecureRemote('http://localhost:3000')  // false
+ * isInsecureRemote('https://example.com')    // false
+ * ```
+ */
+export function isInsecureRemote(url: string): boolean {
+	const prefix = 'http://'
+	if (!url.startsWith(prefix)) return false
+	const rest = url.slice(prefix.length)
+	const hostEnd = rest.search(/[/?#]/)
+	const authority = hostEnd === -1 ? rest : rest.slice(0, hostEnd)
+	const host = authority.includes('@') ? authority.slice(authority.indexOf('@') + 1) : authority
+	const hostname = host.startsWith('[')
+		? host.slice(0, host.indexOf(']') + 1)
+		: (host.split(':')[0] ?? '')
+	return hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '[::1]'
 }

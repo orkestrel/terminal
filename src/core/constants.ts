@@ -181,7 +181,7 @@ export const DEFAULT_RECONNECT_DELAY_MS = 2_000
  * @remarks
  * - `pending` — a serialized {@link import('./types.js').PendingPrompt} to dispatch + answer.
  * - `expire` — an `{ id }` payload: the broker expired a parked prompt (the client drops it).
- * - `shutdown` — the broker is going away; the client tears itself down.
+ * - `shutdown` — the broker is going away; the client disconnects (no auto-reconnect) but stays reusable.
  */
 export const SSE_EVENTS = Object.freeze({
 	pending: 'pending',
@@ -194,3 +194,11 @@ export const HEADER_TOKEN = 'x-orkestrel-token'
 
 /** The `Accept` header value that opens the broker's SSE stream. */
 export const ACCEPT_EVENT_STREAM = 'text/event-stream'
+
+/**
+ * The maximum number of characters the {@link import('./types.js').PromptClient} lets its
+ * SSE parser buffer before treating the stream as hostile — 1 MiB, comfortably above any
+ * legitimate prompt payload. Passed as the `limit` to `createSSEParser` so an unterminated
+ * or oversized `data:` field cannot grow the buffer without bound (a memory-exhaustion guard).
+ */
+export const SSE_BUFFER_LIMIT = 1_048_576

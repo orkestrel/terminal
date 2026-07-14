@@ -233,20 +233,54 @@ describe('Prompt — answer state machine (totality)', () => {
 		expect(await ed).toBe('real text')
 	})
 
-	it('select accepts any string; checkbox requires a string[] (a non-string element rejects)', async () => {
+	it('select rejects a value outside its choices; checkbox requires a string[] (a non-string element rejects)', async () => {
 		const { prompt } = broker()
 		const selected = prompt.select({ message: 'Pick', choices: ['a', 'b'] })
 		const checked = prompt.checkbox({ message: 'Pick', choices: ['a', 'b'] })
 		const [select, checkbox] = prompt.pending()
 
-		// select has no choice-membership gate at the broker — any string is accepted.
-		expect(prompt.answer(select.id, 'anything')).toBe(true)
+		// select gates on choice membership — an offered value is accepted, an unoffered one is not.
+		expect(prompt.answer(select.id, 'anything')).toBe(false)
+		expect(prompt.answer(select.id, 'a')).toBe(true)
 		// checkbox rejects a non-array and an array with a non-string element.
 		expect(prompt.answer(checkbox.id, 'a')).toBe(false)
 		expect(prompt.answer(checkbox.id, ['a', 2])).toBe(false)
 		expect(prompt.answer(checkbox.id, [])).toBe(true) // empty string[] is valid
-		expect(await selected).toBe('anything')
+		expect(await selected).toBe('a')
 		expect(await checked).toEqual([])
+	})
+})
+
+describe('Prompt — choice gates (select membership, checkbox min/max/membership) — T4', () => {
+	it('select rejects a value not in the offered choices, and accepts a valid member', async () => {
+		const { prompt } = broker()
+		const selected = prompt.select({ message: 'Pick', choices: ['a', 'b', 'c'] })
+		const [select] = prompt.pending()
+
+		expect(prompt.answer(select.id, 'z')).toBe(false) // not offered
+		expect(prompt.pending(select.id)?.status).toBe('pending')
+		expect(prompt.answer(select.id, 'b')).toBe(true) // valid member
+		expect(await selected).toBe('b')
+	})
+
+	it('checkbox rejects a count below min, above max, or containing a non-offered value', async () => {
+		const { prompt } = broker()
+		const checked = prompt.checkbox({
+			message: 'Pick',
+			choices: ['a', 'b', 'c', 'd'],
+			min: 2,
+			max: 3,
+		})
+		const [checkbox] = prompt.pending()
+
+		expect(prompt.answer(checkbox.id, ['a'])).toBe(false) // below min
+		expect(prompt.answer(checkbox.id, ['a', 'b', 'c', 'd'])).toBe(false) // above max
+		expect(prompt.answer(checkbox.id, ['a', 'z'])).toBe(false) // non-offered value
+		expect(prompt.pending(checkbox.id)?.status).toBe('pending') // still parked, none accepted
+
+		// A valid in-range member-only checkbox is accepted.
+		expect(prompt.answer(checkbox.id, ['a', 'b'])).toBe(true)
+		expect(await checked).toEqual(['a', 'b'])
 	})
 })
 

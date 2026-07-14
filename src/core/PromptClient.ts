@@ -14,6 +14,7 @@ import {
 	ACCEPT_EVENT_STREAM,
 	DEFAULT_RECONNECT_DELAY_MS,
 	HEADER_TOKEN,
+	SSE_BUFFER_LIMIT,
 	SSE_EVENTS,
 } from './constants.js'
 import {
@@ -21,6 +22,7 @@ import {
 	dispatchPendingPrompt,
 	globalFetch,
 	isAbortError,
+	isInsecureRemote,
 	isPendingPrompt,
 	parseWireJSON,
 } from './helpers.js'
@@ -42,11 +44,17 @@ import { isRecord, isString } from '@orkestrel/contract'
  *   (driven by the injected timer) — unless `reconnect` is `false`, the client was
  *   {@link destroy}ed, or the drop was a deliberate {@link disconnect} (an abort).
  * - **Dispatch + answer.** Each decoded `pending` event is narrowed to a `PendingPrompt` (§14 —
- *   never an `as`), dispatched to `terminal`, and its resolved value POSTed back to `url`. A
- *   prompt already in flight (same id) is ignored, so a reconnection replay can't double-answer.
+ *   never an `as`), dispatched to `terminal`, and its resolved value POSTed back to `url`.
+ *   Dispatch is strictly SERIAL: the read loop drives the terminal for ONE prompt at a time and
+ *   only reads/dispatches the next event after the current prompt fully settles (its answer
+ *   POSTed). A prompt id redelivered by the broker AFTER its prior dispatch has settled is
+ *   dispatched again — the client does not dedupe across completion.
  * - **Server signals.** An `expire` event (the broker dropped a parked prompt) emits `expire`; a
- *   `shutdown` event tears the client down.
+ *   `shutdown` event calls {@link disconnect} (not {@link destroy}) — the client stops streaming
+ *   without auto-reconnect but stays reusable; a later {@link connect} recovers it.
  * - **Lean events (§13).** `connect` / `disconnect` / `expire` / `error` — errors are `unknown`.
+ *   `disconnect` fires exactly once per connected-to-disconnected transition, whether triggered by
+ *   the server ending the stream cleanly or by a deliberate {@link disconnect} / {@link destroy}.
  *
  * @example
  * ```ts
@@ -67,13 +75,13 @@ export class PromptClient implements PromptClientInterface {
 	readonly #fetch: FetchHandler
 	readonly #timer: TimerHandler
 	readonly #emitter: Emitter<PromptClientEventMap>
-	readonly #active = new Set<string>()
 	#controller: AbortController | undefined
 	#backoff: TimerCancel | undefined
 	#wake: (() => void) | undefined
 	#connecting = false
 	#connected = false
 	#destroyed = false
+	#warnedInsecureToken = false
 
 	constructor(options: PromptClientOptions) {
 		this.url = options.url
@@ -98,6 +106,9 @@ export class PromptClient implements PromptClientInterface {
 
 	async connect(): Promise<void> {
 		if (this.#destroyed) return
+		// Re-entrancy guard: a connect already in progress owns `#controller` / the backoff fields —
+		// a second concurrent call must not race them, so it returns immediately.
+		if (this.#connecting) return
 		// Arm the "should be connected" flag — `disconnect()` clears it to stop the reconnect loop
 		// (a deliberate disconnect, not a transport drop); re-arming here lets a later connect restart.
 		this.#connecting = true
@@ -105,7 +116,7 @@ export class PromptClient implements PromptClientInterface {
 			try {
 				await this.#stream()
 			} catch (error) {
-				this.#connected = false
+				this.#markDisconnected()
 				if (this.#destroyed || isAbortError(error)) return
 				this.#emitter.emit('error', error)
 			}
@@ -130,14 +141,13 @@ export class PromptClient implements PromptClientInterface {
 		const wake = this.#wake
 		this.#wake = undefined
 		wake?.()
-		this.#connected = false
+		this.#markDisconnected()
 	}
 
 	destroy(): void {
 		if (this.#destroyed) return
 		this.#destroyed = true
 		this.disconnect()
-		this.#active.clear()
 		this.#emitter.destroy()
 	}
 
@@ -147,6 +157,13 @@ export class PromptClient implements PromptClientInterface {
 	// decode bytes, feed the core SSEParser, and handle each dispatched event. Throws on a non-OK
 	// response / missing body / abort — `connect` catches and (maybe) reconnects.
 	async #stream(): Promise<void> {
+		if (this.#token !== undefined && isInsecureRemote(this.url) && !this.#warnedInsecureToken) {
+			this.#warnedInsecureToken = true
+			this.#emitter.emit(
+				'error',
+				new Error('auth token sent as cleartext over insecure http; use https'),
+			)
+		}
 		const controller = new AbortController()
 		this.#controller = controller
 		const response = await this.#fetch(this.url, {
@@ -162,7 +179,10 @@ export class PromptClient implements PromptClientInterface {
 
 		const reader = body.getReader()
 		const decoder = new TextDecoder()
-		const parser = createSSEParser()
+		// Bound the parser's internal buffer — an OVERFLOW throws out of `parser.parse`, propagates
+		// through this loop, `connect`'s catch (as an `error` event), and into the backoff reconnect
+		// (which opens a fresh parser); this propagate-and-reconnect policy is intentional.
+		const parser = createSSEParser({ limit: SSE_BUFFER_LIMIT })
 		try {
 			for (;;) {
 				const { done, value } = await reader.read()
@@ -174,8 +194,7 @@ export class PromptClient implements PromptClientInterface {
 		} finally {
 			reader.releaseLock()
 		}
-		this.#connected = false
-		this.#emitter.emit('disconnect')
+		this.#markDisconnected()
 	}
 
 	// Route one decoded SSE event by its `event:` name (§14-narrow every payload).
@@ -188,26 +207,22 @@ export class PromptClient implements PromptClientInterface {
 		if (event.event === SSE_EVENTS.expire) {
 			const parsed = parseWireJSON(event.data)
 			if (isRecord(parsed) && isString(parsed.id)) {
-				this.#active.delete(parsed.id)
 				this.#emitter.emit('expire', parsed.id)
 			}
 			return
 		}
-		if (event.event === SSE_EVENTS.shutdown) this.destroy()
+		if (event.event === SSE_EVENTS.shutdown) this.disconnect()
 	}
 
-	// Dispatch one pending prompt to the local terminal and POST its answer back; ignore a prompt
-	// already in flight (a reconnection replay) so it is never double-answered.
+	// Dispatch one pending prompt to the local terminal and POST its answer back. Dispatch is
+	// strictly serial — see the class docstring — so this always runs to completion (or errors)
+	// before the read loop reads and dispatches the next event.
 	async #dispatch(id: string, pending: PendingPrompt): Promise<void> {
-		if (this.#active.has(id)) return
-		this.#active.add(id)
 		try {
 			const value = await dispatchPendingPrompt(this.#terminal, pending)
 			await this.#post(id, value)
 		} catch (error) {
 			this.#emitter.emit('error', error)
-		} finally {
-			this.#active.delete(id)
 		}
 	}
 
@@ -219,6 +234,15 @@ export class PromptClient implements PromptClientInterface {
 			body: JSON.stringify({ id, value }),
 		})
 		if (!response.ok) this.#emitter.emit('error', new Error(`broker rejected answer ${id}`))
+	}
+
+	// Emit `disconnect` exactly once per connected→disconnected transition — the single choke point
+	// for both the clean server-end tail of `#stream` and the deliberate `disconnect()`/`destroy()`
+	// teardown, so neither path can double-emit or miss the event.
+	#markDisconnected(): void {
+		if (!this.#connected) return
+		this.#connected = false
+		this.#emitter.emit('disconnect')
 	}
 
 	// Merge the base headers with the auth token header when a token is configured.

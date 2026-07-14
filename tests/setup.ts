@@ -2,8 +2,22 @@
 // (`setupFiles[0]`). Keep this file free of `node:*` and of `document` / `window`: node-only
 // helpers live in `setupServer.ts`.
 
-import type { TimerCancel, TimerHandler } from '@src/core'
+import type {
+	CheckboxOptions,
+	ConfirmOptions,
+	EditorOptions,
+	InputOptions,
+	KeyEvent,
+	PasswordOptions,
+	PromptFormInterface,
+	PromptStep,
+	PromptType,
+	SelectOptions,
+	TimerCancel,
+	TimerHandler,
+} from '@src/core'
 import type { EmitterInterface, EventMap } from '@orkestrel/emitter'
+import { parseKey } from '@src/core'
 
 /**
  * Resolve after `ms` milliseconds — the single shared delay helper (AGENTS §16.1),
@@ -185,4 +199,163 @@ export function createSSEResponse(
 		},
 	})
 	return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+// ── Reducer feed driver ───────────────────────────────────────────────────
+//
+// The single general form of the ~8 local `feed` / `feedInput` drivers that were
+// hand-duplicated per reducer across `helpers.test.ts` (AGENTS §16.1): thread a
+// scripted sequence of raw key strings through a prompt reducer, decoding each via
+// the real `parseKey`, and return the final step.
+
+/**
+ * Thread a scripted sequence of raw key strings through a prompt `reduce` function,
+ * decoding each key via the real {@link parseKey} and folding it through `reduce` in
+ * order — the one general form of the per-reducer `feed` / `feedInput` drivers
+ * duplicated across `helpers.test.ts` (AGENTS §16.1).
+ *
+ * @typeParam TValue - The prompt's resolved value type (matches the reducer's {@link PromptStep} `T`)
+ * @typeParam TState - The prompt's concrete state shape (matches the reducer's {@link PromptStep} `S`)
+ * @param reduce - The pure prompt reducer under test (e.g. `inputReduce`, `selectReduce`)
+ * @param state - The initial prompt state (typically from a `create*State` factory)
+ * @param keys - The raw key strings to feed in order, each decoded via `parseKey`
+ * @returns The final {@link PromptStep} after folding every key through `reduce`
+ */
+export function feedReducer<TValue, TState>(
+	reduce: (state: TState, key: KeyEvent) => PromptStep<TValue, TState>,
+	state: TState,
+	keys: readonly string[],
+): PromptStep<TValue, TState> {
+	let step: PromptStep<TValue, TState> = { state, view: '', status: 'active' }
+	for (const key of keys) step = reduce(step.state, parseKey(key))
+	return step
+}
+
+// ── Recording terminal — a real PromptFormInterface, not a mock ────────────
+//
+// A real implementation of the six-method `PromptFormInterface` contract that records
+// each form call's options and resolves with a configured per-form answer (AGENTS
+// §16.1 recorder-not-mock). Supports a deferred/blocking mode — held pending calls a
+// test releases explicitly — for exercising in-flight duplicate suppression.
+
+/** The configured resolved answer per {@link PromptFormInterface} form, used by {@link createRecordingTerminal}. */
+export interface RecordingTerminalAnswers {
+	readonly input?: string
+	readonly password?: string
+	readonly confirm?: boolean
+	readonly select?: string
+	readonly checkbox?: readonly string[]
+	readonly editor?: string
+}
+
+/**
+ * Options for {@link createRecordingTerminal}.
+ *
+ * @remarks
+ * - `answers` — the value each form resolves with once called (unset forms default:
+ *   `''` for text forms, `false` for `confirm`, `[]` for `checkbox`).
+ * - `defer` — the forms whose calls are held PENDING (unresolved) until released
+ *   through {@link RecordingTerminalController.release}, for testing in-flight behavior.
+ */
+export interface RecordingTerminalOptions {
+	readonly answers?: RecordingTerminalAnswers
+	readonly defer?: readonly PromptType[]
+}
+
+/** A {@link createRecorder} per {@link PromptFormInterface} form, keyed by form name. */
+export interface RecordingTerminalCalls {
+	readonly input: TestRecorderInterface<readonly [InputOptions]>
+	readonly password: TestRecorderInterface<readonly [PasswordOptions]>
+	readonly confirm: TestRecorderInterface<readonly [ConfirmOptions]>
+	readonly select: TestRecorderInterface<readonly [SelectOptions]>
+	readonly checkbox: TestRecorderInterface<readonly [CheckboxOptions]>
+	readonly editor: TestRecorderInterface<readonly [EditorOptions]>
+}
+
+/** One deferred, still-unresolved {@link createRecordingTerminal} form call. */
+export interface RecordingTerminalPendingCall {
+	readonly form: PromptType
+}
+
+/** Controls over the deferred calls a {@link createRecordingTerminal} is holding pending. */
+export interface RecordingTerminalController {
+	/** The currently deferred, unresolved calls (in call order). */
+	readonly pending: readonly RecordingTerminalPendingCall[]
+	/** Resolve deferred calls with their configured answer — every pending call, or only `form`'s. */
+	release(form?: PromptType): void
+}
+
+/** The result of {@link createRecordingTerminal} — a real terminal, its call recorders, and deferred-call control. */
+export interface RecordingTerminalResult {
+	readonly terminal: PromptFormInterface
+	readonly calls: RecordingTerminalCalls
+	readonly controller: RecordingTerminalController
+}
+
+/**
+ * Create a {@link RecordingTerminalResult} — a REAL {@link PromptFormInterface}
+ * implementation (not a mock) whose six form methods record their `options` into
+ * per-form recorders and resolve a configured per-form answer (AGENTS §16.1). A form
+ * listed in `options.defer` instead holds its call PENDING until released through
+ * {@link RecordingTerminalController.release} — for exercising in-flight duplicate
+ * suppression and similar pending-call behavior without a real terminal.
+ *
+ * @param options - The {@link RecordingTerminalOptions} (answers + deferred forms)
+ * @returns The recording terminal, its call recorders, and the deferred-call controller
+ */
+export function createRecordingTerminal(
+	options: RecordingTerminalOptions = {},
+): RecordingTerminalResult {
+	const answers = options.answers ?? {}
+	const deferred = new Set(options.defer ?? [])
+	const calls: RecordingTerminalCalls = {
+		input: createRecorder<readonly [InputOptions]>(),
+		password: createRecorder<readonly [PasswordOptions]>(),
+		confirm: createRecorder<readonly [ConfirmOptions]>(),
+		select: createRecorder<readonly [SelectOptions]>(),
+		checkbox: createRecorder<readonly [CheckboxOptions]>(),
+		editor: createRecorder<readonly [EditorOptions]>(),
+	}
+	const waiting: { readonly form: PromptType; readonly resolve: () => void }[] = []
+
+	function call<TOptions, TValue>(
+		form: PromptType,
+		recorder: TestRecorderInterface<readonly [TOptions]>,
+		formOptions: TOptions,
+		value: TValue,
+	): Promise<TValue> {
+		recorder.handler(formOptions)
+		if (!deferred.has(form)) return Promise.resolve(value)
+		return new Promise<TValue>((resolve) => {
+			waiting.push({ form, resolve: () => resolve(value) })
+		})
+	}
+
+	const terminal: PromptFormInterface = {
+		input: (formOptions) => call('input', calls.input, formOptions, answers.input ?? ''),
+		password: (formOptions) =>
+			call('password', calls.password, formOptions, answers.password ?? ''),
+		confirm: (formOptions) => call('confirm', calls.confirm, formOptions, answers.confirm ?? false),
+		select: (formOptions) => call('select', calls.select, formOptions, answers.select ?? ''),
+		checkbox: (formOptions) =>
+			call('checkbox', calls.checkbox, formOptions, answers.checkbox ?? []),
+		editor: (formOptions) => call('editor', calls.editor, formOptions, answers.editor ?? ''),
+	}
+
+	const controller: RecordingTerminalController = {
+		get pending() {
+			return waiting.map((entry) => ({ form: entry.form }))
+		},
+		release(form) {
+			const releasing =
+				form === undefined ? waiting.slice() : waiting.filter((entry) => entry.form === form)
+			for (const entry of releasing) {
+				const index = waiting.indexOf(entry)
+				if (index >= 0) waiting.splice(index, 1)
+				entry.resolve()
+			}
+		},
+	}
+
+	return { terminal, calls, controller }
 }

@@ -1,12 +1,7 @@
 import type {
-	CheckboxState,
-	EditorState,
-	InputState,
 	PasswordState,
 	PendingPrompt,
-	PromptFormInterface,
 	PromptStep,
-	SelectState,
 	ValidationRules,
 	Validator,
 } from '@src/core'
@@ -32,6 +27,7 @@ import {
 	inputReduce,
 	inputView,
 	isCheckboxChoice,
+	isInsecureRemote,
 	isPendingPrompt,
 	isPendingPromptStatus,
 	isPrintable,
@@ -55,6 +51,7 @@ import {
 } from '@src/core'
 import { createStyler, strip } from '@orkestrel/console'
 import { isNumber, isString } from '@orkestrel/contract'
+import { createRecordingTerminal, feedReducer } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The PURE prompt core — parseKey (a total key decoder), the validation engine
@@ -275,17 +272,17 @@ describe('normalizeChoice / normalizeCheckboxChoice', () => {
 })
 
 // === Reducer drivers (deterministic)
-
-// Thread a scripted sequence of key strings through a text reducer, returning the final step.
-function feedInput(state: InputState, keys: readonly string[]): PromptStep<string, InputState> {
-	let step: PromptStep<string, InputState> = { state, view: '', status: 'active' }
-	for (const k of keys) step = inputReduce(step.state, parseKey(k))
-	return step
-}
+//
+// The shared `feedReducer` helper (tests/setup.ts, AGENTS §16.1) threads a scripted key
+// sequence through a reducer via the real `parseKey` — the one general form of the
+// per-reducer `feed` / `feedInput` drivers that used to be hand-duplicated below.
 
 describe('inputReduce', () => {
 	it('accumulates printable characters into the value', () => {
-		const step = feedInput(createInputState({ message: 'Name', styler: plain }), ['h', 'i'])
+		const step = feedReducer(inputReduce, createInputState({ message: 'Name', styler: plain }), [
+			'h',
+			'i',
+		])
 		expect(step.status).toBe('active')
 		expect(step.state.value).toBe('hi')
 		expect(step.view).toContain('hi')
@@ -293,27 +290,34 @@ describe('inputReduce', () => {
 
 	it('backspace shrinks, space inserts, ctrl-u clears', () => {
 		const base = createInputState({ message: 'Name', styler: plain })
-		expect(feedInput(base, ['a', 'b', '\x7f']).state.value).toBe('a')
-		expect(feedInput(base, ['a', ' ', 'b']).state.value).toBe('a b')
-		expect(feedInput(base, ['a', 'b', '\x15']).state.value).toBe('')
+		expect(feedReducer(inputReduce, base, ['a', 'b', '\x7f']).state.value).toBe('a')
+		expect(feedReducer(inputReduce, base, ['a', ' ', 'b']).state.value).toBe('a b')
+		expect(feedReducer(inputReduce, base, ['a', 'b', '\x15']).state.value).toBe('')
 	})
 
 	it('submits the typed value through the validator', () => {
-		const step = feedInput(createInputState({ message: 'Name', styler: plain }), ['j', 'o', '\r'])
+		const step = feedReducer(inputReduce, createInputState({ message: 'Name', styler: plain }), [
+			'j',
+			'o',
+			'\r',
+		])
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('jo')
 	})
 
 	it('an empty submit falls back to the default', () => {
-		const step = feedInput(createInputState({ message: 'Name', default: 'anon', styler: plain }), [
-			'\r',
-		])
+		const step = feedReducer(
+			inputReduce,
+			createInputState({ message: 'Name', default: 'anon', styler: plain }),
+			['\r'],
+		)
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('anon')
 	})
 
 	it('a failing validator keeps the prompt active with the error in the view', () => {
-		const step = feedInput(
+		const step = feedReducer(
+			inputReduce,
 			createInputState({ message: 'Name', validate: { minimum: 3 }, styler: plain }),
 			['a', '\r'],
 		)
@@ -323,7 +327,10 @@ describe('inputReduce', () => {
 	})
 
 	it('ctrl-c cancels', () => {
-		const step = feedInput(createInputState({ message: 'Name', styler: plain }), ['a', '\x03'])
+		const step = feedReducer(inputReduce, createInputState({ message: 'Name', styler: plain }), [
+			'a',
+			'\x03',
+		])
 		expect(step.status).toBe('cancel')
 		expect(step.value).toBeUndefined()
 	})
@@ -339,38 +346,50 @@ describe('inputReduce', () => {
 })
 
 describe('passwordReduce', () => {
-	function feed(state: PasswordState, keys: readonly string[]): PromptStep<string, PasswordState> {
-		let step: PromptStep<string, PasswordState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = passwordReduce(step.state, parseKey(k))
-		return step
-	}
-
 	it('keeps the real value but masks it in the view', () => {
-		const step = feed(createPasswordState({ message: 'PIN', styler: plain }), ['1', '2', '3'])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', styler: plain }),
+			['1', '2', '3'],
+		)
 		expect(step.state.value).toBe('123')
 		expect(step.view).toContain('***')
 		expect(step.view).not.toContain('123')
 	})
 
 	it('honors a custom mask', () => {
-		const step = feed(createPasswordState({ message: 'PIN', mask: '•', styler: plain }), ['a', 'b'])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', mask: '•', styler: plain }),
+			['a', 'b'],
+		)
 		expect(step.view).toContain('••')
 	})
 
 	it('submits the unmasked value through the validator', () => {
-		const step = feed(
+		const step = feedReducer(
+			passwordReduce,
 			createPasswordState({ message: 'PIN', validate: { minimum: 4 }, styler: plain }),
 			['1', '2', '\r'],
 		)
 		expect(step.status).toBe('active')
 		expect(step.state.error).toBe('Must be at least 4 characters')
-		const ok = feed(createPasswordState({ message: 'PIN', styler: plain }), ['s', 'e', 'c', '\r'])
+		const ok = feedReducer(passwordReduce, createPasswordState({ message: 'PIN', styler: plain }), [
+			's',
+			'e',
+			'c',
+			'\r',
+		])
 		expect(ok.status).toBe('submit')
 		expect(ok.value).toBe('sec')
 	})
 
 	it('ctrl-c cancels', () => {
-		const step = feed(createPasswordState({ message: 'PIN', styler: plain }), ['1', '\x03'])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', styler: plain }),
+			['1', '\x03'],
+		)
 		expect(step.status).toBe('cancel')
 	})
 })
@@ -429,12 +448,6 @@ describe('confirmReduce', () => {
 })
 
 describe('selectReduce', () => {
-	function feed(state: SelectState, keys: readonly string[]): PromptStep<string, SelectState> {
-		let step: PromptStep<string, SelectState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = selectReduce(step.state, parseKey(k))
-		return step
-	}
-
 	const options = { message: 'Pick', choices: ['a', 'b', 'c'], styler: plain }
 
 	it('renders one row per choice with the focused row marked', () => {
@@ -446,12 +459,12 @@ describe('selectReduce', () => {
 	})
 
 	it('down/up move the focus and wrap', () => {
-		expect(feed(createSelectState(options), ['\x1b[B']).state.focused).toBe(1)
+		expect(feedReducer(selectReduce, createSelectState(options), ['\x1b[B']).state.focused).toBe(1)
 		// Up from the first wraps to the last.
-		expect(feed(createSelectState(options), ['\x1b[A']).state.focused).toBe(2)
+		expect(feedReducer(selectReduce, createSelectState(options), ['\x1b[A']).state.focused).toBe(2)
 		// j/k aliases.
-		expect(feed(createSelectState(options), ['j', 'j']).state.focused).toBe(2)
-		expect(feed(createSelectState(options), ['k']).state.focused).toBe(2)
+		expect(feedReducer(selectReduce, createSelectState(options), ['j', 'j']).state.focused).toBe(2)
+		expect(feedReducer(selectReduce, createSelectState(options), ['k']).state.focused).toBe(2)
 	})
 
 	it('pre-focuses the default choice', () => {
@@ -460,31 +473,22 @@ describe('selectReduce', () => {
 	})
 
 	it('return submits the focused choice value', () => {
-		const step = feed(createSelectState(options), ['\x1b[B', '\r'])
+		const step = feedReducer(selectReduce, createSelectState(options), ['\x1b[B', '\r'])
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('b')
 	})
 
 	it('ctrl-c cancels', () => {
-		expect(feed(createSelectState(options), ['\x03']).status).toBe('cancel')
+		expect(feedReducer(selectReduce, createSelectState(options), ['\x03']).status).toBe('cancel')
 	})
 })
 
 describe('checkboxReduce', () => {
-	function feed(
-		state: CheckboxState,
-		keys: readonly string[],
-	): PromptStep<readonly string[], CheckboxState> {
-		let step: PromptStep<readonly string[], CheckboxState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = checkboxReduce(step.state, parseKey(k))
-		return step
-	}
-
 	const options = { message: 'Pick', choices: ['a', 'b', 'c'], styler: plain }
 
 	it('space toggles the focused box', () => {
 		// toggle index 0, move down, toggle index 1.
-		const step = feed(createCheckboxState(options), [' ', '\x1b[B', ' '])
+		const step = feedReducer(checkboxReduce, createCheckboxState(options), [' ', '\x1b[B', ' '])
 		expect([...step.state.checked].sort((x, y) => x - y)).toEqual([0, 1])
 	})
 
@@ -499,7 +503,7 @@ describe('checkboxReduce', () => {
 
 	it('submits the checked values in choice order', () => {
 		// Check c (index 2) first, then a (index 0); the result is ordered [a, c].
-		const step = feed(createCheckboxState(options), [
+		const step = feedReducer(checkboxReduce, createCheckboxState(options), [
 			'\x1b[B',
 			'\x1b[B',
 			' ',
@@ -513,31 +517,41 @@ describe('checkboxReduce', () => {
 	})
 
 	it('the count summary appears in the view', () => {
-		const step = feed(createCheckboxState(options), [' '])
+		const step = feedReducer(checkboxReduce, createCheckboxState(options), [' '])
 		expect(step.view).toContain('1 selected')
 	})
 
 	it('min gating rejects an under-full submit with the reason', () => {
-		const step = feed(createCheckboxState({ ...options, min: 2 }), [' ', '\r'])
+		const step = feedReducer(checkboxReduce, createCheckboxState({ ...options, min: 2 }), [
+			' ',
+			'\r',
+		])
 		expect(step.status).toBe('active')
 		expect(step.state.error).toBe('Select at least 2 options')
 		expect(step.view).toContain('Select at least 2 options')
 	})
 
 	it('max gating rejects an over-full submit', () => {
-		const step = feed(createCheckboxState({ ...options, max: 1 }), [' ', '\x1b[B', ' ', '\r'])
+		const step = feedReducer(checkboxReduce, createCheckboxState({ ...options, max: 1 }), [
+			' ',
+			'\x1b[B',
+			' ',
+			'\r',
+		])
 		expect(step.status).toBe('active')
 		expect(step.state.error).toBe('Select no more than 1 option')
 	})
 
 	it('an empty submit is allowed when no min is set', () => {
-		const step = feed(createCheckboxState(options), ['\r'])
+		const step = feedReducer(checkboxReduce, createCheckboxState(options), ['\r'])
 		expect(step.status).toBe('submit')
 		expect(step.value).toEqual([])
 	})
 
 	it('ctrl-c cancels', () => {
-		expect(feed(createCheckboxState(options), ['\x03']).status).toBe('cancel')
+		expect(feedReducer(checkboxReduce, createCheckboxState(options), ['\x03']).status).toBe(
+			'cancel',
+		)
 	})
 })
 
@@ -556,14 +570,8 @@ describe('toggleIndex / gateSelection', () => {
 })
 
 describe('editorReduce', () => {
-	function feed(state: EditorState, keys: readonly string[]): PromptStep<string, EditorState> {
-		let step: PromptStep<string, EditorState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = editorReduce(step.state, parseKey(k))
-		return step
-	}
-
 	it('accumulates multi-line text, return committing a line', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), [
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
 			'h',
 			'i',
 			'\r',
@@ -575,7 +583,7 @@ describe('editorReduce', () => {
 	})
 
 	it('ctrl-d finishes, joining the lines with newlines', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), [
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
 			'a',
 			'\r',
 			'b',
@@ -586,15 +594,18 @@ describe('editorReduce', () => {
 	})
 
 	it('an empty finish falls back to the default', () => {
-		const step = feed(createEditorState({ message: 'Body', default: 'none', styler: plain }), [
-			'\x04',
-		])
+		const step = feedReducer(
+			editorReduce,
+			createEditorState({ message: 'Body', default: 'none', styler: plain }),
+			['\x04'],
+		)
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('none')
 	})
 
 	it('validates the whole text on finish — invalid stays active', () => {
-		const step = feed(
+		const step = feedReducer(
+			editorReduce,
 			createEditorState({ message: 'Body', validate: { minimum: 5 }, styler: plain }),
 			['h', 'i', '\x04'],
 		)
@@ -603,14 +614,21 @@ describe('editorReduce', () => {
 	})
 
 	it('backspace edits the current line', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), ['a', 'b', '\x7f'])
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
+			'a',
+			'b',
+			'\x7f',
+		])
 		expect(step.state.current).toBe('a')
 	})
 
 	it('ctrl-c cancels', () => {
-		expect(feed(createEditorState({ message: 'Body', styler: plain }), ['a', '\x03']).status).toBe(
-			'cancel',
-		)
+		expect(
+			feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
+				'a',
+				'\x03',
+			]).status,
+		).toBe('cancel')
 	})
 })
 
@@ -713,30 +731,7 @@ describe('isPendingPrompt', () => {
 
 describe('dispatchPendingPrompt', () => {
 	it('reconstructs typed options and drives the matching terminal method', async () => {
-		const seen: { message?: string; default?: string; valid?: true | string } = {}
-		const terminal: PromptFormInterface = {
-			async input(options) {
-				seen.message = options.message
-				seen.default = options.default
-				seen.valid = resolveValidation(options.validate)('')
-				return 'answered'
-			},
-			async password() {
-				return ''
-			},
-			async confirm() {
-				return false
-			},
-			async select() {
-				return ''
-			},
-			async checkbox() {
-				return []
-			},
-			async editor() {
-				return ''
-			},
-		}
+		const { terminal, calls } = createRecordingTerminal({ answers: { input: 'answered' } })
 		const pending: PendingPrompt = {
 			id: 'p1',
 			form: 'input',
@@ -747,9 +742,10 @@ describe('dispatchPendingPrompt', () => {
 		}
 		const value = await dispatchPendingPrompt(terminal, pending)
 		expect(value).toBe('answered')
-		expect(seen.message).toBe('Name?')
-		expect(seen.default).toBe('Ada')
-		expect(seen.valid).toBe('This field is required') // the validate rules were rebuilt
+		const seen = calls.input.calls[0]?.[0]
+		expect(seen?.message).toBe('Name?')
+		expect(seen?.default).toBe('Ada')
+		expect(seen && resolveValidation(seen.validate)('')).toBe('This field is required') // the validate rules were rebuilt
 	})
 })
 
@@ -991,7 +987,9 @@ describe('resolveValidation — ReDoS / pathological-input promptness', () => {
 			const start = Date.now()
 			const result = validator(`${long}!`) // a trailing '!' forces the no-match path
 			expect(typeof result === 'string' || result === true).toBe(true)
-			expect(Date.now() - start).toBeLessThan(1000)
+			// A linear regex evaluates a 50k input in microseconds; 50ms is generous headroom for a
+			// slow CI box while still catching a super-linear regression, unlike a 1000ms budget.
+			expect(Date.now() - start).toBeLessThan(50)
 		})
 	}
 })
@@ -1194,12 +1192,6 @@ describe('checkboxReduce — toggle idempotence & gating boundaries', () => {
 // === Password — mask length == value length, the value NEVER appears (strip ANSI)
 
 describe('passwordReduce — mask fidelity & no-leak (ANSI-stripped)', () => {
-	function feed(state: PasswordState, keys: readonly string[]): PromptStep<string, PasswordState> {
-		let step: PromptStep<string, PasswordState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = passwordReduce(step.state, parseKey(k))
-		return step
-	}
-
 	it('the mask length equals the value length at every step', () => {
 		const styled = createStyler({ enabled: true })
 		const secret = ['s', 'e', 'c', 'r', 'e', 't']
@@ -1219,27 +1211,21 @@ describe('passwordReduce — mask fidelity & no-leak (ANSI-stripped)', () => {
 
 	it('the real secret NEVER appears in the rendered view, even stripped of ANSI', () => {
 		const styled = createStyler({ enabled: true })
-		const step = feed(createPasswordState({ message: 'PIN', styler: styled }), [
-			'h',
-			'u',
-			'n',
-			't',
-			'e',
-			'r',
-			'2',
-		])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', styler: styled }),
+			['h', 'u', 'n', 't', 'e', 'r', '2'],
+		)
 		expect(strip(step.view)).not.toContain('hunter2')
 	})
 
 	it('the secret does not leak in the SUBMIT view either', () => {
 		const styled = createStyler({ enabled: true })
-		const step = feed(createPasswordState({ message: 'PIN', styler: styled }), [
-			'p',
-			'a',
-			's',
-			's',
-			'\r',
-		])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', styler: styled }),
+			['p', 'a', 's', 's', '\r'],
+		)
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('pass') // the value is returned to the caller…
 		expect(strip(step.view)).not.toContain('pass') // …but never rendered
@@ -1255,12 +1241,11 @@ describe('passwordReduce — mask fidelity & no-leak (ANSI-stripped)', () => {
 	})
 
 	it('ctrl-u clears a typed password mid-entry', () => {
-		const step = feed(createPasswordState({ message: 'PIN', styler: plain }), [
-			'1',
-			'2',
-			'3',
-			'\x15',
-		])
+		const step = feedReducer(
+			passwordReduce,
+			createPasswordState({ message: 'PIN', styler: plain }),
+			['1', '2', '3', '\x15'],
+		)
 		expect(step.state.value).toBe('')
 		expect(strip(step.view)).not.toContain('*')
 	})
@@ -1269,14 +1254,10 @@ describe('passwordReduce — mask fidelity & no-leak (ANSI-stripped)', () => {
 // === Editor — empty & multi-line edges
 
 describe('editorReduce — empty & multi-line edges', () => {
-	function feed(state: EditorState, keys: readonly string[]): PromptStep<string, EditorState> {
-		let step: PromptStep<string, EditorState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = editorReduce(step.state, parseKey(k))
-		return step
-	}
-
 	it('an immediate ctrl-d with no default submits the empty string (0 lines)', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), ['\x04'])
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
+			'\x04',
+		])
 		expect(step.status).toBe('submit')
 		expect(step.value).toBe('')
 		expect(step.view).toContain('0 lines')
@@ -1284,7 +1265,7 @@ describe('editorReduce — empty & multi-line edges', () => {
 
 	it('blank return lines produce empty committed lines in the joined output', () => {
 		// return, return, then a char, then finish → ['', '', 'x'] joined as '\n\nx'.
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), [
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
 			'\r',
 			'\r',
 			'x',
@@ -1295,14 +1276,18 @@ describe('editorReduce — empty & multi-line edges', () => {
 	})
 
 	it('a single finished line reports "1 line" (singular)', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), ['h', 'i', '\x04'])
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
+			'h',
+			'i',
+			'\x04',
+		])
 		expect(step.value).toBe('hi')
 		expect(step.view).toContain('1 line')
 		expect(step.view).not.toContain('1 lines')
 	})
 
 	it('multi-line text joins committed lines and the in-progress line with newlines', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), [
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
 			'a',
 			'\r',
 			'b',
@@ -1314,7 +1299,10 @@ describe('editorReduce — empty & multi-line edges', () => {
 	})
 
 	it('the in-progress current line is preserved (not committed) until return / finish', () => {
-		const step = feed(createEditorState({ message: 'Body', styler: plain }), ['a', 'b'])
+		const step = feedReducer(editorReduce, createEditorState({ message: 'Body', styler: plain }), [
+			'a',
+			'b',
+		])
 		expect(step.state.lines).toEqual([])
 		expect(step.state.current).toBe('ab')
 	})
@@ -1375,14 +1363,9 @@ describe('confirmReduce — exhaustive transitions', () => {
 // === inputReduce — remaining edges (error cleared on keystroke, styled views)
 
 describe('inputReduce — error clearing & view edges', () => {
-	function feed(state: InputState, keys: readonly string[]): PromptStep<string, InputState> {
-		let step: PromptStep<string, InputState> = { state, view: '', status: 'active' }
-		for (const k of keys) step = inputReduce(step.state, parseKey(k))
-		return step
-	}
-
 	it('a validation error is cleared by the next keystroke', () => {
-		const rejected = feed(
+		const rejected = feedReducer(
+			inputReduce,
 			createInputState({ message: 'Name', validate: { minimum: 3 }, styler: plain }),
 			['a', '\r'],
 		)
@@ -1395,12 +1378,19 @@ describe('inputReduce — error clearing & view edges', () => {
 	it('the dimmed default hint shows when the value is empty, then the typed value replaces it', () => {
 		const empty = inputView(createInputState({ message: 'Name', default: 'anon', styler: plain }))
 		expect(empty).toContain('anon')
-		const typed = feed(createInputState({ message: 'Name', default: 'anon', styler: plain }), ['x'])
+		const typed = feedReducer(
+			inputReduce,
+			createInputState({ message: 'Name', default: 'anon', styler: plain }),
+			['x'],
+		)
 		expect(typed.view).toContain('x')
 	})
 
 	it('a non-editing key (a bare arrow) leaves the value and keeps it active', () => {
-		const step = feed(createInputState({ message: 'Name', styler: plain }), ['a', '\x1b[A'])
+		const step = feedReducer(inputReduce, createInputState({ message: 'Name', styler: plain }), [
+			'a',
+			'\x1b[A',
+		])
 		expect(step.status).toBe('active')
 		expect(step.state.value).toBe('a') // the arrow did not edit
 	})
@@ -1541,7 +1531,7 @@ describe('serializePromptOptions — additional drops & round-trips', () => {
 })
 
 describe('reconstructValidationRules — additional edges', () => {
-	it('keeps boolean / number / string rule values and drops objects / arrays / functions', () => {
+	it('keeps boolean / number rule values, drops objects / arrays / functions, and drops pattern (ReDoS defense)', () => {
 		expect(
 			reconstructValidationRules({
 				required: true,
@@ -1550,7 +1540,7 @@ describe('reconstructValidationRules — additional edges', () => {
 				junk: { a: 1 },
 				list: [1],
 			}),
-		).toEqual({ required: true, minimum: 3, pattern: '^x$' })
+		).toEqual({ required: true, minimum: 3 })
 	})
 
 	it('returns undefined when every value is non-primitive (nothing applicable survives)', () => {
@@ -1561,73 +1551,53 @@ describe('reconstructValidationRules — additional edges', () => {
 // === dispatchPendingPrompt — every form reconstructs its typed options
 
 describe('dispatchPendingPrompt — per-form option reconstruction', () => {
-	// A recording terminal: each method records the options bag it was handed and resolves a scripted
-	// value. A real PromptFormInterface (not a mock) — it just resolves immediately.
-	function recordingTerminal(): {
-		readonly terminal: PromptFormInterface
-		readonly seen: Record<string, unknown>
-	} {
-		const seen: Record<string, unknown> = {}
-		const terminal: PromptFormInterface = {
-			async input(options) {
-				seen.input = options
-				return 'i'
-			},
-			async password(options) {
-				seen.password = options
-				return 'p'
-			},
-			async confirm(options) {
-				seen.confirm = options
-				return true
-			},
-			async select(options) {
-				seen.select = options
-				return 's'
-			},
-			async checkbox(options) {
-				seen.checkbox = options
-				return ['c']
-			},
-			async editor(options) {
-				seen.editor = options
-				return 'e'
-			},
-		}
-		return { terminal, seen }
-	}
+	// The shared createRecordingTerminal (tests/setup.ts, AGENTS §16.1) — a real
+	// PromptFormInterface whose six form methods record their options and resolve a
+	// configured per-form answer.
+	const ANSWERS = {
+		input: 'i',
+		password: 'p',
+		confirm: true,
+		select: 's',
+		checkbox: ['c'],
+		editor: 'e',
+	} as const
 
 	function pendingOf(form: PendingPrompt['form'], options: Record<string, unknown>): PendingPrompt {
 		return { id: 'p', form, message: `${form}?`, options, status: 'pending', time: 1 }
 	}
 
 	it('password — reconstructs mask + validate rules', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		const value = await dispatchPendingPrompt(
 			terminal,
 			pendingOf('password', { mask: '#', validate: { minimum: 4 } }),
 		)
 		expect(value).toBe('p')
-		expect(seen.password).toEqual({ message: 'password?', mask: '#', validate: { minimum: 4 } })
+		expect(calls.password.calls[0]?.[0]).toEqual({
+			message: 'password?',
+			mask: '#',
+			validate: { minimum: 4 },
+		})
 	})
 
 	it('confirm — reconstructs the boolean default, ignores a non-boolean default', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		await dispatchPendingPrompt(terminal, pendingOf('confirm', { default: true }))
-		expect(seen.confirm).toEqual({ message: 'confirm?', default: true })
-		const second = recordingTerminal()
+		expect(calls.confirm.calls[0]?.[0]).toEqual({ message: 'confirm?', default: true })
+		const second = createRecordingTerminal({ answers: ANSWERS })
 		await dispatchPendingPrompt(second.terminal, pendingOf('confirm', { default: 'yes' }))
-		expect(second.seen.confirm).toEqual({ message: 'confirm?', default: undefined })
+		expect(second.calls.confirm.calls[0]?.[0]).toEqual({ message: 'confirm?', default: undefined })
 	})
 
 	it('checkbox — reconstructs choices + numeric min / max', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		const value = await dispatchPendingPrompt(
 			terminal,
 			pendingOf('checkbox', { choices: ['a', { name: 'B', value: 'b' }], min: 1, max: 2 }),
 		)
 		expect(value).toEqual(['c'])
-		expect(seen.checkbox).toEqual({
+		expect(calls.checkbox.calls[0]?.[0]).toEqual({
 			message: 'checkbox?',
 			choices: ['a', { name: 'B', value: 'b' }],
 			min: 1,
@@ -1636,21 +1606,25 @@ describe('dispatchPendingPrompt — per-form option reconstruction', () => {
 	})
 
 	it('select — reconstructs choices + default', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		await dispatchPendingPrompt(
 			terminal,
 			pendingOf('select', { choices: ['a', 'b'], default: 'b' }),
 		)
-		expect(seen.select).toEqual({ message: 'select?', choices: ['a', 'b'], default: 'b' })
+		expect(calls.select.calls[0]?.[0]).toEqual({
+			message: 'select?',
+			choices: ['a', 'b'],
+			default: 'b',
+		})
 	})
 
 	it('editor — reconstructs default + validate rules', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		await dispatchPendingPrompt(
 			terminal,
 			pendingOf('editor', { default: 'seed', validate: { required: true } }),
 		)
-		expect(seen.editor).toEqual({
+		expect(calls.editor.calls[0]?.[0]).toEqual({
 			message: 'editor?',
 			default: 'seed',
 			validate: { required: true },
@@ -1658,9 +1632,133 @@ describe('dispatchPendingPrompt — per-form option reconstruction', () => {
 	})
 
 	it('a missing options bag still dispatches (every option resolves to undefined)', async () => {
-		const { terminal, seen } = recordingTerminal()
+		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		const value = await dispatchPendingPrompt(terminal, pendingOf('input', {}))
 		expect(value).toBe('i')
-		expect(seen.input).toEqual({ message: 'input?', default: undefined, validate: undefined })
+		expect(calls.input.calls[0]?.[0]).toEqual({
+			message: 'input?',
+			default: undefined,
+			validate: undefined,
+		})
+	})
+})
+
+// === Validation engine — an uncompilable pattern source (totality)
+
+describe('resolveValidation — uncompilable pattern source', () => {
+	it('an uncompilable pattern source resolves to the pattern failure message and never throws', () => {
+		let result: string | true | undefined
+		expect(() => {
+			result = resolveValidation({ pattern: '(' })('anything')
+		}).not.toThrow()
+		expect(result).toBe('Must match pattern: (')
+	})
+})
+
+// === Wire dispatch — the pattern rule is dropped (defusing a ReDoS-shaped wire payload)
+
+describe('dispatchPendingPrompt — a wire pattern rule is dropped (ReDoS defused)', () => {
+	it('a pending validate.pattern never reaches the reconstructed rules; the resulting validator is instant on an adversarial input', async () => {
+		const { terminal, calls } = createRecordingTerminal()
+		const pending: PendingPrompt = {
+			id: 'p1',
+			form: 'input',
+			message: 'Name?',
+			options: { validate: { pattern: '(a+)+$' } },
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		const seenValidate = calls.input.calls[0]?.[0].validate
+		// `pattern` was the ONLY rule in the payload — reconstructValidationRules drops it, leaving
+		// nothing applicable, so the reconstructed rules bag is undefined (no pattern rule at all).
+		expect(seenValidate).toBeUndefined()
+		const validator = resolveValidation(seenValidate)
+		const start = Date.now()
+		const result = validator(`${'a'.repeat(30)}!`) // would catastrophically backtrack if the pattern survived
+		expect(result).toBe(true)
+		expect(Date.now() - start).toBeLessThan(1000)
+	})
+})
+
+// === Wire dispatch — control-byte stripping (dispatch sanitizes; a direct view render does not)
+
+describe('dispatchPendingPrompt — control-byte stripping (ESC / OSC-52)', () => {
+	it('strips ESC / OSC-52 sequences from the message and choice labels before reaching the terminal', async () => {
+		const { terminal, calls } = createRecordingTerminal()
+		const escMessage = 'Name\x1b]52;c;AA==\x07?'
+		const pending: PendingPrompt = {
+			id: 'p1',
+			form: 'select',
+			message: escMessage,
+			options: {
+				choices: [{ name: 'A\x1b]52;c;AA==\x07', value: 'a', description: 'desc\x1b[31m' }],
+			},
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		const seen = calls.select.calls[0]?.[0]
+		expect(seen?.message).not.toContain('\x1b')
+		const choice = seen?.choices[0]
+		if (choice === undefined || isString(choice)) {
+			throw new Error('expected a sanitized choice object, got a string or undefined')
+		}
+		expect(choice.name).not.toContain('\x1b')
+		expect(choice.description).not.toContain('\x1b')
+	})
+
+	it('a LOCAL view render does NOT strip control bytes — sanitization is a dispatch-only concern', () => {
+		const raw = 'Pick\x1b]52;c;AA==\x07'
+		const state = createSelectState({ message: raw, choices: ['a'], styler: plain })
+		const view = selectView(state)
+		// The renderer reproduces the message verbatim; only dispatchPendingPrompt (a remote-input
+		// boundary) sanitizes with stripControls — a local caller controls its own message content.
+		expect(view).toContain('\x1b')
+	})
+})
+
+// === Validation engine — code-point length boundary (astral characters)
+
+describe('resolveValidation — minimum/maximum use code-point length (astral boundary)', () => {
+	it('a 2-astral-character string has length 2 by code points, not 4 by UTF-16 units', () => {
+		const twoAstral = '😀😀' // each emoji is a surrogate pair: 4 UTF-16 units, 2 code points
+		expect(twoAstral.length).toBe(4)
+		expect([...twoAstral].length).toBe(2)
+
+		const min = resolveValidation({ minimum: 2 })
+		expect(min(twoAstral)).toBe(true) // 2 code points >= 2
+
+		const minTooHigh = resolveValidation({ minimum: 3 })
+		expect(minTooHigh(twoAstral)).toBe('Must be at least 3 characters') // 2 code points < 3
+
+		const max = resolveValidation({ maximum: 2 })
+		expect(max(twoAstral)).toBe(true) // 2 code points <= 2
+
+		const maxTooLow = resolveValidation({ maximum: 1 })
+		expect(maxTooLow(twoAstral)).toBe('Must be at most 1 characters') // 2 code points > 1
+	})
+})
+
+// === isInsecureRemote
+
+describe('isInsecureRemote', () => {
+	it('an http loopback endpoint is NOT insecure', () => {
+		expect(isInsecureRemote('http://localhost:3000')).toBe(false)
+		expect(isInsecureRemote('http://127.0.0.1:8080')).toBe(false)
+		expect(isInsecureRemote('http://[::1]:9000')).toBe(false)
+		expect(isInsecureRemote('http://localhost')).toBe(false)
+	})
+
+	it('an http remote (non-loopback) host IS insecure', () => {
+		expect(isInsecureRemote('http://example.com')).toBe(true)
+		expect(isInsecureRemote('http://192.168.1.5:3000/path')).toBe(true)
+		expect(isInsecureRemote('http://user@example.com')).toBe(true)
+	})
+
+	it('https is never flagged insecure, regardless of host', () => {
+		expect(isInsecureRemote('https://example.com')).toBe(false)
+		expect(isInsecureRemote('https://localhost')).toBe(false)
+		expect(isInsecureRemote('ws://example.com')).toBe(false) // not http:// at all
 	})
 })

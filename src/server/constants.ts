@@ -27,12 +27,6 @@ export const CURSOR_HIDE = `${CSI}?25l`
 export const CURSOR_SHOW = `${CSI}?25h`
 
 /**
- * Erase from the cursor to the end of the current line (`ESC[K`) — clears stale glyphs when a redrawn
- * line is shorter than the line it replaces, so no trailing characters from the previous view remain.
- */
-export const CLEAR_LINE = `${CSI}K`
-
-/**
  * Erase from the cursor down to the end of the screen (`ESC[J`) — wipes the WHOLE previous (possibly
  * multi-line `select` / `checkbox`) view in one write before the new view is rendered, so a redraw
  * never leaves orphaned rows below.

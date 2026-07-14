@@ -1,5 +1,5 @@
 import { createPrompt, createPromptClient } from '@src/core'
-import { createManualTimer } from '../../setup.js'
+import { createManualTimer, createRecordingTerminal } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The terminals factories are thin constructors — these tests assert each returns a working
@@ -30,16 +30,10 @@ describe('createPrompt', () => {
 
 describe('createPromptClient', () => {
 	it('returns a client exposing its url, not yet connected', () => {
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({
 			url: 'http://broker/prompts',
-			terminal: {
-				input: async () => '',
-				password: async () => '',
-				confirm: async () => false,
-				select: async () => '',
-				checkbox: async () => [],
-				editor: async () => '',
-			},
+			terminal,
 		})
 		expect(client.url).toBe('http://broker/prompts')
 		expect(client.connected).toBe(false)

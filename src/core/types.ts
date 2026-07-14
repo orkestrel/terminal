@@ -430,14 +430,16 @@ export type TimerHandler = (callback: () => void, ms: number) => TimerCancel
 /** Cancel a pending {@link TimerHandler} deadline — idempotent, safe to call after the timer fired. */
 export type TimerCancel = () => void
 
-// One parked prompt's runtime state inside the broker — the wire-safe {@link PendingPrompt} record
-// it exposes, plus the live machinery that settles that prompt's Promise. `respond` is the per-form
-// gate-and-resolve closure: it validates + type-checks an answer and (on accept) resolves the parked
-// Promise, returning whether it accepted; it closes over the form's precisely-typed `resolve`, so no
-// per-form generic leaks into `answer`. `expire` rejects the parked Promise; `cancel` clears the
-// injected expiry timer ({@link TimerCancel}).
+/**
+ * One parked prompt's runtime state inside the broker — the wire-safe {@link PendingPrompt} record
+ * it exposes, plus the live machinery that settles that prompt's Promise. `respond` is the per-form
+ * gate-and-resolve closure: it validates + type-checks an answer and (on accept) resolves the parked
+ * Promise, returning whether it accepted; it closes over the form's precisely-typed `resolve`, so no
+ * per-form generic leaks into `answer`. `expire` rejects the parked Promise; `cancel` clears the
+ * injected expiry timer ({@link TimerCancel}).
+ */
 export interface Parked {
-	prompt: PendingPrompt
+	readonly prompt: PendingPrompt
 	readonly respond: (value: unknown) => unknown
 	readonly expire: () => void
 	readonly cancel: TimerCancel

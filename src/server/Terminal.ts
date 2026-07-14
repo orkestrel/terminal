@@ -103,6 +103,8 @@ export class Terminal implements TerminalInterface {
 				resolveValidation(options.validate)(answer) === true ? { value: answer } : undefined,
 			// EOF: settle the entered secret (or '') — a piped stream can't be re-prompted.
 			(answer) => answer,
+			// A degraded TTY (isTTY but no setRawMode) must never echo the secret being typed.
+			true,
 		)
 	}
 
@@ -207,24 +209,40 @@ export class Terminal implements TerminalInterface {
 			let state = initial
 			// Render the first view, tracking how many lines it spans so the next redraw climbs over them.
 			this.#output.write(CURSOR_HIDE)
-			const firstView = reduce(state, parseKey('')).view
-			this.#output.write(firstView)
+			let firstView: string
+			try {
+				firstView = reduce(state, parseKey('')).view
+				this.#output.write(firstView)
+			} catch (error) {
+				// Raw mode was never entered yet, but the cursor was hidden — restore it before rejecting.
+				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				reject(error)
+				return
+			}
 			let lines = lineCount(firstView)
 
 			const handler = (chunk: string | Uint8Array): void => {
-				const step = reduce(state, parseKey(chunk))
-				state = step.state
-				if (step.status === 'active') {
+				try {
+					const step = reduce(state, parseKey(chunk))
+					state = step.state
+					if (step.status === 'active') {
+						this.#render(step.view, lines)
+						lines = lineCount(step.view)
+						return
+					}
+					// Terminal step (submit / cancel): paint the final committed view, then tear down.
 					this.#render(step.view, lines)
-					lines = lineCount(step.view)
-					return
+					cleanup()
+					this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+					if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
+					else reject(new TerminalError('CANCEL', 'Prompt cancelled'))
+				} catch (error) {
+					// A throw inside the reducer/validator/styler: tear down raw mode + the listener,
+					// restore the cursor exactly as the normal exit path does, then reject.
+					cleanup()
+					this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+					reject(error)
 				}
-				// Terminal step (submit / cancel): paint the final committed view, then tear down.
-				this.#render(step.view, lines)
-				cleanup()
-				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
-				if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
-				else reject(new TerminalError('CANCEL', 'Prompt cancelled'))
 			}
 
 			const cleanup = this.#enterRaw(handler)
@@ -255,10 +273,15 @@ export class Terminal implements TerminalInterface {
 		styler: StylerInterface | undefined,
 		take: (answer: string) => { readonly value: T } | undefined,
 		eof: (answer: string) => T,
+		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
+		masked = false,
 	): Promise<T> {
 		const paint = styler ?? createStyler()
 		for (;;) {
-			const { answer, ended } = await this.#question(`${paint.cyan('?')} ${paint.bold(message)} `)
+			const { answer, ended } = await this.#question(
+				`${paint.cyan('?')} ${paint.bold(message)} `,
+				masked,
+			)
 			const accepted = take(answer)
 			if (accepted !== undefined) return accepted.value
 			if (ended) return eof(answer)
@@ -326,8 +349,12 @@ export class Terminal implements TerminalInterface {
 	 * than re-prompt an exhausted stream (which would SPIN). Settling is one-shot (a `close` after a
 	 * delivered line is ignored, so a normal newline-terminated line reports `ended: false`).
 	 */
-	#question(prompt: string): Promise<{ readonly answer: string; readonly ended: boolean }> {
-		const rl = createInterface(this.#readline())
+	#question(
+		prompt: string,
+		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
+		masked = false,
+	): Promise<{ readonly answer: string; readonly ended: boolean }> {
+		const rl = createInterface(this.#readline(masked))
 		return new Promise<{ readonly answer: string; readonly ended: boolean }>((resolve) => {
 			let settled = false
 			let last = ''
@@ -363,11 +390,20 @@ export class Terminal implements TerminalInterface {
 	 * injects), both genuine readables; a minimal non-readable fake reaching here means the fallback
 	 * was driven with a stream it cannot use, which fails loudly rather than silently.
 	 */
-	#readline(): { input: NodeJS.ReadableStream; output?: NodeJS.WritableStream } {
+	#readline(
+		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
+		masked = false,
+	): { input: NodeJS.ReadableStream; output?: NodeJS.WritableStream; terminal?: boolean } {
 		// Bind to locals first — a guard narrows a local, not a `#private` field access.
 		const input = this.#input
 		const output = this.#output
 		if (!isReadable(input)) throw new Error('Terminal fallback requires a readable input stream')
-		return { input, output: isWritable(output) ? output : undefined }
+		// `terminal: false` disables readline's own echo/line-editing, so a masked (password) answer is
+		// never rendered on a TTY that lacks `setRawMode` (the raw-mode `#drive` path already masks it).
+		return {
+			input,
+			output: isWritable(output) ? output : undefined,
+			...(masked ? { terminal: false } : {}),
+		}
 	}
 }

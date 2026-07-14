@@ -1,5 +1,5 @@
 import type { FakeTTYInterface } from '../../setupServer.js'
-import type { OutputStreamInterface } from '@src/server'
+import type { InputStreamInterface, OutputStreamInterface } from '@src/server'
 import { describe, expect, it } from 'vitest'
 import { Readable } from 'node:stream'
 import { isTerminalError } from '@src/core'
@@ -159,6 +159,22 @@ describe('Terminal — input', () => {
 		expect(rawOutput(tty)).toContain(CURSOR_SHOW)
 	})
 
+	it('a custom validator that THROWS still cleans up raw mode and rejects with the thrown error', async () => {
+		const tty = createFakeTTY()
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const thrown = new Error('validator exploded')
+		const promise = terminal.input({
+			message: 'Name',
+			validate: () => {
+				throw thrown
+			},
+		})
+		for (const character of 'x') tty.push(character)
+		tty.push(ENTER) // triggers the throwing validator inside the reducer's submit step
+		await expect(promise).rejects.toBe(thrown)
+		assertCleanExit(tty)
+	})
+
 	it('decodes a CTRL+H-form newline (\\n) as Enter too', async () => {
 		const tty = createFakeTTY()
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
@@ -247,6 +263,20 @@ describe('Terminal — password', () => {
 		expect(tty.listeners()).toBe(0)
 		expect(rawOutput(tty)).toContain(CURSOR_HIDE)
 		expect(rawOutput(tty)).toContain(CURSOR_SHOW)
+	})
+
+	it('a degraded TTY (isTTY but no setRawMode) never echoes the typed secret into raw output', async () => {
+		// isTTY: true but setRawMode ABSENT ⇒ isRawCapable is false ⇒ the readline fallback is taken,
+		// which the driver runs with `terminal: false` so a masked answer is never echoed (AGENTS §16.1).
+		const secret = 'sup3r-Secret!'
+		const input: InputStreamInterface = Object.assign(Readable.from([`${secret}\n`]), {
+			isTTY: true,
+		})
+		const { target, writes } = createStreamTarget({ isTTY: true })
+		const terminal = createTerminal({ input, output: target })
+		expect(await terminal.password({ message: 'Secret' })).toBe(secret)
+		const raw = writes.calls.map(([text]) => text).join('')
+		expect(raw).not.toContain(secret)
 	})
 })
 

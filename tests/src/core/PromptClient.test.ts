@@ -1,14 +1,8 @@
-import type {
-	CheckboxOptions,
-	FetchHandler,
-	InputOptions,
-	PromptFormInterface,
-	SelectOptions,
-} from '@src/core'
-import { createPromptClient, HEADER_TOKEN } from '@src/core'
+import type { FetchHandler, PromptFormInterface } from '@src/core'
+import { createPromptClient, HEADER_TOKEN, SSE_BUFFER_LIMIT } from '@src/core'
 import {
 	createManualTimer,
-	createRecorder,
+	createRecordingTerminal,
 	createSSEResponse,
 	recordEmitterEvents,
 	waitForDelay,
@@ -17,9 +11,9 @@ import { describe, expect, it } from 'vitest'
 
 // The SSE prompt BRIDGE, driven deterministically by an INJECTED fetch returning a controlled SSE
 // `ReadableStream` (no real network): the client opens the stream, dispatches each decoded pending
-// prompt to a LOCAL stub terminal, and POSTs the answer back. The injected timer drives the
+// prompt to a LOCAL recording terminal, and POSTs the answer back. The injected timer drives the
 // reconnect backoff. A recorder asserts the §13 events (connect / disconnect / expire / error) and
-// the stub terminal records the options it was dispatched (proving §14 wire reconstruction).
+// the recording terminal records the options it was dispatched (proving §14 wire reconstruction).
 
 // One recorded fetch call (so a test asserts the GET that opened the stream + each POSTed answer).
 interface FetchCall {
@@ -47,44 +41,20 @@ function scriptedFetch(responses: readonly Response[]): {
 	return { fetch, calls }
 }
 
-// A stub local terminal that records each dispatched options bag and answers with a scripted value
-// per form. A real PromptFormInterface (not a mock) — it just resolves immediately.
-function stubTerminal(answers: Partial<Record<keyof PromptFormInterface, unknown>>): {
-	readonly terminal: PromptFormInterface
-	readonly inputs: ReturnType<typeof createRecorder<readonly [InputOptions]>>
-	readonly selects: ReturnType<typeof createRecorder<readonly [SelectOptions]>>
-	readonly checkboxes: ReturnType<typeof createRecorder<readonly [CheckboxOptions]>>
-} {
-	const inputs = createRecorder<readonly [InputOptions]>()
-	const selects = createRecorder<readonly [SelectOptions]>()
-	const checkboxes = createRecorder<readonly [CheckboxOptions]>()
-	const terminal: PromptFormInterface = {
-		async input(options) {
-			inputs.handler(options)
-			return typeof answers.input === 'string' ? answers.input : ''
+// A stream that never closes and never enqueues — stays "open" until `signal` aborts, so a test
+// can catch the client in a genuinely CONNECTED (not-yet-ended) state to exercise a real
+// connected→disconnected transition (N1 concurrency, T2 disconnect/destroy while connected). Mirrors
+// a real fetch's behavior on an aborted in-flight stream: the pending `reader.read()` rejects with
+// an AbortError instead of hanging forever.
+function hangingStream(signal: AbortSignal | undefined): Response {
+	const stream = new ReadableStream<Uint8Array>({
+		start(controller) {
+			signal?.addEventListener('abort', () => {
+				controller.error(new DOMException('aborted', 'AbortError'))
+			})
 		},
-		async password(options) {
-			inputs.handler(options)
-			return typeof answers.password === 'string' ? answers.password : ''
-		},
-		async confirm() {
-			return answers.confirm === true
-		},
-		async select(options) {
-			selects.handler(options)
-			return typeof answers.select === 'string' ? answers.select : ''
-		},
-		async checkbox(options) {
-			checkboxes.handler(options)
-			return Array.isArray(answers.checkbox)
-				? answers.checkbox.filter((v): v is string => typeof v === 'string')
-				: []
-		},
-		async editor() {
-			return typeof answers.editor === 'string' ? answers.editor : ''
-		},
-	}
-	return { terminal, inputs, selects, checkboxes }
+	})
+	return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
 }
 
 describe('PromptClient — dispatch + answer', () => {
@@ -100,7 +70,7 @@ describe('PromptClient — dispatch + answer', () => {
 		const { fetch, calls } = scriptedFetch([
 			createSSEResponse([{ event: 'pending', data: pending }]),
 		])
-		const { terminal, inputs } = stubTerminal({ input: 'Grace' })
+		const { terminal, calls: recorded } = createRecordingTerminal({ answers: { input: 'Grace' } })
 		const client = createPromptClient({
 			url: 'http://broker/prompts',
 			terminal,
@@ -111,8 +81,8 @@ describe('PromptClient — dispatch + answer', () => {
 		await client.connect()
 
 		// The terminal received the reconstructed options (default + validate rules survived the wire).
-		expect(inputs.count).toBe(1)
-		const [options] = inputs.calls[0]
+		expect(recorded.input.count).toBe(1)
+		const [options] = recorded.input.calls[0]
 		expect(options.message).toBe('Name?')
 		expect(options.default).toBe('Ada')
 		expect(options.validate).toEqual({ required: true })
@@ -133,11 +103,11 @@ describe('PromptClient — dispatch + answer', () => {
 			time: 1,
 		}
 		const { fetch } = scriptedFetch([createSSEResponse([{ event: 'pending', data: pending }])])
-		const { terminal, selects } = stubTerminal({ select: 'b' })
+		const { terminal, calls: recorded } = createRecordingTerminal({ answers: { select: 'b' } })
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 
 		await client.connect()
-		const [options] = selects.calls[0]
+		const [options] = recorded.select.calls[0]
 		expect(options.choices).toEqual(['a', { name: 'Bee', value: 'b' }])
 		expect(options.default).toBe('b')
 	})
@@ -146,11 +116,11 @@ describe('PromptClient — dispatch + answer', () => {
 		const { fetch, calls } = scriptedFetch([
 			createSSEResponse([{ event: 'pending', data: { id: 'x' } }]), // missing form/options/etc.
 		])
-		const { terminal, inputs } = stubTerminal({})
+		const { terminal, calls: recorded } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 
 		await client.connect()
-		expect(inputs.count).toBe(0)
+		expect(recorded.input.count).toBe(0)
 		expect(calls.some((call) => call.method === 'POST')).toBe(false)
 	})
 })
@@ -158,7 +128,7 @@ describe('PromptClient — dispatch + answer', () => {
 describe('PromptClient — connection events', () => {
 	it('emits connect then disconnect across one stream', async () => {
 		const { fetch } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 
@@ -172,7 +142,7 @@ describe('PromptClient — connection events', () => {
 		const { fetch } = scriptedFetch([
 			createSSEResponse([{ event: 'expire', data: { id: 'gone' } }]),
 		])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 
@@ -182,7 +152,7 @@ describe('PromptClient — connection events', () => {
 
 	it('emits error on a non-OK response', async () => {
 		const fetch: FetchHandler = () => Promise.resolve(new Response('nope', { status: 500 }))
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 
@@ -192,10 +162,307 @@ describe('PromptClient — connection events', () => {
 	})
 })
 
+describe('PromptClient — disconnect emits exactly once (T2)', () => {
+	it('fires exactly once on a clean server-end', async () => {
+		const { fetch } = scriptedFetch([createSSEResponse([])])
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect()
+		expect(events.disconnect.count).toBe(1)
+	})
+
+	it('fires exactly once when disconnect() tears down an active connection', async () => {
+		const { fetch: baseFetch } = scriptedFetch([])
+		const fetch: FetchHandler = (url, init) => {
+			if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(hangingStream(init?.signal))
+			return baseFetch(url, init)
+		}
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		const connecting = client.connect()
+		await waitForDelay()
+		expect(events.connect.count).toBe(1)
+		expect(client.connected).toBe(true)
+
+		client.disconnect()
+		await connecting
+
+		expect(events.disconnect.count).toBe(1)
+		// Calling disconnect() again (already disconnected) must not double-emit.
+		client.disconnect()
+		expect(events.disconnect.count).toBe(1)
+	})
+
+	it('fires exactly once when destroy() tears down an active connection', async () => {
+		const { fetch: baseFetch } = scriptedFetch([])
+		const fetch: FetchHandler = (url, init) => {
+			if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(hangingStream(init?.signal))
+			return baseFetch(url, init)
+		}
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		const connecting = client.connect()
+		await waitForDelay()
+		expect(client.connected).toBe(true)
+
+		client.destroy()
+		await connecting
+
+		expect(events.disconnect.count).toBe(1)
+		// destroy() is idempotent and must not double-emit.
+		client.destroy()
+		expect(events.disconnect.count).toBe(1)
+	})
+})
+
+describe('PromptClient — error events (T8)', () => {
+	it('emits error when the POST answer request fails (non-OK response)', async () => {
+		const pending = {
+			id: 'p1',
+			form: 'confirm',
+			message: 'OK?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const { fetch: baseFetch } = scriptedFetch([
+			createSSEResponse([{ event: 'pending', data: pending }]),
+		])
+		const fetch: FetchHandler = (url, init) => {
+			if ((init?.method ?? 'GET') === 'POST')
+				return Promise.resolve(new Response(null, { status: 500 }))
+			return baseFetch(url, init)
+		}
+		const { terminal } = createRecordingTerminal({ answers: { confirm: true } })
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect()
+		expect(events.error.count).toBe(1)
+	})
+
+	it('emits error when the terminal throws mid-dispatch (dispatch-catch)', async () => {
+		const pending = {
+			id: 'p1',
+			form: 'input',
+			message: 'Name?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const { fetch, calls } = scriptedFetch([
+			createSSEResponse([{ event: 'pending', data: pending }]),
+		])
+		// A real (not mocked) PromptFormInterface implementation that deliberately throws — a
+		// scripted collaborator exercising the #dispatch catch path.
+		const throwingTerminal: PromptFormInterface = {
+			async input() {
+				throw new Error('terminal exploded')
+			},
+			async password() {
+				return ''
+			},
+			async confirm() {
+				return false
+			},
+			async select() {
+				return ''
+			},
+			async checkbox() {
+				return []
+			},
+			async editor() {
+				return ''
+			},
+		}
+		const client = createPromptClient({
+			url: 'http://broker/p',
+			terminal: throwingTerminal,
+			reconnect: false,
+			fetch,
+		})
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect()
+		expect(events.error.count).toBe(1)
+		expect(calls.some((call) => call.method === 'POST')).toBe(false) // never reached the POST
+	})
+})
+
+describe('PromptClient — concurrent connect() (N1)', () => {
+	it('two concurrent connect() calls do not double-open a stream', async () => {
+		let opens = 0
+		const fetch: FetchHandler = (url, init) => {
+			if ((init?.method ?? 'GET') === 'GET') {
+				opens += 1
+				return Promise.resolve(hangingStream(init?.signal))
+			}
+			return Promise.resolve(new Response(null, { status: 200 }))
+		}
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+
+		const first = client.connect()
+		const second = client.connect() // concurrent — must return immediately without opening a second stream
+		await second
+		await waitForDelay()
+
+		expect(opens).toBe(1) // a single stream/controller was opened
+		expect(client.connected).toBe(true)
+
+		client.destroy()
+		await first
+	})
+})
+
+describe('PromptClient — strict serial dispatch (N6)', () => {
+	// CONFIRMING TEST: delivers two DIFFERENT pending ids (X then Y) on one stream, holding X's
+	// terminal call deferred. Proves the read loop processes ONE prompt at a time, in order: while
+	// X is in flight, the loop has not yet read/dispatched Y's event at all — only X has reached
+	// the terminal. Releasing X lets the loop continue and dispatch Y next.
+	it('dispatches one prompt at a time, in order — the second is not reached while the first is in flight', async () => {
+		const pendingX = {
+			id: 'x',
+			form: 'input',
+			message: 'X?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const pendingY = {
+			id: 'y',
+			form: 'input',
+			message: 'Y?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const { fetch, calls } = scriptedFetch([
+			createSSEResponse([
+				{ event: 'pending', data: pendingX },
+				{ event: 'pending', data: pendingY },
+			]),
+		])
+		const { terminal, calls: recorded, controller } = createRecordingTerminal({ defer: ['input'] })
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+
+		const connecting = client.connect()
+		await waitForDelay()
+		// Only X has reached the terminal — the loop is still awaiting X's dispatch, so it has not
+		// yet read the next SSE event to dispatch Y.
+		expect(controller.pending).toHaveLength(1)
+		expect(recorded.input.count).toBe(1)
+		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+
+		// Release X — the loop's #dispatch(x) settles, POSTs X's answer, then reads and dispatches Y.
+		controller.release('input')
+		await waitForDelay()
+		expect(recorded.input.count).toBe(2) // Y has now reached the terminal too
+		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1) // only X's answer POSTed so far
+
+		// Drain Y so the connect() promise can settle, then clean up.
+		controller.release()
+		await connecting
+		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2)
+		client.destroy()
+	})
+})
+
+describe('PromptClient — insecure token warning (N7)', () => {
+	it('warns exactly once via error event for a token sent over a plain http remote host', async () => {
+		const { fetch } = scriptedFetch([createSSEResponse([]), createSSEResponse([])])
+		const { terminal } = createRecordingTerminal()
+		const timer = createManualTimer()
+		const client = createPromptClient({
+			url: 'http://example.com/prompts',
+			terminal,
+			token: 'secret',
+			reconnect: true,
+			delay: 10,
+			fetch,
+			timer: timer.handler,
+		})
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		void client.connect()
+		await waitForDelay()
+		timer.flush() // trigger a reconnect — the warning must not fire again
+		await waitForDelay()
+
+		expect(events.error.count).toBe(1)
+		client.destroy()
+	})
+
+	it('does not warn for an https remote host', async () => {
+		const { fetch } = scriptedFetch([createSSEResponse([])])
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({
+			url: 'https://example.com/p',
+			terminal,
+			token: 'secret',
+			reconnect: false,
+			fetch,
+		})
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect()
+		expect(events.error.count).toBe(0)
+	})
+
+	it('does not warn for an http loopback host', async () => {
+		const { fetch } = scriptedFetch([createSSEResponse([])])
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({
+			url: 'http://localhost:3000/p',
+			terminal,
+			token: 'secret',
+			reconnect: false,
+			fetch,
+		})
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect()
+		expect(events.error.count).toBe(0)
+	})
+})
+
+describe('PromptClient — oversized SSE event is bounded (N9)', () => {
+	it('surfaces an error instead of hanging when the SSE buffer limit is exceeded', async () => {
+		// An unterminated `data:` field larger than SSE_BUFFER_LIMIT — the parser throws an
+		// OVERFLOW error synchronously; the client must surface it as an `error` event, never hang.
+		function oversizedStream(): Response {
+			const body = `event: pending\ndata: ${'x'.repeat(SSE_BUFFER_LIMIT + 10)}`
+			const stream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode(body))
+					controller.close()
+				},
+			})
+			return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
+		}
+		const fetch: FetchHandler = (url, init) => {
+			if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(oversizedStream())
+			return Promise.resolve(new Response(null, { status: 200 }))
+		}
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
+
+		await client.connect() // must resolve (never freeze) even though the parser overflowed
+		expect(events.error.count).toBe(1)
+	})
+})
+
 describe('PromptClient — reconnect', () => {
 	it('reconnects with the injected delay after the stream drops', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([]), createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const timer = createManualTimer()
 		const client = createPromptClient({
 			url: 'http://broker/p',
@@ -222,7 +489,7 @@ describe('PromptClient — reconnect', () => {
 
 	it('disconnect() stops the reconnect loop while parked on the backoff (no reconnect)', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const timer = createManualTimer()
 		const client = createPromptClient({
 			url: 'http://broker/p',
@@ -253,7 +520,7 @@ describe('PromptClient — reconnect', () => {
 
 	it('does not reconnect after disconnect (an abort is not a fault)', async () => {
 		const { fetch } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const timer = createManualTimer()
 		const client = createPromptClient({
 			url: 'http://broker/p',
@@ -287,7 +554,7 @@ describe('PromptClient — auth token', () => {
 		const { fetch, calls } = scriptedFetch([
 			createSSEResponse([{ event: 'pending', data: pending }]),
 		])
-		const { terminal } = stubTerminal({ confirm: true })
+		const { terminal } = createRecordingTerminal({ answers: { confirm: true } })
 		const client = createPromptClient({
 			url: 'http://broker/p',
 			terminal,
@@ -304,7 +571,7 @@ describe('PromptClient — auth token', () => {
 
 	it('omits the token header when no token is configured', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		await client.connect()
 		expect(calls.every((call) => call.headers[HEADER_TOKEN] === undefined)).toBe(true)
@@ -313,7 +580,7 @@ describe('PromptClient — auth token', () => {
 
 // ============================================================================
 // HARDENING — wire-payload totality (malformed lines guard-rejected, never a
-// throw / dispatch), reconnect redelivery, and permanent destroy().
+// throw / dispatch), reconnect redelivery, and shutdown-disconnect.
 // ============================================================================
 
 describe('PromptClient — malformed wire payloads (§14 guards, no throw / dispatch)', () => {
@@ -356,7 +623,7 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 				if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(rawPendingStream(raw))
 				return fetch(url, init)
 			}
-			const { terminal, inputs } = stubTerminal({})
+			const { terminal, calls: recorded } = createRecordingTerminal()
 			const client = createPromptClient({
 				url: 'http://broker/p',
 				terminal,
@@ -371,7 +638,7 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 			])
 
 			await expect(client.connect()).resolves.toBeUndefined() // never throws
-			expect(inputs.count).toBe(0) // never dispatched
+			expect(recorded.input.count).toBe(0) // never dispatched
 			expect(calls.some((call) => call.method === 'POST')).toBe(false) // never answered
 			expect(events.error.count).toBe(0) // a malformed line is not an `error`
 		})
@@ -381,7 +648,7 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 		const { fetch } = scriptedFetch([
 			createSSEResponse([{ event: 'expire', data: { nothing: true } }]), // no id field
 		])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 		await client.connect()
@@ -390,7 +657,7 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 
 	it('an unknown SSE event name is ignored (no throw, stream completes cleanly)', async () => {
 		const { fetch } = scriptedFetch([createSSEResponse([{ event: 'mystery', data: { x: 1 } }])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 		await client.connect()
@@ -402,9 +669,11 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 
 describe('PromptClient — reconnect redelivery & shutdown', () => {
 	it('the same prompt id, redelivered across a reconnect, is dispatched each fresh arrival', async () => {
-		// #active is cleared in `finally` once a dispatch settles, so a legitimate REDELIVERY on a
-		// later stream is handled again (the in-flight dedupe guard only suppresses a still-pending
-		// duplicate — the serial read loop never overlaps two dispatches of one id within a stream).
+		// Dispatch is strictly serial and does NOT dedupe across completion: a redelivery of the
+		// SAME id on a LATER stream (after the earlier dispatch fully resolved and POSTed) is
+		// dispatched again, correctly — the client has no memory of ids it already answered. This
+		// is the real, intended behavior (see the "strict serial dispatch (N6)" test above for the
+		// in-order, one-at-a-time guarantee within a single stream).
 		const pending = {
 			id: 'dup',
 			form: 'input',
@@ -417,7 +686,7 @@ describe('PromptClient — reconnect redelivery & shutdown', () => {
 			createSSEResponse([{ event: 'pending', data: pending }]),
 			createSSEResponse([{ event: 'pending', data: pending }]),
 		])
-		const { terminal, inputs } = stubTerminal({ input: 'Ada' })
+		const { terminal, calls: recorded } = createRecordingTerminal({ answers: { input: 'Ada' } })
 		const timer = createManualTimer()
 		const client = createPromptClient({
 			url: 'http://broker/p',
@@ -430,38 +699,41 @@ describe('PromptClient — reconnect redelivery & shutdown', () => {
 
 		void client.connect()
 		await waitForDelay()
-		expect(inputs.count).toBe(1) // first stream dispatched once
+		expect(recorded.input.count).toBe(1) // first stream dispatched once
 		timer.flush() // reconnect
 		await waitForDelay()
-		expect(inputs.count).toBe(2) // redelivery dispatched again (not stuck-deduped)
+		expect(recorded.input.count).toBe(2) // redelivery dispatched again (not stuck-deduped)
 		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(2)
 
 		client.destroy()
 	})
 
-	it('a shutdown event tears the client down permanently', async () => {
-		const { fetch } = scriptedFetch([createSSEResponse([{ event: 'shutdown', data: {} }])])
-		const { terminal } = stubTerminal({})
-		const timer = createManualTimer()
-		const client = createPromptClient({
-			url: 'http://broker/p',
-			terminal,
-			reconnect: true,
-			fetch,
-			timer: timer.handler,
-		})
+	it('a shutdown event disconnects (not destroys) and the client stays reusable (N8)', async () => {
+		const { fetch, calls } = scriptedFetch([
+			createSSEResponse([{ event: 'shutdown', data: {} }]),
+			createSSEResponse([]),
+		])
+		const { terminal } = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect', 'expire', 'error'])
 
 		await client.connect()
+		expect(events.connect.count).toBe(1)
+		expect(events.disconnect.count).toBe(1) // exactly one disconnect from the shutdown
 		expect(client.connected).toBe(false)
-		// Destroyed: a later connect() is a no-op (returns immediately, opens no stream).
-		await expect(client.connect()).resolves.toBeUndefined()
+		expect(events.error.count).toBe(0) // a deliberate shutdown-disconnect is not a fault
+
+		// The client is NOT destroyed — a subsequent connect() opens a fresh stream.
+		await client.connect()
+		expect(calls.filter((call) => call.method === 'GET')).toHaveLength(2)
+		expect(events.connect.count).toBe(2)
 	})
 })
 
 describe('PromptClient — destroy is permanent', () => {
 	it('destroy() prevents any further connect (no GET issued afterward)', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 
 		client.destroy()
@@ -472,7 +744,7 @@ describe('PromptClient — destroy is permanent', () => {
 
 	it('destroy() during an active reconnect loop stops it and emits no error', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const timer = createManualTimer()
 		const client = createPromptClient({
 			url: 'http://broker/p',
@@ -498,7 +770,7 @@ describe('PromptClient — destroy is permanent', () => {
 
 	it('destroy() is idempotent', () => {
 		const { fetch } = scriptedFetch([createSSEResponse([])])
-		const { terminal } = stubTerminal({})
+		const { terminal } = createRecordingTerminal()
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 		expect(() => {
 			client.destroy()
