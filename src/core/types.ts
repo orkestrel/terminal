@@ -350,7 +350,7 @@ export type PromptType = 'input' | 'password' | 'confirm' | 'select' | 'checkbox
  * - `CANCEL` — the user aborted an interactive prompt (ctrl-c) at the server `Terminal` (T-c)
  *   driver; the awaited prompt call rejects with this so a caller can branch on `error.code`.
  */
-export type TerminalErrorCode = 'EXPIRE' | 'CANCEL'
+export type TerminalErrorCode = 'EXPIRE' | 'CANCEL' | 'DRIVER' | 'DEADLOCK' | 'TARGET'
 
 // === The async prompt contract (T-b)
 
@@ -409,6 +409,9 @@ export type PendingPromptStatus = 'pending' | 'answered' | 'expired'
  *   from the rules via {@link resolveValidation}.
  * - `status` — the current {@link PendingPromptStatus}.
  * - `time` — the creation timestamp (ms since epoch).
+ * - `from` / `to` — the OPTIONAL attribution edge a {@link TerminalManagerInterface} stamps on a
+ *   parked prompt (which endpoint asked, which endpoint must answer); absent for a bare broker
+ *   {@link PromptInterface} used directly (no manager attribution).
  */
 export interface PendingPrompt {
 	readonly id: string
@@ -417,6 +420,8 @@ export interface PendingPrompt {
 	readonly options: Readonly<Record<string, unknown>>
 	readonly status: PendingPromptStatus
 	readonly time: number
+	readonly from?: string
+	readonly to?: string
 }
 
 /**
@@ -479,6 +484,56 @@ export interface PromptOptions {
 }
 
 /**
+ * The union of a resolved prompt's value shapes — a `string` (`input` / `password` / `select` /
+ * `editor`), a `boolean` (`confirm`), or a `readonly string[]` (`checkbox`, the checked values in
+ * choice order). The type a {@link Ticket}'s `value` Promise resolves to.
+ */
+export type PromptValue = string | boolean | readonly string[]
+
+/**
+ * The union of every prompt form's options bag — the `options` a {@link ParkRequest} carries,
+ * narrowed at the call site by the paired {@link PromptType}.
+ */
+export type PromptFormOptions =
+	| InputOptions
+	| PasswordOptions
+	| ConfirmOptions
+	| SelectOptions
+	| CheckboxOptions
+	| EditorOptions
+
+/**
+ * The request to {@link PromptInterface.park} a prompt directly — the general form the six
+ * `PromptFormInterface` methods each wrap via a private `gateFor(form, options)` dispatch.
+ *
+ * @remarks
+ * - `form` — which {@link PromptType} to park.
+ * - `options` — that form's options bag ({@link PromptFormOptions}).
+ * - `from` / `to` — set ONLY by a {@link TerminalManagerInterface} (the attribution edge); a
+ *   direct broker caller leaves both `undefined`.
+ */
+export interface ParkRequest {
+	readonly form: PromptType
+	readonly options: PromptFormOptions
+	readonly from?: string
+	readonly to?: string
+}
+
+/** The handle {@link PromptInterface.park} returns — the parked prompt's `id` plus the Promise that resolves (or rejects) with its {@link PromptValue}. */
+export interface Ticket {
+	readonly id: string
+	readonly value: Promise<PromptValue>
+}
+
+/** The rejection reason a bare {@link PromptInterface.answer} returns — `'unknown'` (no such parked prompt) or `'rejected'` (failed validation / type-check). */
+export type AnswerError = 'unknown' | 'rejected'
+
+/** The outcome of a bare {@link PromptInterface.answer} call — the accepted `value` on success, else the {@link AnswerError}. */
+export type AnswerResult =
+	| { readonly success: true; readonly value: unknown }
+	| { readonly success: false; readonly error: AnswerError }
+
+/**
  * The headless prompt BROKER (observable §13) — implements {@link PromptFormInterface} by
  * PARKING each call as a {@link PendingPrompt} and returning a Promise that resolves when the
  * prompt is {@link answer}ed (or rejects on timeout). The local-TTY / headless / remote
@@ -487,10 +542,11 @@ export interface PromptOptions {
  *
  * @remarks
  * - **Park-as-Promise.** Each `input` / `password` / … call mints an id, parks a
- *   {@link PendingPrompt}, emits `pending`, and returns an unresolved Promise.
+ *   {@link PendingPrompt}, emits `pending`, and returns an unresolved Promise. {@link park} is the
+ *   general entry point the six form methods wrap.
  * - **Answer validates.** {@link answer} validates `value` against the prompt's resolved
  *   validator AND type-checks it to the prompt form before accepting; a bad answer is rejected
- *   (returns `false`, the prompt stays `pending`).
+ *   (an {@link AnswerResult} failure, the prompt stays `pending`).
  * - **Timeout → expire → reject.** An unanswered prompt expires after `timeout` ms — `expire`
  *   fires and the parked Promise rejects (a {@link import('./errors.js').TerminalError}). The
  *   timer is injectable for deterministic tests.
@@ -499,9 +555,10 @@ export interface PromptOptions {
 export interface PromptInterface extends PromptFormInterface {
 	readonly emitter: EmitterInterface<PromptEventMap>
 	readonly count: number
+	park(request: ParkRequest): Ticket
 	pending(): readonly PendingPrompt[]
 	pending(id: string): PendingPrompt | undefined
-	answer(id: string, value: unknown): boolean
+	answer(id: string, value: unknown): AnswerResult
 	destroy(): void
 }
 
@@ -593,4 +650,140 @@ export interface PromptClientInterface {
 	connect(): Promise<void>
 	disconnect(): void
 	destroy(): void
+}
+
+// === The terminal manager (multi-endpoint broker registry)
+
+/** Options for {@link import('./factories.js').createTerminal} / a manager-owned {@link PromptInterface} broker — the per-endpoint `timeout` + injected `timer`. */
+export interface TerminalOptions {
+	readonly timeout?: number
+	readonly timer?: TimerHandler
+}
+
+/**
+ * The manager's event map (AGENTS §13) — the name-attributed re-emission of every mounted
+ * broker's events, so a caller subscribes once for ALL endpoints instead of per-broker.
+ *
+ * @remarks
+ * - `pending` — an endpoint parked a prompt (carries the {@link PendingPrompt}, itself carrying
+ *   `from` / `to`).
+ * - `answer` — an endpoint's parked prompt was answered (`to` names the endpoint).
+ * - `expire` — an endpoint's parked prompt timed out (`to` names the endpoint).
+ */
+export type TerminalManagerEventMap = {
+	pending: [prompt: PendingPrompt]
+	answer: [to: string, id: string, value: unknown]
+	expire: [to: string, id: string]
+}
+
+/**
+ * Options for {@link import('./factories.js').createTerminalManager} / the
+ * {@link TerminalManagerInterface}.
+ *
+ * @remarks
+ * - `store` — the optional {@link TerminalStoreInterface} backing `open` / `save`.
+ * - `timeout` / `timer` — the manager-wide default for each endpoint's broker (overridable per
+ *   {@link TerminalManagerInterface.add} call via {@link TerminalOptions}).
+ * - `on` / `error` — the manager's {@link EmitterHooks} + {@link EmitterErrorHandler} (AGENTS §13).
+ */
+export interface TerminalManagerOptions {
+	readonly store?: TerminalStoreInterface
+	readonly timeout?: number
+	readonly timer?: TimerHandler
+	readonly on?: EmitterHooks<TerminalManagerEventMap>
+	readonly error?: EmitterErrorHandler
+}
+
+/** The rejection reason a {@link TerminalManagerInterface.answer} call returns — an {@link AnswerError}, plus `'terminal'` (no such endpoint). */
+export type TerminalAnswerError = AnswerError | 'terminal'
+
+/** The outcome of a {@link TerminalManagerInterface.answer} call — the accepted `value` on success, else the {@link TerminalAnswerError}. */
+export type TerminalAnswerResult =
+	| { readonly success: true; readonly value: unknown }
+	| { readonly success: false; readonly error: TerminalAnswerError }
+
+/**
+ * The multi-endpoint terminal MANAGER (§9.1/§9.2) — a registry of named {@link PromptInterface}
+ * brokers (one per endpoint), so several parties (agents, tools, humans) can `ask` prompts of
+ * each other by NAME, attributed with a `from` → `to` edge on every parked {@link PendingPrompt}.
+ *
+ * @remarks
+ * - **Accessors (§9.1).** `terminal(name)` looks up one endpoint's broker; `terminals()` lists
+ *   every mounted endpoint name.
+ * - **`add`** mints (or returns the existing) broker for `name` — idempotent, never clobbers a
+ *   live endpoint.
+ * - **`ask`** is the attributed convenience: parks a prompt from `from` to `to` (auto-`add`ing
+ *   `to` if absent) and resolves with the typed value, precisely overloaded per {@link PromptType}.
+ * - **`pending()`** lists every endpoint's parked prompts; `pending(to)` scopes to one endpoint.
+ * - **`answer`** routes to the named endpoint's broker.
+ * - **`open`** restores (or returns the live) broker for `name` from the `store`.
+ * - **`save`** persists an endpoint's config snapshot to the `store` (`false` when there is no
+ *   store, or `name` is unknown).
+ * - **Batch `remove` (§9.2).** The array overload is declared FIRST — `remove(names)` removes each
+ *   listed endpoint (`true` when any of the named terminals was removed); `remove(name)` removes one.
+ * - **`clear`** removes every endpoint without destroying the manager; **`destroy`** tears down
+ *   every broker, then the manager's own emitter.
+ */
+export interface TerminalManagerInterface {
+	readonly emitter: EmitterInterface<TerminalManagerEventMap>
+	readonly count: number
+	terminal(name: string): PromptInterface | undefined
+	terminals(): readonly string[]
+	add(name: string, options?: TerminalOptions): PromptInterface
+	ask(
+		from: string,
+		to: string,
+		form: 'input' | 'password' | 'editor',
+		options: InputOptions | PasswordOptions | EditorOptions,
+	): Promise<string>
+	ask(from: string, to: string, form: 'confirm', options: ConfirmOptions): Promise<boolean>
+	ask(from: string, to: string, form: 'select', options: SelectOptions): Promise<string>
+	ask(
+		from: string,
+		to: string,
+		form: 'checkbox',
+		options: CheckboxOptions,
+	): Promise<readonly string[]>
+	pending(): readonly PendingPrompt[]
+	pending(to: string): readonly PendingPrompt[]
+	answer(to: string, id: string, value: unknown): TerminalAnswerResult
+	open(name: string): Promise<PromptInterface | undefined>
+	save(name: string): Promise<boolean>
+	remove(names: readonly string[]): boolean
+	remove(name: string): boolean
+	clear(): void
+	destroy(): void
+}
+
+// === Transport-neutral bridge wire seams
+
+/** One SSE-shaped wire frame — the `event` name, its `data` payload (already JSON-stringified), and an optional `id`. The transport-neutral shape {@link import('./helpers.js').serializePending} / {@link import('./helpers.js').serializeExpire} / {@link import('./helpers.js').serializeShutdown} build, with no `http` dependency. */
+export interface WireEvent {
+	readonly event: string
+	readonly data: string
+	readonly id?: string
+}
+
+// === Terminal store (config-only snapshot)
+
+/** One endpoint's persisted CONFIG snapshot — `id` is the endpoint name; `timeout` its configured default. Parked Promises are process-bound and are never resurrected — `open` always restores an EMPTY broker. */
+export interface TerminalSnapshot {
+	readonly id: string
+	readonly timeout?: number
+}
+
+/** One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads/writes; `snapshot` is narrowed with {@link import('./helpers.js').isTerminalSnapshot} on read. */
+export interface TerminalSnapshotRow {
+	readonly id: string
+	readonly snapshot: unknown
+}
+
+/**
+ * The point-access persistence seam (AGENTS §5 — Stores) for a {@link TerminalManagerInterface}'s
+ * endpoint configs. Every primitive is async; `delete` of an absent id is a no-op.
+ */
+export interface TerminalStoreInterface {
+	get(id: string): Promise<TerminalSnapshot | undefined>
+	set(snapshot: TerminalSnapshot): Promise<void>
+	delete(id: string): Promise<void>
 }

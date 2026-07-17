@@ -4,7 +4,7 @@ import { PassThrough, Readable, Writable } from 'node:stream'
 import {
 	isInputStream,
 	isOutputStream,
-	isRawCapable,
+	rawCapable,
 	isReadable,
 	isWritable,
 	lineCount,
@@ -109,23 +109,23 @@ describe('isReadable / isWritable (readline boundary)', () => {
 	})
 })
 
-describe('isRawCapable', () => {
+describe('rawCapable', () => {
 	it('true only when isTTY === true AND setRawMode is callable', () => {
-		expect(isRawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: true })).toBe(true)
+		expect(rawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: true })).toBe(true)
 	})
 
 	it('false when not a TTY, even with setRawMode', () => {
-		expect(isRawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: false })).toBe(false)
-		expect(isRawCapable({ on() {}, off() {}, setRawMode() {} })).toBe(false)
+		expect(rawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: false })).toBe(false)
+		expect(rawCapable({ on() {}, off() {}, setRawMode() {} })).toBe(false)
 	})
 
 	it('false on a TTY without setRawMode (a piped-but-marked stream)', () => {
-		expect(isRawCapable({ on() {}, off() {}, isTTY: true })).toBe(false)
+		expect(rawCapable({ on() {}, off() {}, isTTY: true })).toBe(false)
 	})
 
 	it('requires isTTY to be exactly true (a truthy non-true value does not qualify)', () => {
 		// isTTY is `boolean | undefined`; the guard tests `=== true`, so only a real TTY flag passes.
-		expect(isRawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: undefined })).toBe(false)
+		expect(rawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: undefined })).toBe(false)
 	})
 })
 

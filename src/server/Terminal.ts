@@ -45,10 +45,10 @@ import {
 import {
 	isInputStream,
 	isOutputStream,
-	isRawCapable,
 	isReadable,
 	isWritable,
 	lineCount,
+	rawCapable,
 	redrawPrefix,
 } from './helpers.js'
 
@@ -80,7 +80,7 @@ export class Terminal implements TerminalInterface {
 
 	input(options: InputOptions): Promise<string> {
 		const state = createInputState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, inputReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, inputReduce)
 		return this.#lineFallback(
 			options.message,
 			options.styler,
@@ -95,7 +95,7 @@ export class Terminal implements TerminalInterface {
 
 	password(options: PasswordOptions): Promise<string> {
 		const state = createPasswordState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, passwordReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, passwordReduce)
 		return this.#lineFallback(
 			options.message,
 			options.styler,
@@ -110,7 +110,7 @@ export class Terminal implements TerminalInterface {
 
 	confirm(options: ConfirmOptions): Promise<boolean> {
 		const state = createConfirmState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, confirmReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, confirmReduce)
 		return this.#lineFallback(
 			options.message,
 			options.styler,
@@ -128,7 +128,7 @@ export class Terminal implements TerminalInterface {
 
 	select(options: SelectOptions): Promise<string> {
 		const state = createSelectState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, selectReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, selectReduce)
 		return this.#listFallback(
 			options.message,
 			options.styler,
@@ -146,7 +146,7 @@ export class Terminal implements TerminalInterface {
 
 	checkbox(options: CheckboxOptions): Promise<readonly string[]> {
 		const state = createCheckboxState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, checkboxReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, checkboxReduce)
 		return this.#listFallback(
 			options.message,
 			options.styler,
@@ -171,7 +171,7 @@ export class Terminal implements TerminalInterface {
 
 	editor(options: EditorOptions): Promise<string> {
 		const state = createEditorState(options)
-		if (isRawCapable(this.#input)) return this.#drive(state, editorReduce)
+		if (rawCapable(this.#input)) return this.#drive(state, editorReduce)
 		return this.#editorFallback(options)
 	}
 
@@ -234,8 +234,9 @@ export class Terminal implements TerminalInterface {
 					this.#render(step.view, lines)
 					cleanup()
 					this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
-					if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
-					else reject(new TerminalError('CANCEL', 'Prompt cancelled'))
+					if (step.status === 'cancel') reject(new TerminalError('CANCEL', 'Prompt cancelled'))
+					else if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
+					else reject(new TerminalError('DRIVER', 'submit produced no value'))
 				} catch (error) {
 					// A throw inside the reducer/validator/styler: tear down raw mode + the listener,
 					// restore the cursor exactly as the normal exit path does, then reject.
@@ -397,7 +398,8 @@ export class Terminal implements TerminalInterface {
 		// Bind to locals first — a guard narrows a local, not a `#private` field access.
 		const input = this.#input
 		const output = this.#output
-		if (!isReadable(input)) throw new Error('Terminal fallback requires a readable input stream')
+		if (!isReadable(input))
+			throw new TerminalError('DRIVER', 'Terminal fallback requires a readable input stream')
 		// `terminal: false` disables readline's own echo/line-editing, so a masked (password) answer is
 		// never rendered on a TTY that lacks `setRawMode` (the raw-mode `#drive` path already masks it).
 		return {

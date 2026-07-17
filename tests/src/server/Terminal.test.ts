@@ -892,6 +892,14 @@ describe('Terminal — non-TTY fallback (node:readline)', () => {
 		const terminal = createTerminal({ input, output: target })
 		await expect(terminal.input({ message: 'X' })).rejects.toThrow(/readable input stream/)
 	})
+
+	it('the non-readable-input failure is a TerminalError with code DRIVER', async () => {
+		const input = { on() {}, off() {}, isTTY: false }
+		const { target } = createStreamTarget({ isTTY: false })
+		const terminal = createTerminal({ input, output: target })
+		const error = await terminal.input({ message: 'X' }).catch((reason: unknown) => reason)
+		expect(isTerminalError(error) && error.code).toBe('DRIVER')
+	})
 })
 
 describe('Terminal — injectable streams + guards', () => {

@@ -730,6 +730,111 @@ describe('PromptClient — reconnect redelivery & shutdown', () => {
 	})
 })
 
+describe('PromptClient — reconnect replay dedupe (T3)', () => {
+	it('skips a redelivery of an in-flight id, dispatches once it settles, and dispatches a fresh id after expire', async () => {
+		const pendingX = {
+			id: 'x',
+			form: 'input',
+			message: 'X?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const pendingY = {
+			id: 'y',
+			form: 'input',
+			message: 'Y?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const { fetch, calls } = scriptedFetch([
+			createSSEResponse([{ event: 'pending', data: pendingX }]),
+			createSSEResponse([{ event: 'pending', data: pendingX }]), // reconnect redelivery, still in-flight
+			createSSEResponse([{ event: 'expire', data: { id: 'x' } }]),
+			createSSEResponse([{ event: 'pending', data: pendingY }]),
+		])
+		const {
+			terminal,
+			calls: recorded,
+			controller,
+		} = createRecordingTerminal({
+			defer: ['input'],
+			answers: { input: 'Grace' },
+		})
+		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
+
+		// First connect: dispatches X to the terminal, held pending (mid-flight, not yet settled).
+		const first = client.connect()
+		await waitForDelay()
+		expect(recorded.input.count).toBe(1)
+
+		// Simulate a disconnect + reconnect WHILE X's dispatch is still in flight: the broker
+		// redelivers X on the fresh stream. Because X is still in the in-flight set (unsettled),
+		// the redelivery must be skipped entirely — no second terminal call, no second POST.
+		client.disconnect()
+		const second = client.connect()
+		await waitForDelay()
+		expect(recorded.input.count).toBe(1) // still just one — the in-flight redelivery was skipped
+		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(0)
+		await second
+
+		// Release X — the original dispatch settles and POSTs the answer, clearing X from the
+		// in-flight set. This also lets the FIRST connect() promise (still awaiting X's dispatch)
+		// finally resolve.
+		controller.release('input')
+		await waitForDelay()
+		await first
+		expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1)
+
+		// An expire event for X arrives on a later stream (redundant clear, must not throw), then a
+		// FRESH id Y is delivered and dispatches normally — proving the dedupe set does not grow
+		// unboundedly and a settled id's slot is free for reuse-by-a-different-id.
+		client.disconnect() // reset #connecting (a natural, reconnect:false stream end leaves it armed)
+		const third = client.connect()
+		await waitForDelay()
+		await third
+		client.disconnect()
+		const fourth = client.connect()
+		await waitForDelay()
+		expect(recorded.input.count).toBe(2) // Y dispatched
+		controller.release('input') // release Y so the fourth connect()'s dispatch settles
+		await fourth
+
+		client.destroy()
+	})
+
+	it('#headers does not mutate the base object passed in', async () => {
+		const pending = {
+			id: 'p1',
+			form: 'confirm',
+			message: 'OK?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		const { fetch, calls } = scriptedFetch([
+			createSSEResponse([{ event: 'pending', data: pending }]),
+		])
+		const { terminal } = createRecordingTerminal({ answers: { confirm: true } })
+		const client = createPromptClient({
+			url: 'http://broker/p',
+			terminal,
+			reconnect: false,
+			token: 'secret',
+			fetch,
+		})
+
+		await client.connect()
+		// Both calls succeeded (proving the merged headers carried the token) and the recorded
+		// call objects captured distinct header objects (never a shared, mutated base).
+		expect(calls.length).toBeGreaterThanOrEqual(2)
+		expect(calls[0]?.headers[HEADER_TOKEN]).toBe('secret')
+		expect(calls[1]?.headers[HEADER_TOKEN]).toBe('secret')
+		expect(calls[0]?.headers).not.toBe(calls[1]?.headers)
+	})
+})
+
 describe('PromptClient — destroy is permanent', () => {
 	it('destroy() prevents any further connect (no GET issued afterward)', async () => {
 		const { fetch, calls } = scriptedFetch([createSSEResponse([])])

@@ -20,9 +20,11 @@ import type {
 	PromptType,
 	SelectOptions,
 	SelectState,
+	TerminalSnapshot,
 	TimerCancel,
 	ValidationRules,
 	Validator,
+	WireEvent,
 } from './types.js'
 import type { Guard } from '@orkestrel/contract'
 import type { StylerInterface } from '@orkestrel/console'
@@ -816,14 +818,19 @@ export const isPendingPromptStatus: Guard<PendingPromptStatus> = literalOf(
  * Narrow an unknown wire value to a {@link PendingPrompt} — the §14 guard a {@link PromptClient}
  * applies to each decoded SSE `pending` payload before dispatching it (never an `as`).
  */
-export const isPendingPrompt: Guard<PendingPrompt> = recordOf({
-	id: isNonEmptyString,
-	form: isPromptType,
-	message: isString,
-	options: isRecord,
-	status: isPendingPromptStatus,
-	time: isNumber,
-})
+export const isPendingPrompt: Guard<PendingPrompt> = recordOf(
+	{
+		id: isNonEmptyString,
+		form: isPromptType,
+		message: isString,
+		options: isRecord,
+		status: isPendingPromptStatus,
+		time: isNumber,
+		from: isString,
+		to: isString,
+	},
+	['from', 'to'] as const,
+)
 
 // === Remote prompt dispatch (T-b)
 
@@ -1050,3 +1057,33 @@ export function isInsecureRemote(url: string): boolean {
 		: (host.split(':')[0] ?? '')
 	return hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '[::1]'
 }
+
+// === Terminal manager wire seams (transport-neutral, no http dependency)
+
+/** Serialize a parked {@link PendingPrompt} into a {@link WireEvent} — event `'pending'`, `data` the JSON-stringified prompt, `id` the prompt's own id (an SSE bridge sets its frame `id:` from this). */
+export function serializePending(prompt: PendingPrompt): WireEvent {
+	return { event: 'pending', data: JSON.stringify(prompt), id: prompt.id }
+}
+
+/** Serialize a parked prompt's expiry into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
+export function serializeExpire(id: string): WireEvent {
+	return { event: 'expire', data: JSON.stringify({ id }) }
+}
+
+/** The {@link WireEvent} a broker/manager sends when it is going away — event `'shutdown'`, no payload. */
+export function serializeShutdown(): WireEvent {
+	return { event: 'shutdown', data: '' }
+}
+
+/** Narrow an unknown wire payload to an answer POST body — a non-empty `id` string plus a `value` key (of any shape) present. */
+export function isAnswerPayload(
+	value: unknown,
+): value is { readonly id: string; readonly value: unknown } {
+	return isRecord(value) && isNonEmptyString(value.id) && 'value' in value
+}
+
+/** Narrow an unknown value to a {@link TerminalSnapshot} — a non-empty `id` plus an optional numeric `timeout`. */
+export const isTerminalSnapshot: Guard<TerminalSnapshot> = recordOf(
+	{ id: isNonEmptyString, timeout: isNumber },
+	['timeout'] as const,
+)

@@ -3,9 +3,19 @@ import type {
 	PromptClientOptions,
 	PromptInterface,
 	PromptOptions,
+	TerminalManagerInterface,
+	TerminalManagerOptions,
+	TerminalSnapshotRow,
+	TerminalStoreInterface,
 } from './types.js'
+import type { DriverInterface, TableInterface } from '@orkestrel/database'
 import { Prompt } from './Prompt.js'
 import { PromptClient } from './PromptClient.js'
+import { TerminalManager } from './TerminalManager.js'
+import { MemoryTerminalStore } from './MemoryTerminalStore.js'
+import { DatabaseTerminalStore } from './DatabaseTerminalStore.js'
+import { createDatabase, createMemoryDriver } from '@orkestrel/database'
+import { rawShape, stringShape } from '@orkestrel/contract'
 
 /**
  * Create the headless prompt {@link PromptInterface} BROKER — it parks each prompt call as a
@@ -64,4 +74,67 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
  */
 export function createPromptClient(options: PromptClientOptions): PromptClientInterface {
 	return new PromptClient(options)
+}
+
+/**
+ * Create the multi-endpoint {@link TerminalManagerInterface} — a named registry of
+ * {@link PromptInterface} brokers so several parties can `ask` prompts of each other by name,
+ * with a transitive DEADLOCK check across every in-flight ask.
+ *
+ * @param options - See {@link TerminalManagerOptions}
+ * @returns A {@link TerminalManagerInterface}
+ *
+ * @example
+ * ```ts
+ * import { createTerminalManager } from '@src/core'
+ *
+ * const manager = createTerminalManager()
+ * manager.add('agent')
+ * ```
+ */
+export function createTerminalManager(options?: TerminalManagerOptions): TerminalManagerInterface {
+	return new TerminalManager(options)
+}
+
+/**
+ * Create the in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of endpoint
+ * config snapshots, the default store backing a {@link TerminalManagerInterface}'s `open` / `save`.
+ *
+ * @returns A {@link TerminalStoreInterface}
+ *
+ * @example
+ * ```ts
+ * import { createMemoryTerminalStore } from '@src/core'
+ *
+ * const store = createMemoryTerminalStore()
+ * ```
+ */
+export function createMemoryTerminalStore(): TerminalStoreInterface {
+	return new MemoryTerminalStore()
+}
+
+/**
+ * Create a {@link TerminalStoreInterface} backed by one table of the `databases` layer — the
+ * driver-pluggable twin of {@link createMemoryTerminalStore}, storing each endpoint's config
+ * snapshot as one opaque JSON column.
+ *
+ * @param driver - The {@link DriverInterface} backing the table (default an in-memory driver)
+ * @returns A {@link TerminalStoreInterface}
+ *
+ * @example
+ * ```ts
+ * import { createDatabaseTerminalStore } from '@src/core'
+ *
+ * const store = createDatabaseTerminalStore() // in-memory by default
+ * ```
+ */
+export function createDatabaseTerminalStore(
+	driver: DriverInterface = createMemoryDriver(),
+): TerminalStoreInterface {
+	// The snapshot is stored as ONE OPAQUE JSON column (`rawShape`), so the row infers FLAT —
+	// `{ id: string; snapshot: unknown }` = TerminalSnapshotRow.
+	const columns = { id: stringShape(), snapshot: rawShape({}) }
+	const database = createDatabase({ driver, tables: { terminals: columns } })
+	const table: TableInterface<TerminalSnapshotRow> = database.table('terminals')
+	return new DatabaseTerminalStore(table)
 }

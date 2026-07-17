@@ -26,6 +26,7 @@ import {
 	gateSelection,
 	inputReduce,
 	inputView,
+	isAnswerPayload,
 	isCheckboxChoice,
 	isInsecureRemote,
 	isPendingPrompt,
@@ -33,6 +34,7 @@ import {
 	isPrintable,
 	isPromptChoice,
 	isPromptType,
+	isTerminalSnapshot,
 	normalizeCheckboxChoice,
 	normalizeChoice,
 	parseKey,
@@ -45,7 +47,10 @@ import {
 	selectReduce,
 	selectView,
 	serializeChoices,
+	serializeExpire,
+	serializePending,
 	serializePromptOptions,
+	serializeShutdown,
 	serializeValidationRules,
 	toggleIndex,
 } from '@src/core'
@@ -726,6 +731,23 @@ describe('isPendingPrompt', () => {
 		expect(isPendingPrompt({ ...valid, form: 'bogus' })).toBe(false) // not a PromptType
 		expect(isPendingPrompt({ ...valid, id: '' })).toBe(false) // empty id
 		expect(isPendingPrompt({ id: 'p1' })).toBe(false) // missing fields
+	})
+
+	it('accepts with from/to and without, rejects invalid from/to', () => {
+		const valid = {
+			id: 'p1',
+			form: 'input',
+			message: 'Name?',
+			options: {},
+			status: 'pending',
+			time: 1,
+		}
+		expect(isPendingPrompt(valid)).toBe(true) // no from/to — both optional
+		expect(isPendingPrompt({ ...valid, from: 'agent-1', to: 'human-1' })).toBe(true)
+		expect(isPendingPrompt({ ...valid, from: 'agent-1' })).toBe(true) // only from
+		expect(isPendingPrompt({ ...valid, to: 'human-1' })).toBe(true) // only to
+		expect(isPendingPrompt({ ...valid, from: 1 })).toBe(false) // non-string from
+		expect(isPendingPrompt({ ...valid, to: null })).toBe(false) // non-string to
 	})
 })
 
@@ -1760,5 +1782,65 @@ describe('isInsecureRemote', () => {
 		expect(isInsecureRemote('https://example.com')).toBe(false)
 		expect(isInsecureRemote('https://localhost')).toBe(false)
 		expect(isInsecureRemote('ws://example.com')).toBe(false) // not http:// at all
+	})
+})
+
+// === Terminal manager wire seams
+
+describe('serializePending / serializeExpire / serializeShutdown', () => {
+	it('serializePending wraps a PendingPrompt as a pending WireEvent, id set from the prompt', () => {
+		const prompt: PendingPrompt = {
+			id: 'p1',
+			form: 'input',
+			message: 'Name?',
+			options: {},
+			status: 'pending',
+			time: 1,
+			from: 'agent-1',
+			to: 'human-1',
+		}
+		const event = serializePending(prompt)
+		expect(event.event).toBe('pending')
+		expect(event.id).toBe('p1')
+		expect(JSON.parse(event.data)).toEqual(prompt)
+	})
+
+	it('serializeExpire wraps an id as an expire WireEvent with no frame id', () => {
+		const event = serializeExpire('p1')
+		expect(event.event).toBe('expire')
+		expect(event.id).toBeUndefined()
+		expect(JSON.parse(event.data)).toEqual({ id: 'p1' })
+	})
+
+	it('serializeShutdown carries no payload', () => {
+		const event = serializeShutdown()
+		expect(event.event).toBe('shutdown')
+		expect(event.data).toBe('')
+		expect(event.id).toBeUndefined()
+	})
+})
+
+describe('isAnswerPayload', () => {
+	it('accepts a non-empty id plus a present value key, rejects malformed payloads', () => {
+		expect(isAnswerPayload({ id: 'p1', value: 'answer' })).toBe(true)
+		expect(isAnswerPayload({ id: 'p1', value: undefined })).toBe(true) // key present, value itself may be undefined
+		expect(isAnswerPayload({ id: 'p1', value: false })).toBe(true)
+		expect(isAnswerPayload({ id: '', value: 'x' })).toBe(false) // empty id
+		expect(isAnswerPayload({ value: 'x' })).toBe(false) // missing id
+		expect(isAnswerPayload({ id: 'p1' })).toBe(false) // missing value key
+		expect(isAnswerPayload(null)).toBe(false)
+		expect(isAnswerPayload('p1')).toBe(false)
+	})
+})
+
+describe('isTerminalSnapshot', () => {
+	it('accepts a non-empty id with/without a numeric timeout, rejects malformed snapshots', () => {
+		expect(isTerminalSnapshot({ id: 'endpoint-1' })).toBe(true)
+		expect(isTerminalSnapshot({ id: 'endpoint-1', timeout: 5000 })).toBe(true)
+		expect(isTerminalSnapshot({ id: '' })).toBe(false) // empty id
+		expect(isTerminalSnapshot({ id: 'endpoint-1', timeout: 'soon' })).toBe(false) // non-numeric timeout
+		expect(isTerminalSnapshot({ timeout: 5000 })).toBe(false) // missing id
+		expect(isTerminalSnapshot(null)).toBe(false)
+		expect(isTerminalSnapshot([])).toBe(false)
 	})
 })

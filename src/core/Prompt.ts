@@ -1,16 +1,21 @@
 import type {
+	AnswerResult,
 	CheckboxOptions,
 	ConfirmOptions,
 	EditorOptions,
 	InputOptions,
 	Parked,
+	ParkRequest,
 	PasswordOptions,
 	PendingPrompt,
 	PromptEventMap,
+	PromptFormOptions,
 	PromptInterface,
 	PromptOptions,
 	PromptType,
+	PromptValue,
 	SelectOptions,
+	Ticket,
 	TimerHandler,
 } from './types.js'
 import type { EmitterInterface } from '@orkestrel/emitter'
@@ -94,67 +99,57 @@ export class Prompt implements PromptInterface {
 
 	// === Answer
 
-	answer(id: string, value: unknown): boolean {
+	answer(id: string, value: unknown): AnswerResult {
 		const parked = this.#parked.get(id)
-		if (parked === undefined) return false
+		if (parked === undefined) return { success: false, error: 'unknown' }
 		// The per-form gate validates + type-checks, and on accept resolves the Promise (it owns the
 		// typed `resolve`). It returns the accepted value, or `undefined` to reject the answer.
 		const accepted = parked.respond(value)
-		if (accepted === undefined) return false
+		if (accepted === undefined) return { success: false, error: 'rejected' }
 		parked.cancel()
 		this.#emitter.emit('answer', id, accepted)
 		this.#parked.delete(id)
-		return true
+		return { success: true, value: accepted }
+	}
+
+	// === PromptInterface — park a prompt directly (the general entry the six form methods wrap)
+
+	park(request: ParkRequest): Ticket {
+		const gate = this.#gate(request.form, request.options)
+		return this.#park(
+			request.form,
+			request.options.message,
+			request.options,
+			gate,
+			request.from,
+			request.to,
+		)
 	}
 
 	// === PromptFormInterface — each call parks a prompt and awaits its answer
 
 	input(options: InputOptions): Promise<string> {
-		const validator = resolveValidation(options.validate)
-		return this.#park('input', options.message, options, (value) =>
-			isString(value) && validator(value) === true ? value : undefined,
-		)
+		return this.#park('input', options.message, options, this.#gate('input', options)).value
 	}
 
 	password(options: PasswordOptions): Promise<string> {
-		const validator = resolveValidation(options.validate)
-		return this.#park('password', options.message, options, (value) =>
-			isString(value) && validator(value) === true ? value : undefined,
-		)
+		return this.#park('password', options.message, options, this.#gate('password', options)).value
 	}
 
 	confirm(options: ConfirmOptions): Promise<boolean> {
-		return this.#park('confirm', options.message, options, (value) =>
-			isBoolean(value) ? value : undefined,
-		)
+		return this.#park('confirm', options.message, options, this.#gate('confirm', options)).value
 	}
 
 	select(options: SelectOptions): Promise<string> {
-		const values = new Set(options.choices.map(normalizeChoice).map((choice) => choice.value))
-		return this.#park('select', options.message, options, (value) =>
-			isString(value) && values.has(value) ? value : undefined,
-		)
+		return this.#park('select', options.message, options, this.#gate('select', options)).value
 	}
 
 	checkbox(options: CheckboxOptions): Promise<readonly string[]> {
-		const values = new Set(
-			options.choices.map(normalizeCheckboxChoice).map((choice) => choice.value),
-		)
-		const { min, max } = options
-		return this.#park('checkbox', options.message, options, (value) => {
-			if (!isArray(value) || !value.every(isString)) return undefined
-			if (!value.every((item) => values.has(item))) return undefined
-			if (min !== undefined && value.length < min) return undefined
-			if (max !== undefined && value.length > max) return undefined
-			return value
-		})
+		return this.#park('checkbox', options.message, options, this.#gate('checkbox', options)).value
 	}
 
 	editor(options: EditorOptions): Promise<string> {
-		const validator = resolveValidation(options.validate)
-		return this.#park('editor', options.message, options, (value) =>
-			isString(value) && validator(value) === true ? value : undefined,
-		)
+		return this.#park('editor', options.message, options, this.#gate('editor', options)).value
 	}
 
 	// === Lifecycle
@@ -171,17 +166,25 @@ export class Prompt implements PromptInterface {
 
 	// === Private helpers
 
-	// Park one prompt: build the wire record, arm the injected expiry timer, store the gate-and-resolve
-	// closure, emit `pending`, and return the Promise the form method awaits. `gate` is typed to the
-	// form's value `T` — it validates + type-checks an answer and returns the coerced `T` (or
-	// `undefined` to reject) — so the Promise resolves with the precise type, no assertion anywhere.
+	// Park one prompt: build the wire record (stamping `from` / `to` when given), arm the injected
+	// expiry timer, store the gate-and-resolve closure, emit `pending`, and return the id + Promise.
+	// `gate` is typed to the form's value `T` — it validates + type-checks an answer and returns the
+	// coerced `T` (or `undefined` to reject) — so the Promise resolves with the precise type, no
+	// assertion anywhere.
 	#park<T>(
 		form: PromptType,
 		message: string,
 		options: object,
 		gate: (value: unknown) => T | undefined,
-	): Promise<T> {
-		if (this.#destroyed) return Promise.reject(new TerminalError('EXPIRE', 'broker destroyed'))
+		from?: string,
+		to?: string,
+	): { readonly id: string; readonly value: Promise<T> } {
+		if (this.#destroyed) {
+			return {
+				id: crypto.randomUUID(),
+				value: Promise.reject(new TerminalError('EXPIRE', 'broker destroyed')),
+			}
+		}
 		const id = crypto.randomUUID()
 		const prompt: PendingPrompt = {
 			id,
@@ -190,12 +193,14 @@ export class Prompt implements PromptInterface {
 			options: serializePromptOptions(options),
 			status: 'pending',
 			time: Date.now(),
+			...(from !== undefined ? { from } : {}),
+			...(to !== undefined ? { to } : {}),
 		}
-		return new Promise<T>((resolve, reject) => {
+		const value = new Promise<T>((resolve, reject) => {
 			const cancel = this.#timer(() => this.#expire(id), this.#timeout)
 			// The gate-and-resolve closure: re-mark the record `answered`, resolve with the typed value.
-			const respond = (value: unknown): T | undefined => {
-				const accepted = gate(value)
+			const respond = (answer: unknown): T | undefined => {
+				const accepted = gate(answer)
 				if (accepted === undefined) return undefined
 				const current = this.#parked.get(id)
 				if (current !== undefined) {
@@ -210,6 +215,79 @@ export class Prompt implements PromptInterface {
 			this.#parked.set(id, { prompt, respond, expire, cancel })
 			this.#emitter.emit('pending', prompt)
 		})
+		return { id, value }
+	}
+
+	// The per-form gate factory — validates + type-checks an answer to the form's precise value
+	// type (or `undefined` to reject). Overloaded per form so each `PromptFormInterface` call site
+	// gets back a gate typed to its exact `Promise<T>`, no assertion anywhere; the general (last)
+	// overload is what {@link park} uses, returning the wide `PromptValue`.
+	#gate(form: 'input', options: InputOptions): (value: unknown) => string | undefined
+	#gate(form: 'password', options: PasswordOptions): (value: unknown) => string | undefined
+	#gate(form: 'confirm', options: ConfirmOptions): (value: unknown) => boolean | undefined
+	#gate(form: 'select', options: SelectOptions): (value: unknown) => string | undefined
+	#gate(
+		form: 'checkbox',
+		options: CheckboxOptions,
+	): (value: unknown) => readonly string[] | undefined
+	#gate(form: 'editor', options: EditorOptions): (value: unknown) => string | undefined
+	#gate(form: PromptType, options: PromptFormOptions): (value: unknown) => PromptValue | undefined
+	#gate(form: PromptType, options: PromptFormOptions): (value: unknown) => PromptValue | undefined {
+		switch (form) {
+			case 'input':
+			case 'password':
+			case 'editor': {
+				if (!this.#isTextOptions(form, options)) return () => undefined
+				const validator = resolveValidation(options.validate)
+				return (value) => (isString(value) && validator(value) === true ? value : undefined)
+			}
+			case 'confirm': {
+				if (!this.#isConfirmOptions(form, options)) return () => undefined
+				return (value) => (isBoolean(value) ? value : undefined)
+			}
+			case 'select': {
+				if (!this.#isSelectOptions(form, options)) return () => undefined
+				const values = new Set(options.choices.map(normalizeChoice).map((choice) => choice.value))
+				return (value) => (isString(value) && values.has(value) ? value : undefined)
+			}
+			case 'checkbox': {
+				if (!this.#isCheckboxOptions(form, options)) return () => undefined
+				const values = new Set(
+					options.choices.map(normalizeCheckboxChoice).map((choice) => choice.value),
+				)
+				const { min, max } = options
+				return (value) => {
+					if (!isArray(value) || !value.every(isString)) return undefined
+					if (!value.every((item) => values.has(item))) return undefined
+					if (min !== undefined && value.length < min) return undefined
+					if (max !== undefined && value.length > max) return undefined
+					return value
+				}
+			}
+		}
+	}
+
+	// Form-based type guards: `form` is the source of truth for which options shape is present (the
+	// {@link ParkRequest} contract — options is "narrowed at the call site by the paired PromptType").
+	// Structural narrowing alone cannot distinguish these (input/editor share an identical shape), so
+	// the guard trusts the caller-supplied `form`, exactly as `pending().form` already does on read.
+	#isTextOptions(
+		form: PromptType,
+		_options: PromptFormOptions,
+	): _options is InputOptions | PasswordOptions | EditorOptions {
+		return form === 'input' || form === 'password' || form === 'editor'
+	}
+
+	#isConfirmOptions(form: PromptType, _options: PromptFormOptions): _options is ConfirmOptions {
+		return form === 'confirm'
+	}
+
+	#isSelectOptions(form: PromptType, _options: PromptFormOptions): _options is SelectOptions {
+		return form === 'select'
+	}
+
+	#isCheckboxOptions(form: PromptType, _options: PromptFormOptions): _options is CheckboxOptions {
+		return form === 'checkbox'
 	}
 
 	// Expire one parked prompt: cancel its timer, mark it `expired`, emit `expire`, reject its Promise,

@@ -39,6 +39,14 @@ surface the `Prompt` broker and `PromptClient` bridge each expose as
 this repo; it is kept here so a reader of this package can see the primitive
 it is built from without leaving this guide set.
 
+[`src/database.md`](src/database.md) is a byte-identical mirror of the guide
+for `@orkestrel/database` — a runtime dependency, the typed keyed-row
+`TableInterface` the `DatabaseTerminalStore` twin persists each endpoint's
+config snapshot through (one opaque JSON column, driver-pluggable). It
+documents **that package's** surface, not anything sourced in this repo; it
+is kept here so a reader of this package can see the primitive it is built
+from without leaving this guide set.
+
 [`src/sse.md`](src/sse.md) is a byte-identical mirror of the guide for
 `@orkestrel/sse` — a runtime dependency, the `SSEParser` the `PromptClient`
 decodes the broker's event stream with. It documents **that package's**

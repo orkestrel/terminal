@@ -104,7 +104,7 @@ export function isWritable(value: unknown): value is NodeJS.WritableStream {
  * @param input - The resolved {@link InputStreamInterface}
  * @returns `true` when the stream is a TTY with `setRawMode`
  */
-export function isRawCapable(input: InputStreamInterface): boolean {
+export function rawCapable(input: InputStreamInterface): boolean {
 	return input.isTTY === true && typeof input.setRawMode === 'function'
 }
 

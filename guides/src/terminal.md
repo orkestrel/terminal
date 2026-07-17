@@ -151,30 +151,48 @@ The decode tables, default mask, validation patterns, prompt-view glyphs, rule m
 
 A real error type (AGENTS §12) a parked broker prompt rejects with, or the server `Terminal` rejects with on ctrl-c ([`src/core`](../../src/core)).
 
-| API                 | Kind     | Summary                                                                                                                          |
-| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `TerminalErrorCode` | type     | The machine-readable condition on a `TerminalError` — `EXPIRE` (a parked prompt timed out / torn down) / `CANCEL` (ctrl-c).      |
-| `TerminalError`     | class    | The error a broker prompt's Promise rejects with — carries a `TerminalErrorCode` `code` + an optional `context` (the prompt id). |
-| `isTerminalError`   | function | Narrow an unknown caught value to a `TerminalError` — branch on `error.code`.                                                    |
+| API                 | Kind     | Summary                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalErrorCode` | type     | The machine-readable condition on a `TerminalError` — `EXPIRE` (a parked prompt timed out / torn down) / `CANCEL` (ctrl-c) / `DRIVER` (a malformed answer to a parked prompt, or the server `Terminal` fallback lacking a readable input stream) / `DEADLOCK` (a `TerminalManager.ask` would close a transitive `from`→`to` cycle) / `TARGET` (a `TerminalManager.ask` names an unknown `to` endpoint). |
+| `TerminalError`     | class    | The error a broker prompt's Promise rejects with — carries a `TerminalErrorCode` `code` + an optional `context` (the prompt id).                                                                                                                                                                                                                                                                        |
+| `isTerminalError`   | function | Narrow an unknown caught value to a `TerminalError` — branch on `error.code`.                                                                                                                                                                                                                                                                                                                           |
 
 ### The headless broker
 
 The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` with no terminal, parking each call and resolving it when an answer arrives over a transport ([`src/core`](../../src/core)). Observable (§13).
 
-| API                      | Kind      | Summary                                                                                                                                  |
-| ------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `PromptFormInterface`    | interface | The SHARED async prompt contract — the six prompt forms as Promise-returning methods; the ONE vocabulary all three surfaces implement.   |
-| `PendingPromptStatus`    | type      | A parked prompt's lifecycle status — `pending` / `answered` / `expired` (names its axis, not `kind`).                                    |
-| `PendingPrompt`          | interface | One prompt PARKED by the broker — an id-keyed, wire-safe record (`id` / `form` / `message` / `options` / `status` / `time`) (data-only). |
-| `Parked`                 | interface | The broker's per-prompt record — a `PendingPrompt` plus the live `respond` / `expire` / `cancel` closures that settle its Promise.       |
-| `TimerHandler`           | type      | One injected timer — arms a deadline `callback` after `ms`, returning a `TimerCancel`; the broker's + client's deadline seam.            |
-| `TimerCancel`            | type      | Cancel a pending `TimerHandler` deadline — idempotent, safe after the timer fired.                                                       |
-| `PromptEventMap`         | type      | The broker's events (§13) — `pending(prompt)` / `answer(id, value)` / `expire(id)`; errors `unknown`, no listener-error event.           |
-| `PromptOptions`          | interface | `createPrompt` options — `on?` / `error?` / `timeout?` / `timer?` (data-only).                                                           |
-| `PromptInterface`        | interface | The headless broker — `emitter` / `count` data + `pending` / `answer` / `destroy` (+ the inherited prompt forms).                        |
-| `Prompt`                 | class     | The observable headless broker — parks each call as a `PendingPrompt`, resolves on `answer`, rejects on timeout / teardown.              |
-| `createPrompt`           | function  | Create the headless `PromptInterface` broker — the tri-surface's headless arm (forward `pending`, route `answer` back).                  |
-| `serializePromptOptions` | function  | (Listed under the pure core — the broker serializes each prompt's options through it for the wire.)                                      |
+| API                      | Kind      | Summary                                                                                                                                                                             |
+| ------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PromptFormInterface`    | interface | The SHARED async prompt contract — the six prompt forms as Promise-returning methods; the ONE vocabulary all three surfaces implement.                                              |
+| `PendingPromptStatus`    | type      | A parked prompt's lifecycle status — `pending` / `answered` / `expired` (names its axis, not `kind`).                                                                               |
+| `PendingPrompt`          | interface | One prompt PARKED by the broker — an id-keyed, wire-safe record (`id` / `form` / `message` / `options` / `status` / `time` / optional `from` / `to`) (data-only).                   |
+| `Parked`                 | interface | The broker's per-prompt record — a `PendingPrompt` plus the live `respond` / `expire` / `cancel` closures that settle its Promise.                                                  |
+| `TimerHandler`           | type      | One injected timer — arms a deadline `callback` after `ms`, returning a `TimerCancel`; the broker's + client's deadline seam.                                                       |
+| `TimerCancel`            | type      | Cancel a pending `TimerHandler` deadline — idempotent, safe after the timer fired.                                                                                                  |
+| `PromptEventMap`         | type      | The broker's events (§13) — `pending(prompt)` / `answer(id, value)` / `expire(id)`; errors `unknown`, no listener-error event.                                                      |
+| `PromptOptions`          | interface | `createPrompt` options — `on?` / `error?` / `timeout?` / `timer?` (data-only).                                                                                                      |
+| `PromptValue`            | type      | The union of a resolved prompt's value shapes — `string` / `boolean` / `readonly string[]`; what a `Ticket`'s `value` Promise resolves to.                                          |
+| `PromptFormOptions`      | type      | The union of every prompt form's options bag — the `options` a `ParkRequest` carries, narrowed by its paired `PromptType`.                                                          |
+| `ParkRequest`            | interface | The request to `PromptInterface.park` a prompt directly — `form` / `options` plus `from?` / `to?` (set ONLY by a `TerminalManagerInterface`) (data-only).                           |
+| `Ticket`                 | interface | The handle `PromptInterface.park` returns — the parked prompt's `id` plus the `value` Promise resolving (or rejecting) with a `PromptValue` (data-only).                            |
+| `AnswerError`            | type      | The rejection reason a bare `PromptInterface.answer` returns — `'unknown'` (no such parked prompt) or `'rejected'` (failed validation / type-check).                                |
+| `AnswerResult`           | type      | The outcome of a bare `PromptInterface.answer` call — `{ success: true, value }` on accept, else `{ success: false, error: AnswerError }` (a Result literal, never a bare boolean). |
+| `PromptInterface`        | interface | The headless broker — `emitter` / `count` data + `park` / `pending` / `answer` / `destroy` (+ the inherited prompt forms).                                                          |
+| `Prompt`                 | class     | The observable headless broker — parks each call as a `PendingPrompt`, resolves on `answer`, rejects on timeout / teardown.                                                         |
+| `createPrompt`           | function  | Create the headless `PromptInterface` broker — the tri-surface's headless arm (forward `pending`, route `answer` back).                                                             |
+| `serializePromptOptions` | function  | (Listed under the pure core — the broker serializes each prompt's options through it for the wire.)                                                                                 |
+
+### Transport-neutral bridge wire seams
+
+The `http`-free wire helpers a consumer's own HTTP/SSE spine mounts the broker over — an SSE frame shape plus the serializers that build one for each broker signal, and the guard that narrows an answer POST body ([`src/core`](../../src/core)).
+
+| API                 | Kind      | Summary                                                                                                                          |
+| ------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `WireEvent`         | interface | One SSE-shaped wire frame — `event` name, JSON-stringified `data`, optional `id` (data-only; no `http` dependency).              |
+| `serializePending`  | function  | Serialize a parked `PendingPrompt` into a `WireEvent` — event `'pending'`, `id` the prompt's own id.                             |
+| `serializeExpire`   | function  | Serialize a parked prompt's expiry into a `WireEvent` — event `'expire'`, `data` the JSON `{ id }` payload.                      |
+| `serializeShutdown` | function  | The `WireEvent` a broker/manager sends when going away — event `'shutdown'`, no payload.                                         |
+| `isAnswerPayload`   | function  | Narrow an unknown wire payload to an answer POST body — a non-empty `id` string plus a `value` key present (§14, never an `as`). |
 
 ### The SSE bridge
 
@@ -190,26 +208,56 @@ The client-side counterpart to the broker — connects to a remote broker's SSE 
 | `PromptClient`          | class     | The observable SSE bridge — streams remote prompts to a local terminal, dedupes a replay, reconnects with a backoff.                                    |
 | `createPromptClient`    | function  | Create the SSE `PromptClientInterface` bridge — dispatch remote prompts to a local `terminal`, POST answers back.                                       |
 
+### The terminal manager
+
+The multi-endpoint MANAGER — a named registry of `PromptInterface` brokers so several parties (agents, tools, humans) can `ask` prompts of each other by NAME, attributed with a `from` → `to` edge on every parked `PendingPrompt`, and guarded by a transitive DEADLOCK check across every in-flight ask ([`src/core`](../../src/core)). Observable (§13); §9.1 accessors + §9.2 array-overload-first batch removal.
+
+| API                        | Kind      | Summary                                                                                                                                                       |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalOptions`          | interface | `add` / `createTerminalManager` per-endpoint options — `timeout?` / `timer?` (data-only).                                                                     |
+| `TerminalManagerEventMap`  | type      | The manager's events (§13) — the name-attributed re-emission of every mounted broker's `pending` / `answer(to, id, value)` / `expire(to, id)`.                |
+| `TerminalManagerOptions`   | interface | `createTerminalManager` options — `store?` / `timeout?` / `timer?` / `on?` / `error?` (data-only).                                                            |
+| `TerminalAnswerError`      | type      | The rejection reason a `TerminalManagerInterface.answer` returns — an `AnswerError`, plus `'terminal'` (no such endpoint).                                    |
+| `TerminalAnswerResult`     | type      | The outcome of a `TerminalManagerInterface.answer` call — `{ success: true, value }`, else `{ success: false, error: TerminalAnswerError }`.                  |
+| `TerminalManagerInterface` | interface | The registry — `emitter` / `count` data + `terminal` / `terminals` / `add` / `ask` / `pending` / `answer` / `open` / `save` / `remove` / `clear` / `destroy`. |
+| `TerminalManager`          | class     | The observable registry — mints/reuses named brokers, attributes `ask` edges, rejects `TARGET` / `DEADLOCK`, restores/persists via a store.                   |
+| `createTerminalManager`    | function  | Create the `TerminalManagerInterface` registry.                                                                                                               |
+
+### The terminal store
+
+The point-access persistence seam (AGENTS §5 — Stores) for a `TerminalManagerInterface`'s endpoint CONFIG snapshots — config only, never live broker state (a parked Promise is process-bound and is never resurrected) ([`src/core`](../../src/core)). Two 10-rule twins over one interface.
+
+| API                           | Kind      | Summary                                                                                                                                         |
+| ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalSnapshot`            | interface | One endpoint's persisted CONFIG snapshot — `id` (the endpoint name) + optional `timeout` (data-only).                                           |
+| `TerminalSnapshotRow`         | interface | One opaque persisted row — `id` + `snapshot: unknown`, the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads/writes (data-only). |
+| `TerminalStoreInterface`      | interface | The store contract — async `get` / `set` / `delete`, keyed by the snapshot's own `id`.                                                          |
+| `isTerminalSnapshot`          | const     | Narrow an unknown value to a `TerminalSnapshot` — a non-empty `id` plus an optional numeric `timeout` (§14, never an `as`).                     |
+| `MemoryTerminalStore`         | class     | The in-memory twin — a process-lifetime `Map<string, TerminalSnapshot>`; no idle-TTL, no eviction.                                              |
+| `DatabaseTerminalStore`       | class     | The `databases`-layer twin — one opaque JSON column over a `TableInterface<TerminalSnapshotRow>`, narrowed with `isTerminalSnapshot` on read.   |
+| `createMemoryTerminalStore`   | function  | Create the in-memory `TerminalStoreInterface`.                                                                                                  |
+| `createDatabaseTerminalStore` | function  | Create the database-backed `TerminalStoreInterface` (default driver: an in-memory `@orkestrel/database` driver).                                |
+
 ### The server Terminal (TTY driver)
 
 The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface and the ONLY impure part of the stack ([`src/server`](../../src/server), surfaced through `@src/server`). Reads raw-mode stdin, drives the pure core reducers, renders each view in place, and falls back to `node:readline` when piped. The core owns every prompt contract (imported, never redeclared); this module owns only the raw-mode / readline mechanics + the stream-boundary types.
 
-| API                     | Kind      | Summary                                                                                                                                            |
-| ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `InputStreamInterface`  | interface | The minimal input-stream shape the driver reads — `on` / `off` (`'data'`) + optional `setRawMode` / `resume` / `pause` / `isTTY` (§21, data-only). |
-| `OutputStreamInterface` | interface | The minimal output-stream shape the driver writes — `write(text)` + optional `isTTY` (§21, data-only).                                             |
-| `TerminalOptions`       | interface | `createTerminal` options — `input?` / `output?` (both optional; a bare `createTerminal()` drives the real process streams) (data-only).            |
-| `TerminalInterface`     | interface | The interactive terminal prompt DRIVER — the third `PromptFormInterface` surface (the six prompt forms over the resolved streams).                 |
-| `Terminal`              | class     | The interactive driver — feeds raw-mode stdin through `parseKey` into the reducers, re-renders in place, falls back to readline.                   |
-| `createTerminal`        | function  | Create the `TerminalInterface` — the tri-surface's local-TTY arm, the env-symmetric sibling of `createPrompt` / `createPromptClient`.              |
-| `isInputStream`         | function  | Whether a value is a usable `InputStreamInterface` (callable `on` / `off`) — the input boundary guard (§14), total.                                |
-| `isOutputStream`        | function  | Whether a value is a usable `OutputStreamInterface` (callable `write`) — the output boundary guard (§14), total.                                   |
-| `isReadable`            | function  | Whether a value is a Node `ReadableStream` (callable `read` / `pipe` / `on`) — narrows the input to the readline boundary (§14).                   |
-| `isWritable`            | function  | Whether a value is a Node `WritableStream` (callable `write` / `end`) — narrows the output to the readline boundary (§14).                         |
-| `isRawCapable`          | function  | Whether an input stream can be driven in RAW mode (`isTTY === true` AND a callable `setRawMode`) — selects raw mode vs. the readline fallback.     |
-| `lineCount`             | function  | The number of terminal LINES a rendered view occupies (one more than its newline count) — the basis of the in-place re-render.                     |
-| `moveUp`                | function  | The cursor-UP control sequence (`ESC[{count}A`), or `''` when `count <= 0` — the pure step the re-render climbs over the prior view with.          |
-| `redrawPrefix`          | function  | The full reposition-and-clear prefix to write before re-rendering a view in place — climb, return to column 0, erase to end of screen.             |
+| API                     | Kind      | Summary                                                                                                                                                                                              |
+| ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InputStreamInterface`  | interface | The minimal input-stream shape the driver reads — `on` / `off` (`'data'`) + optional `setRawMode` / `resume` / `pause` / `isTTY` (§21, data-only).                                                   |
+| `OutputStreamInterface` | interface | The minimal output-stream shape the driver writes — `write(text)` + optional `isTTY` (§21, data-only).                                                                                               |
+| `TerminalOptions`       | interface | `createTerminal` options — `input?` / `output?` (both optional; a bare `createTerminal()` drives the real process streams) (data-only).                                                              |
+| `TerminalInterface`     | interface | The interactive terminal prompt DRIVER — the third `PromptFormInterface` surface (the six prompt forms over the resolved streams).                                                                   |
+| `Terminal`              | class     | The interactive driver — feeds raw-mode stdin through `parseKey` into the reducers, re-renders in place, falls back to readline.                                                                     |
+| `createTerminal`        | function  | Create the `TerminalInterface` — the tri-surface's local-TTY arm, the env-symmetric sibling of `createPrompt` / `createPromptClient`.                                                                |
+| `isInputStream`         | function  | Whether a value is a usable `InputStreamInterface` (callable `on` / `off`) — the input boundary guard (§14), total.                                                                                  |
+| `isOutputStream`        | function  | Whether a value is a usable `OutputStreamInterface` (callable `write`) — the output boundary guard (§14), total.                                                                                     |
+| `isReadable`            | function  | Whether a value is a Node `ReadableStream` (callable `read` / `pipe` / `on`) — narrows the input to the readline boundary (§14).                                                                     |
+| `isWritable`            | function  | Whether a value is a Node `WritableStream` (callable `write` / `end`) — narrows the output to the readline boundary (§14).                                                                           |
+| `rawCapable`            | function  | Whether an input stream can be driven in RAW mode (`isTTY === true` AND a callable `setRawMode`) — selects raw mode vs. the readline fallback; a plain predicate, not a `Guard` (no reserved `is*`). |
+| `lineCount`             | function  | The number of terminal LINES a rendered view occupies (one more than its newline count) — the basis of the in-place re-render.                                                                       |
+| `moveUp`                | function  | The cursor-UP control sequence (`ESC[{count}A`), or `''` when `count <= 0` — the pure step the re-render climbs over the prior view with.                                                            |
+| `redrawPrefix`          | function  | The full reposition-and-clear prefix to write before re-rendering a view in place — climb, return to column 0, erase to end of screen.                                                               |
 
 ### The server-Terminal constants
 
@@ -250,17 +298,18 @@ The shared async contract all three surfaces (`Terminal` / `Prompt` / a `PromptC
 
 `PromptInterface` extends `PromptFormInterface`, and the `Prompt` class implements every member of both directly, so its full instance method surface (the six inherited prompt forms plus its own broker lifecycle) is documented here, keyed by the CLASS name rather than `PromptInterface` — this one table is the exact, exhaustive surface a `Prompt` instance exposes (AGENTS §22).
 
-| Method     | Returns                                                   | Behavior                                                                                                          |
-| ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `input`    | `Promise<string>`                                         | Prompt for a single line of text (empty falls back to the default) — parks it as a `PendingPrompt`.               |
-| `password` | `Promise<string>`                                         | Prompt for masked text (no echoed default) — parks it as a `PendingPrompt`.                                       |
-| `confirm`  | `Promise<boolean>`                                        | Prompt yes/no (return takes the default) — parks it as a `PendingPrompt`.                                         |
-| `select`   | `Promise<string>`                                         | Prompt to pick ONE choice — parks it as a `PendingPrompt`.                                                        |
-| `checkbox` | `Promise<readonly string[]>`                              | Prompt to pick MANY choices — parks it as a `PendingPrompt`.                                                      |
-| `editor`   | `Promise<string>`                                         | Prompt for multi-line text (finished by ctrl-d / EOF) — parks it as a `PendingPrompt`.                            |
-| `pending`  | `readonly PendingPrompt[]` / `PendingPrompt \| undefined` | List all parked prompts (`pending()`) / look one up by id (`pending(id)`) (§9.1).                                 |
-| `answer`   | `boolean`                                                 | Validate + type-check an answer for a parked prompt; on accept resolve its Promise (else `false`, stays pending). |
-| `destroy`  | `void`                                                    | Tear down — expire every still-pending prompt (their Promises reject) and destroy the emitter.                    |
+| Method     | Returns                                                   | Behavior                                                                                                                                                                    |
+| ---------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`    | `Promise<string>`                                         | Prompt for a single line of text (empty falls back to the default) — parks it as a `PendingPrompt`.                                                                         |
+| `password` | `Promise<string>`                                         | Prompt for masked text (no echoed default) — parks it as a `PendingPrompt`.                                                                                                 |
+| `confirm`  | `Promise<boolean>`                                        | Prompt yes/no (return takes the default) — parks it as a `PendingPrompt`.                                                                                                   |
+| `select`   | `Promise<string>`                                         | Prompt to pick ONE choice — parks it as a `PendingPrompt`.                                                                                                                  |
+| `checkbox` | `Promise<readonly string[]>`                              | Prompt to pick MANY choices — parks it as a `PendingPrompt`.                                                                                                                |
+| `editor`   | `Promise<string>`                                         | Prompt for multi-line text (finished by ctrl-d / EOF) — parks it as a `PendingPrompt`.                                                                                      |
+| `park`     | `Ticket`                                                  | Park a prompt directly from a `ParkRequest` (`form` / `options` / optional `from` / `to`) — the general entry the six form methods wrap.                                    |
+| `pending`  | `readonly PendingPrompt[]` / `PendingPrompt \| undefined` | List all parked prompts (`pending()`) / look one up by id (`pending(id)`) (§9.1).                                                                                           |
+| `answer`   | `AnswerResult`                                            | Validate + type-check an answer for a parked prompt; on accept resolve its Promise and return `{ success: true, value }` (else `{ success: false, error }`, stays pending). |
+| `destroy`  | `void`                                                    | Tear down — expire every still-pending prompt (their Promises reject) and destroy the emitter.                                                                              |
 
 #### `PromptClientInterface`
 
@@ -276,20 +325,50 @@ The SSE bridge — its connection lifecycle methods.
 
 The interactive TTY driver. `TerminalInterface` IS exactly `PromptFormInterface` (it adds no members), so its method surface is the six prompt forms documented above — it carries no Methods table of its own.
 
+#### `TerminalManagerInterface`
+
+The multi-endpoint registry — the `TerminalManager` class implements it directly, so this table is its exact instance method surface too (AGENTS §22).
+
+| Method      | Returns                                                               | Behavior                                                                                                                      |
+| ----------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `PromptInterface \| undefined`                                        | Look up one endpoint's broker by name (§9.1).                                                                                 |
+| `terminals` | `readonly string[]`                                                   | List every mounted endpoint name (§9.1).                                                                                      |
+| `add`       | `PromptInterface`                                                     | Mint (or return the EXISTING, unchanged) broker for `name` — idempotent, never clobbers a live endpoint.                      |
+| `ask`       | `Promise<string>` / `Promise<boolean>` / `Promise<readonly string[]>` | Park a prompt from `from` to `to` (auto-`add`ing `to`), precisely overloaded per `PromptType`; rejects `TARGET` / `DEADLOCK`. |
+| `pending`   | `readonly PendingPrompt[]`                                            | List every endpoint's parked prompts (`pending()`) / scope to one endpoint (`pending(to)`) (§9.1).                            |
+| `answer`    | `TerminalAnswerResult`                                                | Route an answer to the named endpoint's broker (`{ success: false, error: 'terminal' }` for an unknown endpoint).             |
+| `open`      | `Promise<PromptInterface \| undefined>`                               | Restore (or return the live) broker for `name` from the `store` — an EMPTY broker, never resurrecting parked Promises.        |
+| `save`      | `Promise<boolean>`                                                    | Persist an endpoint's config snapshot to the `store` (`false` when there is no store, or `name` is unknown).                  |
+| `remove`    | `boolean`                                                             | Remove a batch (`remove(names)`, §9.2 array overload FIRST — `true` when any was removed) or one endpoint (`remove(name)`).   |
+| `clear`     | `void`                                                                | Remove every endpoint without destroying the manager.                                                                         |
+| `destroy`   | `void`                                                                | Tear down — destroy every broker, then the manager's own emitter.                                                             |
+
+#### `TerminalStoreInterface`
+
+The persistence seam both `MemoryTerminalStore` and `DatabaseTerminalStore` implement exactly.
+
+| Method   | Returns                                  | Behavior                                                                   |
+| -------- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| `get`    | `Promise<TerminalSnapshot \| undefined>` | Resolve the persisted snapshot for `id`, or `undefined` if none is stored. |
+| `set`    | `Promise<void>`                          | Insert / replace under the snapshot's OWN `id` (no separate id param).     |
+| `delete` | `Promise<void>`                          | Drop a snapshot by id; an absent id is a no-op (no throw).                 |
+
 ## Contract
 
 These invariants hold across `src/core` ↔ `src/server` ↔ `terminal.md`:
 
 1. **DOC ↔ SOURCE bijection.** Every `function` / `const` / `class` / `interface` / `type` row in the `## Surface` tables is a real export of the terminal source trees (`src/core` plus the `src/server` env backend), and every export appears as a Surface row — exhaustive, both directions (AGENTS §22). (`ESCAPE` is exported by BOTH modules' `constants.ts` as the same ESC byte; the parity gate concatenates the trees and dedupes, so the one Surface row covers both.)
-2. **DOC ↔ SOURCE method bijection.** Every behavioral interface's `## Methods` table lists exactly its public methods (call-signature members) — exhaustive, both directions — and each implementing class (`Prompt` / `PromptClient` / `Terminal`) implements every method of its interface and adds none beyond it (AGENTS §22). A renamed / added / removed method breaks the gate until the table is reconciled.
+2. **DOC ↔ SOURCE method bijection.** Every behavioral interface's `## Methods` table lists exactly its public methods (call-signature members) — exhaustive, both directions — and each implementing class (`Prompt` / `PromptClient` / `Terminal` / `TerminalManager`) implements every method of its interface and adds none beyond it (AGENTS §22). A renamed / added / removed method breaks the gate until the table is reconciled.
 3. **The reducers are pure, total, copy-on-write.** Each `*Reduce` is a total `(state, key) → PromptStep` — it never throws, never mutates `state` (it builds a NEW state on every transition), and always returns a rendered `view` + a `status`. A reducer that doesn't consume the key returns the state unchanged with `status: 'active'`. The driver applies `step.state`, writes `step.view`, and (when `status === 'submit'`) reads `step.value`; the `value` is present ONLY on a `submit` step.
 4. **`parseKey` totality.** `parseKey` decodes any input (`string` / `Uint8Array`) into a `KeyEvent` and NEVER throws — a known control byte / escape sequence maps to its canonical `name` (via `CONTROL_NAMES` / `SEQUENCE_NAMES`), a printable character names itself (with `shift` for an uppercase letter), and an unrecognized sequence yields `name: ''` with the raw `sequence` preserved. The driver can therefore never crash on a stray byte.
 5. **Validation is declarative DATA — so it crosses the wire.** A `ValidationRules` is a plain record, NOT a closure; `resolveValidation` compiles it (or a bare `Validator`, or nothing) into ONE composed `Validator` that runs the rules in the fixed order (required → minimum → maximum → pattern → email → url → numeric → integer → alphanumeric → custom) and returns the FIRST failing rule's message (short-circuiting), or `true`. Because the rules are data, the broker serializes them (`serializeValidationRules` flattens each function rule to `true`, keeping the built-in intent) and the client reconstructs the validator from them (`reconstructValidationRules` → `resolveValidation`) — so a remotely-parked prompt validates exactly as a local one. `resolveValidation` ALWAYS returns a validator (an absent / empty rule set yields an always-passing one), so a prompt's state unconditionally holds a real validator.
 6. **The tri-surface — one contract, three impls.** ONE `PromptFormInterface` (the six async prompt methods) is implemented THREE ways: the server `Terminal` (local TTY), the headless `Prompt` broker (park-as-Promise), and a `PromptClient`-driven local terminal (a remote prompt dispatched to THIS machine). A prompt issued through this contract resolves the same way on every surface — the shared core supplies the state machine, the validation, and the decode, so the surfaces differ only in HOW the bytes/answers arrive.
-7. **The broker: park-as-Promise + `answer` / timeout → `expire`.** Each `Prompt` call mints an id (`crypto.randomUUID()`), parks a wire-safe `PendingPrompt`, emits `pending`, and returns an unresolved Promise. `answer(id, value)` runs the prompt's per-form gate — it type-checks `value` to the form (`string` / `boolean` / `string[]`) AND (for the text forms) runs the resolved validator; a rejected answer returns `false` and the prompt stays `pending`, an accepted answer resolves the Promise (emits `answer`, removes the prompt). An unanswered prompt expires after `timeout` ms (via the INJECTED timer) — `expire` fires and the Promise rejects with a `TerminalError(code: 'EXPIRE')`; `destroy()` expires every still-pending prompt the same way. The timer is injectable, so expiry is driven without real time.
+7. **The broker: park-as-Promise + `answer` (a Result literal) / timeout → `expire`.** Each `Prompt` call (or a direct `park(request)`) mints an id (`crypto.randomUUID()`), parks a wire-safe `PendingPrompt`, emits `pending`, and returns an unresolved Promise (`park` also returns the `id` in its `Ticket`). `answer(id, value)` runs the prompt's per-form gate — it type-checks `value` to the form (`string` / `boolean` / `string[]`) AND (for the text forms) runs the resolved validator; a rejected answer returns `{ success: false, error }` (an `AnswerResult` — `'unknown'` for no such parked prompt, `'rejected'` for a failed gate) and the prompt stays `pending`, an accepted answer resolves the Promise, emits `answer`, removes the prompt, and returns `{ success: true, value }`. An unanswered prompt expires after `timeout` ms (via the INJECTED timer) — `expire` fires and the Promise rejects with a `TerminalError(code: 'EXPIRE')`; `destroy()` expires every still-pending prompt the same way. The timer is injectable, so expiry is driven without real time.
 8. **The client: reconnect-replay-safe dedupe + `disconnect` stops reconnect.** The `PromptClient` opens the SSE stream, §14-narrows every decoded payload (`isPendingPrompt`, never an `as`), dispatches each prompt to the local `terminal`, and POSTs the resolved value back. A prompt already in flight (same id) is IGNORED, so a reconnection that replays buffered events can never double-answer. `connect()` reconnects after the stream drops with the `delay` backoff (the injected timer) — UNLESS `reconnect` is `false`, the client was `destroy`ed, or the drop was a deliberate `disconnect()`. `disconnect()` aborts the in-flight stream, cancels the backoff, and clears the connect loop's flag so it EXITS instead of reconnecting (a later `connect()` may restart it). A server `shutdown` event calls `disconnect()` (not `destroy()`) — the client stops streaming without auto-reconnect but STAYS REUSABLE; a later `connect()` recovers it.
-9. **The server `Terminal`: raw-mode leak-freedom + cancel → `TerminalError('CANCEL')` + masking + the non-TTY fallback.** The driver enters raw mode exactly ONCE per prompt and ALWAYS cleans up — on submit, on cancel, and on a throw inside a step — leaving no raw mode and no leaked `'data'` listener (the cleanup closure is invoked on every exit path). Between keystrokes it re-renders the view IN PLACE (climb over the previous view's `lineCount` lines via `redrawPrefix`, clear down, write the new view), hiding the cursor for the duration and restoring it after. A ctrl-c cancels: the awaited prompt call rejects with a `TerminalError(code: 'CANCEL')` so a caller branches on `error.code`. A password's `view` masks the value (the real value is never echoed). When `input` is not a TTY (`isRawCapable` is `false`), raw mode is unavailable, so the prompts fall back to `node:readline` line input (still validating) — `select` / `checkbox` present a numbered list read via a readline line, and `editor` reads lines until EOF. The streams are resolved through their §14 guards (`isInputStream` / `isOutputStream`, never an `as`), so a test drives every prompt with a fake TTY emitting scripted key chunks and recording the rendered output.
-10. **The core / server split — universal logic, one impure driver.** The cross-environment core owns EVERYTHING universal: the `parseKey` decoder, the six reducers + their state factories + view renderers, the declarative validation, the broker, and the SSE bridge — all pure types + functions + immutable state, no `node:*`, no TTY, no I/O. The server module owns ONLY the `Terminal` raw-mode / readline driver — the one piece that touches a real `process.stdin` / `process.stdout` — and the stream-boundary types; it imports every prompt contract from `@src/core` (never redeclares them). The view is rendered through the shared console `StylerInterface` (one style engine), so swapping the byte source (TTY vs. wire) never touches the prompt logic.
+9. **The server `Terminal`: raw-mode leak-freedom + cancel → `TerminalError('CANCEL')` + masking + the non-TTY fallback.** The driver enters raw mode exactly ONCE per prompt and ALWAYS cleans up — on submit, on cancel, and on a throw inside a step — leaving no raw mode and no leaked `'data'` listener (the cleanup closure is invoked on every exit path). Between keystrokes it re-renders the view IN PLACE (climb over the previous view's `lineCount` lines via `redrawPrefix`, clear down, write the new view), hiding the cursor for the duration and restoring it after. A ctrl-c cancels: the awaited prompt call rejects with a `TerminalError(code: 'CANCEL')` so a caller branches on `error.code`. A password's `view` masks the value (the real value is never echoed). When `input` is not a TTY (`rawCapable` is `false`), raw mode is unavailable, so the prompts fall back to `node:readline` line input (still validating) — `select` / `checkbox` present a numbered list read via a readline line, and `editor` reads lines until EOF; a fallback path with no readable input stream rejects `TerminalError('DRIVER', …)` rather than a bare `Error`. The streams are resolved through their §14 guards (`isInputStream` / `isOutputStream`, never an `as`), so a test drives every prompt with a fake TTY emitting scripted key chunks and recording the rendered output.
+10. **The manager: named registry + attributed `ask` + transitive `DEADLOCK` + durable config.** `TerminalManager.add(name, options?)` mints (or reuses) one `Prompt` broker per endpoint and re-emits its `pending` / `answer` / `expire` events on the manager, attributed by `name` (`TerminalManagerEventMap`). `ask(from, to, form, options)` auto-`add`s `to` if absent, records the `from → to` edge in the in-flight edge set, and parks through `to`'s broker — it rejects `TerminalError('TARGET', …)` for an unknown `to`, and `TerminalError('DEADLOCK', …)` when the new edge would close a transitive cycle over every CURRENT in-flight edge (walked ancestor-first, mirroring an agent-tool ancestry guard); the edge clears on every settle path (answer / expire / `remove` / `clear` / `destroy`). `answer(to, id, value)` routes to `to`'s broker (`TerminalAnswerResult`, `'terminal'` for an unknown endpoint). `open(name)` restores an EMPTY broker from the `store` (never resurrecting a parked Promise); `save(name)` persists the endpoint's configured `timeout`. `remove` (§9.2, array overload first) destroys one or a batch of endpoints, expiring every prompt still parked on each (settling its `ask` ticket and clearing its edge); `clear` removes all; `destroy` is idempotent.
+11. **Transport-neutral wire seams — no `http` dependency.** `serializePending` / `serializeExpire` / `serializeShutdown` build a `WireEvent` (`event` / `data` / optional `id`) for each broker signal, so a consumer's own HTTP/SSE spine mounts the broker without this package importing `node:http`; `isAnswerPayload` (§14) narrows an inbound answer POST body before it reaches `answer`.
+12. **The core / server split — universal logic, one impure driver.** The cross-environment core owns EVERYTHING universal: the `parseKey` decoder, the six reducers + their state factories + view renderers, the declarative validation, the broker, and the SSE bridge — all pure types + functions + immutable state, no `node:*`, no TTY, no I/O. The server module owns ONLY the `Terminal` raw-mode / readline driver — the one piece that touches a real `process.stdin` / `process.stdout` — and the stream-boundary types; it imports every prompt contract from `@src/core` (never redeclares them). The view is rendered through the shared console `StylerInterface` (one style engine), so swapping the byte source (TTY vs. wire) never touches the prompt logic.
 
 Deliberately **not** part of this surface yet, by the same "build only what earns its keep" discipline: the SSE-server END of the bridge (the broker emits `pending` on its `emitter` — a consumer mounts it on their own HTTP spine's SSE-stream seam + answers via a POST route; this package ships the bridge, not that spine), and a cursor-movement / line-edit-within-a-line capability (the reducers edit at the END of the buffer — `ctrl-a` / `ctrl-e` decode but no left/right insertion is modelled).
 
@@ -336,10 +415,23 @@ prompt.emitter.on('expire', (id) => log(`prompt ${id} timed out`))
 
 const answer = prompt.input({ message: 'Your name', validate: { required: true } }) // parks — unresolved
 // ...elsewhere, an answer arrives over the transport:
-const accepted = prompt.answer(id, 'Ada') // true; resolves the awaited input() above
+const result = prompt.answer(id, 'Ada') // { success: true, value: 'Ada' }; resolves the awaited input() above
+if (!result.success) log(result.error) // 'unknown' | 'rejected'
 prompt.pending() // the still-parked prompts
 const name = await answer // 'Ada'
 prompt.destroy() // expire every still-pending prompt (their Promises reject) and destroy the emitter
+```
+
+### Parking a prompt directly (the general entry)
+
+```ts
+import { createPrompt } from '@src/core'
+
+const prompt = createPrompt()
+const ticket = prompt.park({ form: 'input', options: { message: 'Your name' } })
+ticket.id // the parked prompt's id
+prompt.answer(ticket.id, 'Ada')
+const value = await ticket.value // 'Ada' (a PromptValue)
 ```
 
 ### The SSE bridge (remote prompt → local terminal)
@@ -551,13 +643,84 @@ isAbortError(new DOMException('aborted', 'AbortError')) // true — a deliberate
 parseWireJSON('{"a":1}') // { a: 1 } — malformed / empty input yields undefined, never a throw
 ```
 
+### Transport-neutral wire seams (mounting the broker on a custom HTTP/SSE spine)
+
+```ts
+import { isAnswerPayload, serializeExpire, serializePending, serializeShutdown } from '@src/core'
+import { createPrompt } from '@src/core'
+
+const prompt = createPrompt()
+prompt.emitter.on('pending', (pending) => {
+	const frame = serializePending(pending) // { event: 'pending', data: '...', id: pending.id }
+	sendToClient(frame) // e.g. write an SSE frame over your own HTTP spine
+})
+prompt.emitter.on('expire', (id) => sendToClient(serializeExpire(id))) // { event: 'expire', data: '{"id":"..."}' }
+sendToClient(serializeShutdown()) // { event: 'shutdown', data: '' } — sent when the broker/manager is going away
+
+// Narrow an inbound answer POST body (§14, never an `as`) before it reaches `answer`:
+const body: unknown = await readJSON(request)
+if (isAnswerPayload(body)) prompt.answer(body.id, body.value)
+```
+
+### The multi-endpoint terminal manager (`ask` / `answer` / durable config)
+
+```ts
+import { createTerminalManager, isTerminalError } from '@src/core'
+
+const manager = createTerminalManager()
+manager.add('agent') // mint (or reuse, unchanged) the 'agent' endpoint's broker
+manager.terminals() // ['agent']
+manager.terminal('agent') // the mounted PromptInterface, or undefined
+
+// `ask` attributes a from -> to edge and auto-adds `to` if absent:
+const name = manager.ask('user', 'agent', 'input', { message: 'Your name' })
+const [pending] = manager.pending('agent')
+manager.answer('agent', pending.id, 'Ada') // { success: true, value: 'Ada' }
+await name // 'Ada'
+
+// A cycle over the in-flight edges rejects DEADLOCK; an unknown endpoint rejects TARGET:
+try {
+	await manager.ask('agent', 'user', 'input', { message: 'circular?' })
+} catch (error) {
+	if (isTerminalError(error) && error.code === 'DEADLOCK') log('would deadlock')
+}
+
+// Durable config (requires a `store`, e.g. createMemoryTerminalStore()):
+await manager.save('agent') // persist the endpoint's configured timeout
+await manager.open('agent') // restore an EMPTY broker (no parked Promises resurrected)
+
+manager.remove(['agent']) // batch remove (§9.2 array overload first) — true when any was removed
+manager.clear() // remove every endpoint, manager stays usable
+manager.destroy() // destroy every broker, then the manager's own emitter
+```
+
+### The terminal store (memory + database twins)
+
+```ts
+import { createDatabaseTerminalStore, createMemoryTerminalStore } from '@src/core'
+
+const memory = createMemoryTerminalStore()
+await memory.set({ id: 'agent', timeout: 30_000 })
+await memory.get('agent') // { id: 'agent', timeout: 30_000 }
+await memory.delete('agent') // no-op if absent
+
+const database = createDatabaseTerminalStore() // in-memory @orkestrel/database driver by default
+await database.set({ id: 'agent', timeout: 30_000 })
+await database.get('agent') // narrowed back from the opaque JSON column via isTerminalSnapshot
+await database.delete('agent')
+
+// A manager wires either twin as its `store`:
+import { createTerminalManager } from '@src/core'
+const manager = createTerminalManager({ store: database })
+```
+
 ### The server stream + cursor helpers directly
 
 ```ts
 import {
 	isInputStream,
 	isOutputStream,
-	isRawCapable,
+	rawCapable,
 	isReadable,
 	isWritable,
 	lineCount,
@@ -569,7 +732,7 @@ isInputStream(process.stdin) // true — callable on/off
 isOutputStream(process.stdout) // true — callable write
 isReadable(process.stdin) // true — the node:readline `input` boundary
 isWritable(process.stdout) // true — the node:readline `output` boundary
-isRawCapable(process.stdin) // true on a real TTY with setRawMode; false off a TTY (selects the readline fallback)
+rawCapable(process.stdin) // true on a real TTY with setRawMode; false off a TTY (selects the readline fallback)
 
 lineCount('one\ntwo\nthree') // 3
 moveUp(2) // the ESC[2A cursor-up sequence, or '' when count <= 0
@@ -582,9 +745,11 @@ redrawPrefix(3) // climb 2 lines, return to column 0, erase to end of screen —
 - [`tests/src/core/helpers.test.ts`](../../tests/src/core/helpers.test.ts) — the pure core: `parseKey` totality (control bytes / arrow sequences both forms / printable / unknown), the validation engine (each built-in rule + composition + `resolveValidation`), the choice normalizers, the six reducers (every key path + copy-on-write + submit/cancel), the wire serialize/reconstruct round-trip + the §14 wire guards, and the broker/bridge wiring helpers.
 - [`tests/src/core/Prompt.test.ts`](../../tests/src/core/Prompt.test.ts) — the broker: park-as-Promise + `pending` accessors + `count`, `answer` validate + type-check (accept / reject stays pending), timeout → `expire` → reject (manual timer), `destroy` expiry, and the `pending` / `answer` / `expire` events + emit-safety.
 - [`tests/src/core/PromptClient.test.ts`](../../tests/src/core/PromptClient.test.ts) — the SSE bridge over a scripted `fetch`: connect + dispatch a `pending` to a local terminal + POST the answer, the replay dedupe (same id in flight ignored), `expire` / `shutdown` server signals, reconnect backoff (manual timer), `disconnect` stops the reconnect loop, and the `connect` / `disconnect` / `error` events.
-- [`tests/src/core/factories.test.ts`](../../tests/src/core/factories.test.ts) — `createPrompt` / `createPromptClient` each return a working instance of their interface.
+- [`tests/src/core/factories.test.ts`](../../tests/src/core/factories.test.ts) — `createPrompt` / `createPromptClient` / `createTerminalManager` / `createMemoryTerminalStore` / `createDatabaseTerminalStore` each return a working instance of their interface.
+- [`tests/src/core/TerminalManager.test.ts`](../../tests/src/core/TerminalManager.test.ts) — the manager: registry accessors + idempotent `add`, attributed `ask` (auto-`add`, `TARGET` rejection), the transitive `DEADLOCK` guard across every in-flight edge (cleared on answer / expire / remove / clear / destroy), `pending` / `answer` routing, durable `open` / `save`, batch `remove` (§9.2), `clear`, `destroy`, and the name-attributed event re-emission.
+- [`tests/src/core/stores.test.ts`](../../tests/src/core/stores.test.ts) — the shared 10-rule suite run against both `MemoryTerminalStore` and `DatabaseTerminalStore`: `get` / `set` / `delete`, upsert-by-own-id, absent-id no-op, and the `isTerminalSnapshot` narrow on a `DatabaseTerminalStore` read.
 - [`tests/src/server/Terminal.test.ts`](../../tests/src/server/Terminal.test.ts) — the driver over a fake TTY emitting scripted key chunks: each prompt form resolves its value, cancel-on-ctrl-c rejects a `TerminalError('CANCEL')`, raw mode entered exactly once + always cleaned up (no leak), the in-place re-render output, password masking, and the non-TTY readline fallback (numbered list / EOF editor).
-- [`tests/src/server/helpers.test.ts`](../../tests/src/server/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `isRawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
+- [`tests/src/server/helpers.test.ts`](../../tests/src/server/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `rawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
 - [`tests/src/server/factories.test.ts`](../../tests/src/server/factories.test.ts) — `createTerminal` returns a working `TerminalInterface` over the resolved (or injected) streams.
 
 ## See also

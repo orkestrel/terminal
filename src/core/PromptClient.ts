@@ -47,8 +47,10 @@ import { isRecord, isString } from '@orkestrel/contract'
  *   never an `as`), dispatched to `terminal`, and its resolved value POSTed back to `url`.
  *   Dispatch is strictly SERIAL: the read loop drives the terminal for ONE prompt at a time and
  *   only reads/dispatches the next event after the current prompt fully settles (its answer
- *   POSTed). A prompt id redelivered by the broker AFTER its prior dispatch has settled is
- *   dispatched again — the client does not dedupe across completion.
+ *   POSTed). A prompt id redelivered (e.g. after a reconnect) WHILE its prior dispatch is still
+ *   in flight is skipped (a `#seen` set tracks in-flight ids); once that dispatch settles (or the
+ *   broker sends `expire` for the id) the id is dropped from `#seen`, so a later redelivery of the
+ *   SAME id after completion is dispatched again — the client does not dedupe across completion.
  * - **Server signals.** An `expire` event (the broker dropped a parked prompt) emits `expire`; a
  *   `shutdown` event calls {@link disconnect} (not {@link destroy}) — the client stops streaming
  *   without auto-reconnect but stays reusable; a later {@link connect} recovers it.
@@ -82,6 +84,7 @@ export class PromptClient implements PromptClientInterface {
 	#connected = false
 	#destroyed = false
 	#warnedInsecureToken = false
+	readonly #seen = new Set<string>()
 
 	constructor(options: PromptClientOptions) {
 		this.url = options.url
@@ -148,6 +151,7 @@ export class PromptClient implements PromptClientInterface {
 		if (this.#destroyed) return
 		this.#destroyed = true
 		this.disconnect()
+		this.#seen.clear()
 		this.#emitter.destroy()
 	}
 
@@ -201,12 +205,14 @@ export class PromptClient implements PromptClientInterface {
 	async #handle(event: SSEEvent): Promise<void> {
 		if (event.event === SSE_EVENTS.pending) {
 			const parsed = parseWireJSON(event.data)
-			if (isPendingPrompt(parsed)) await this.#dispatch(parsed.id, parsed)
+			if (isPendingPrompt(parsed) && !this.#seen.has(parsed.id))
+				await this.#dispatch(parsed.id, parsed)
 			return
 		}
 		if (event.event === SSE_EVENTS.expire) {
 			const parsed = parseWireJSON(event.data)
 			if (isRecord(parsed) && isString(parsed.id)) {
+				this.#seen.delete(parsed.id)
 				this.#emitter.emit('expire', parsed.id)
 			}
 			return
@@ -218,11 +224,14 @@ export class PromptClient implements PromptClientInterface {
 	// strictly serial — see the class docstring — so this always runs to completion (or errors)
 	// before the read loop reads and dispatches the next event.
 	async #dispatch(id: string, pending: PendingPrompt): Promise<void> {
+		this.#seen.add(id)
 		try {
 			const value = await dispatchPendingPrompt(this.#terminal, pending)
 			await this.#post(id, value)
 		} catch (error) {
 			this.#emitter.emit('error', error)
+		} finally {
+			this.#seen.delete(id)
 		}
 	}
 
@@ -247,8 +256,8 @@ export class PromptClient implements PromptClientInterface {
 
 	// Merge the base headers with the auth token header when a token is configured.
 	#headers(base: Record<string, string>): Record<string, string> {
-		if (this.#token !== undefined) base[HEADER_TOKEN] = this.#token
-		return base
+		if (this.#token !== undefined) return { ...base, [HEADER_TOKEN]: this.#token }
+		return { ...base }
 	}
 
 	// Park `ms` on the INJECTED timer (deterministic in tests) — the reconnect backoff. The timer's
