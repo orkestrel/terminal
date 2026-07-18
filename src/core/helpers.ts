@@ -829,7 +829,7 @@ export const isPendingPrompt: Guard<PendingPrompt> = recordOf(
 		from: isString,
 		to: isString,
 	},
-	['from', 'to'] as const,
+	['from', 'to'],
 )
 
 // === Remote prompt dispatch (T-b)
@@ -1085,5 +1085,5 @@ export function isAnswerPayload(
 /** Narrow an unknown value to a {@link TerminalSnapshot} — a non-empty `id` plus an optional numeric `timeout`. */
 export const isTerminalSnapshot: Guard<TerminalSnapshot> = recordOf(
 	{ id: isNonEmptyString, timeout: isNumber },
-	['timeout'] as const,
+	['timeout'],
 )
