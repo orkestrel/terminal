@@ -37,10 +37,11 @@ import { isArray } from '@orkestrel/contract'
  *   EXISTING broker UNCHANGED — idempotent, never clobbers a live/parked endpoint). Every mounted
  *   broker's `pending` / `answer` / `expire` events are re-emitted on the manager, attributed by
  *   `name`.
- * - **`ask`.** Rejects `TARGET` for an unknown `to`; rejects `DEADLOCK` when parking `from → to`
- *   would close a cycle over the CURRENT in-flight edge set (walked transitively); otherwise parks
- *   through the target's broker and resolves with the ORIGINAL ticket Promise (edge cleanup is
- *   attached via `.then`, never altering the value/rejection the caller observes).
+ * - **`ask`.** The target must already be mounted via {@link add} — `ask` never auto-adds it;
+ *   rejects `TARGET` for an unknown `to` (listing the known names). Rejects `DEADLOCK` when parking
+ *   `from → to` would close a cycle over the CURRENT in-flight edge set (walked transitively);
+ *   otherwise parks through the target's broker and resolves with the ORIGINAL ticket Promise (edge
+ *   cleanup is attached via `.then`, never altering the value/rejection the caller observes).
  * - **Durable open / save.** `open(name)` restores an EMPTY broker from the `store` (parked
  *   Promises are process-bound and never resurrected); `save(name)` persists the endpoint's
  *   configured `timeout`.
@@ -77,6 +78,7 @@ export class TerminalManager implements TerminalManagerInterface {
 	readonly #store: TerminalStoreInterface | undefined
 	readonly #timeout: number | undefined
 	readonly #timer: TimerHandler | undefined
+	readonly #cap: number | undefined
 	readonly #emitter: Emitter<TerminalManagerEventMap>
 	#destroyed = false
 
@@ -84,6 +86,7 @@ export class TerminalManager implements TerminalManagerInterface {
 		this.#store = options?.store
 		this.#timeout = options?.timeout
 		this.#timer = options?.timer
+		this.#cap = options?.cap
 		this.#emitter = new Emitter({ on: options?.on, error: options?.error })
 	}
 
@@ -108,13 +111,16 @@ export class TerminalManager implements TerminalManagerInterface {
 	// === Registry
 
 	add(name: string, options?: TerminalOptions): PromptInterface {
+		if (this.#destroyed) throw new TerminalError('DESTROYED', 'manager destroyed')
 		const existing = this.#terminals.get(name)
 		if (existing !== undefined) return existing
 		const timeout = options?.timeout ?? this.#timeout
 		const timer = options?.timer ?? this.#timer
+		const cap = options?.cap ?? this.#cap
 		const promptOptions: PromptOptions = {
 			...(timeout !== undefined ? { timeout } : {}),
 			...(timer !== undefined ? { timer } : {}),
+			...(cap !== undefined ? { cap } : {}),
 		}
 		const broker = createPrompt(promptOptions)
 		const listeners = {
@@ -179,11 +185,13 @@ export class TerminalManager implements TerminalManagerInterface {
 			)
 		}
 		const ticket = broker.park({ form, options, from, to })
-		this.#edges.set(ticket.id, { from, to })
-		const clear = (): void => {
-			this.#edges.delete(ticket.id)
+		if (broker.pending(ticket.id) !== undefined) {
+			this.#edges.set(ticket.id, { from, to })
+			const clear = (): void => {
+				this.#edges.delete(ticket.id)
+			}
+			ticket.value.then(clear, clear)
 		}
-		ticket.value.then(clear, clear)
 		return ticket.value
 	}
 
@@ -212,10 +220,12 @@ export class TerminalManager implements TerminalManagerInterface {
 	// === Durable open / save
 
 	async open(name: string): Promise<PromptInterface | undefined> {
+		if (this.#destroyed) throw new TerminalError('DESTROYED', 'manager destroyed')
 		const existing = this.#terminals.get(name)
 		if (existing !== undefined) return existing
 		if (this.#store === undefined) return undefined
 		const snapshot = await this.#store.get(name)
+		if (this.#destroyed) throw new TerminalError('DESTROYED', 'manager destroyed')
 		if (snapshot === undefined) return undefined
 		return this.add(name, snapshot.timeout !== undefined ? { timeout: snapshot.timeout } : {})
 	}
@@ -260,19 +270,20 @@ export class TerminalManager implements TerminalManagerInterface {
 
 	// === Private helpers
 
-	// Drop one endpoint: destroy its broker (expiring every prompt still parked on it, which
-	// settles the corresponding `ask` ticket and clears its edge), unsubscribe the manager's
-	// listeners, and remove it from every registry map. `false` when `name` was not mounted.
+	// Drop one endpoint: destroy its broker FIRST (its expire loop re-emits `expire` for every
+	// still-parked prompt through the manager's listeners — still attached at this point, so
+	// each settles on the manager emitter too), THEN unsubscribe the manager's listeners and
+	// remove it from every registry map. `false` when `name` was not mounted.
 	#removeOne(name: string): boolean {
 		const broker = this.#terminals.get(name)
 		if (broker === undefined) return false
+		broker.destroy()
 		const listeners = this.#listeners.get(name)
 		if (listeners !== undefined) {
 			broker.emitter.off('pending', listeners.pending)
 			broker.emitter.off('answer', listeners.answer)
 			broker.emitter.off('expire', listeners.expire)
 		}
-		broker.destroy()
 		this.#terminals.delete(name)
 		this.#config.delete(name)
 		this.#listeners.delete(name)

@@ -68,6 +68,7 @@ import { isArray, isBoolean, isString } from '@orkestrel/contract'
 export class Prompt implements PromptInterface {
 	readonly #timeout: number
 	readonly #timer: TimerHandler
+	readonly #cap: number | undefined
 	readonly #parked = new Map<string, Parked>()
 	readonly #emitter: Emitter<PromptEventMap>
 	#destroyed = false
@@ -75,6 +76,7 @@ export class Prompt implements PromptInterface {
 	constructor(options?: PromptOptions) {
 		this.#timeout = options?.timeout ?? DEFAULT_PROMPT_TIMEOUT_MS
 		this.#timer = options?.timer ?? defaultTimer
+		this.#cap = options?.cap
 		this.#emitter = new Emitter({ on: options?.on, error: options?.error })
 	}
 
@@ -183,6 +185,16 @@ export class Prompt implements PromptInterface {
 			return {
 				id: crypto.randomUUID(),
 				value: Promise.reject(new TerminalError('EXPIRE', 'broker destroyed')),
+			}
+		}
+		if (this.#cap !== undefined && this.#parked.size >= this.#cap) {
+			return {
+				id: crypto.randomUUID(),
+				value: Promise.reject(
+					new TerminalError('LIMIT', `parked-prompt cap (${this.#cap}) reached`, {
+						cap: this.#cap,
+					}),
+				),
 			}
 		}
 		const id = crypto.randomUUID()

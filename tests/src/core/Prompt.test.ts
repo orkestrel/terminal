@@ -477,3 +477,34 @@ describe('Prompt — answer() AnswerResult totality', () => {
 		expect(prompt.answer(parked.id, ['a'])).toEqual({ success: true, value: ['a'] })
 	})
 })
+
+describe('Prompt — parked-prompt cap (FIX 3)', () => {
+	it('a park at cap rejects LIMIT WITHOUT parking, minting a live entry, emitting pending, or arming a timer', async () => {
+		const timer = createManualTimer()
+		const prompt = createPrompt({ timeout: 1000, timer: timer.handler, cap: 2 })
+		const events = recordEmitterEvents(prompt.emitter, ['pending', 'answer', 'expire'])
+
+		const first = prompt.input({ message: '1' })
+		const second = prompt.input({ message: '2' })
+		expect(prompt.count).toBe(2)
+		expect(events.pending.count).toBe(2)
+		expect(timer.pending).toBe(2)
+
+		const overflow = prompt.input({ message: '3' })
+		await expect(overflow).rejects.toMatchObject({ code: 'LIMIT', context: { cap: 2 } })
+
+		expect(prompt.count).toBe(2)
+		expect(events.pending.count).toBe(2)
+		expect(timer.pending).toBe(2)
+
+		void first.catch(() => undefined)
+		void second.catch(() => undefined)
+	})
+
+	it('default (no cap) is unbounded — behavior-preserving', () => {
+		const prompt = createPrompt()
+		for (let i = 0; i < 25; i++) void prompt.input({ message: `${i}` }).catch(() => undefined)
+		expect(prompt.count).toBe(25)
+		prompt.destroy()
+	})
+})

@@ -349,8 +349,19 @@ export type PromptType = 'input' | 'password' | 'confirm' | 'select' | 'checkbox
  *   `destroy`ed while it was still pending); the prompt's Promise rejects with this.
  * - `CANCEL` — the user aborted an interactive prompt (ctrl-c) at the server `Terminal` (T-c)
  *   driver; the awaited prompt call rejects with this so a caller can branch on `error.code`.
+ * - `LIMIT` — a broker's optional `cap` on concurrently-parked prompts was already reached; the
+ *   new call is rejected WITHOUT parking (never counted, never emitted, no timer armed).
+ * - `DESTROYED` — a call reached an already-`destroy`ed {@link TerminalManagerInterface} (`add`
+ *   at entry, or `open` whose `store` read resolved after a `destroy` happened in the gap).
  */
-export type TerminalErrorCode = 'EXPIRE' | 'CANCEL' | 'DRIVER' | 'DEADLOCK' | 'TARGET'
+export type TerminalErrorCode =
+	| 'EXPIRE'
+	| 'CANCEL'
+	| 'DRIVER'
+	| 'DEADLOCK'
+	| 'TARGET'
+	| 'LIMIT'
+	| 'DESTROYED'
 
 // === The async prompt contract (T-b)
 
@@ -475,12 +486,17 @@ export type PromptEventMap = {
  *   {@link import('./constants.js').DEFAULT_PROMPT_TIMEOUT_MS}).
  * - `timer` — the injected {@link TimerHandler} (default the host `setTimeout`); supply a
  *   deterministic timer to drive expiry in tests without real time.
+ * - `cap` — the maximum number of prompts this broker will hold PARKED at once (default
+ *   UNBOUNDED — no cap unless supplied). Once `count` reaches `cap`, a new park is rejected with
+ *   a {@link import('./errors.js').TerminalError} (`code: 'LIMIT'`) WITHOUT parking, minting an
+ *   id, emitting `pending`, or arming the expiry timer — the runaway-asker memory ceiling.
  */
 export interface PromptOptions {
 	readonly on?: EmitterHooks<PromptEventMap>
 	readonly error?: EmitterErrorHandler
 	readonly timeout?: number
 	readonly timer?: TimerHandler
+	readonly cap?: number
 }
 
 /**
@@ -654,10 +670,11 @@ export interface PromptClientInterface {
 
 // === The terminal manager (multi-endpoint broker registry)
 
-/** Options for {@link import('./factories.js').createTerminal} / a manager-owned {@link PromptInterface} broker — the per-endpoint `timeout` + injected `timer`. */
+/** Options for {@link import('./factories.js').createTerminal} / a manager-owned {@link PromptInterface} broker — the per-endpoint `timeout` + injected `timer` + optional `cap` on concurrently-parked prompts. */
 export interface TerminalOptions {
 	readonly timeout?: number
 	readonly timer?: TimerHandler
+	readonly cap?: number
 }
 
 /**
@@ -682,14 +699,16 @@ export type TerminalManagerEventMap = {
  *
  * @remarks
  * - `store` — the optional {@link TerminalStoreInterface} backing `open` / `save`.
- * - `timeout` / `timer` — the manager-wide default for each endpoint's broker (overridable per
- *   {@link TerminalManagerInterface.add} call via {@link TerminalOptions}).
+ * - `timeout` / `timer` / `cap` — the manager-wide default for each endpoint's broker (overridable
+ *   per {@link TerminalManagerInterface.add} call via {@link TerminalOptions}, exactly like
+ *   `timeout` / `timer`).
  * - `on` / `error` — the manager's {@link EmitterHooks} + {@link EmitterErrorHandler} (AGENTS §13).
  */
 export interface TerminalManagerOptions {
 	readonly store?: TerminalStoreInterface
 	readonly timeout?: number
 	readonly timer?: TimerHandler
+	readonly cap?: number
 	readonly on?: EmitterHooks<TerminalManagerEventMap>
 	readonly error?: EmitterErrorHandler
 }
