@@ -19,7 +19,7 @@ npm install @orkestrel/terminal
 
 ## Requirements
 
-- Node.js >= 24
+- Node.js >= 22
 - Core is ESM; the `./server` subpath ships dual ESM+CJS builds
 
 ## Usage
