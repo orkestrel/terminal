@@ -2,39 +2,32 @@ import type { UserConfig } from 'vite'
 import { defineConfig, mergeConfig } from 'vitest/config'
 import tsconfig from './tsconfig.json' with { type: 'json' }
 import { fileURLToPath, URL } from 'node:url'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { globSync } from 'node:fs'
+import { playwright } from '@vitest/browser-playwright'
 
 export function resolveWorkspacePath(relativePath: string): string {
 	return fileURLToPath(new URL(relativePath, import.meta.url))
 }
 
-/**
- * Normalize the cross-entry core-type imports in a bundled declaration entry.
- *
- * The server lib marks `@src/core` external and references the sibling
- * `dist/src/core` build instead of inlining it (see `srcServer`).
- * api-extractor (via vite-plugin-dts `bundleTypes`) collects those imports verbatim
- * from the per-file pre-bundle emit, where the `@src/core` alias resolves to the
- * source path — so the rolled-up entry ends up importing core types from
- * `../core/index.ts` / `../../core/index.ts` (a `.ts` extension that isn't shipped,
- * at depths relative to each source file rather than the final bundle). Rewrite every
- * such specifier to the shipped ESM declaration entry `../core/index.js`, matching the
- * JS output's `paths: { '@src/core': '../core/index.js' }` rewrite so `tsc` resolves
- * the sibling `dist/src/core/index.d.ts` from the bundled entry.
- *
- * Runs as the vite-plugin-dts `afterBuild` hook — after api-extractor has written the
- * final bundled entry — so it never perturbs api-extractor's own module resolution.
- */
-export function rewriteCoreEntry(outDir: string): () => void {
-	return () => {
-		const file = resolveWorkspacePath(`${outDir}/index.d.ts`)
-		const content = readFileSync(file, 'utf8')
-		const fixed = content.replace(
-			/(['"])(?:@src\/core|(?:\.\.\/)+core\/index(?:\.d)?\.[cm]?ts)\1/g,
-			"'../core/index.js'",
-		)
-		if (fixed !== content) writeFileSync(file, fixed)
+export function createBrowserProvider() {
+	const { PLAYWRIGHT_EXECUTABLE_PATH, PLAYWRIGHT_WS_ENDPOINT, PLAYWRIGHT_CHANNEL } = process.env
+	if (PLAYWRIGHT_EXECUTABLE_PATH)
+		return playwright({ launchOptions: { executablePath: PLAYWRIGHT_EXECUTABLE_PATH } })
+	if (PLAYWRIGHT_WS_ENDPOINT)
+		return playwright({ connectOptions: { wsEndpoint: PLAYWRIGHT_WS_ENDPOINT } })
+	if (PLAYWRIGHT_CHANNEL) return playwright({ launchOptions: { channel: PLAYWRIGHT_CHANNEL } })
+	if (process.platform === 'linux') {
+		for (const pattern of [
+			'/opt/pw-browsers/chromium',
+			'/opt/pw-browsers/chromium-*/chrome-linux64/chrome',
+			'/opt/pw-browsers/chromium-*/chrome-linux/chrome',
+		]) {
+			const [executablePath] = globSync(pattern).sort().reverse()
+			if (executablePath) return playwright({ launchOptions: { executablePath } })
+		}
 	}
+	const channel = process.platform === 'win32' ? 'msedge' : 'chrome'
+	return playwright({ launchOptions: { channel } })
 }
 
 const resolve = {
@@ -44,7 +37,6 @@ const resolve = {
 	),
 }
 
-// Base: shared resolve + build defaults + src:core tests.
 export const srcCore = (config?: UserConfig): UserConfig =>
 	mergeConfig(
 		{
@@ -65,8 +57,6 @@ export const srcCore = (config?: UserConfig): UserConfig =>
 		config ?? {},
 	)
 
-// Extends srcCore: the guides-parity suite. Node env — it reads the real
-// guides/*.md and the documented source modules off disk — but resolves like core tests.
 export const guides = (config?: UserConfig): UserConfig =>
 	srcCore(
 		mergeConfig(
@@ -81,15 +71,6 @@ export const guides = (config?: UserConfig): UserConfig =>
 		),
 	)
 
-// Extends srcCore: server-only library (`src/server`, the raw-mode stdin
-// Terminal driver — with a `node:readline` fallback — that drives the core
-// prompt reducers over a real TTY). Builds a dual ESM+CJS lib for Node and
-// runs its tests in the node environment. Externalizes `node:*` (so
-// `node:readline` and friends are never bundled) AND declared `@orkestrel/*`
-// deps AND `@src/core` → the sibling `dist/src/core` build (format-aware:
-// `../core/index.js` for the ESM output, `../core/index.cjs` for the CJS
-// output), exactly as core ships dual-format. Build-only — the test project
-// resolves `@src/core` from source through the shared `resolve` alias.
 export const srcServer = (config?: UserConfig): UserConfig =>
 	srcCore(
 		mergeConfig(
