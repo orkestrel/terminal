@@ -9,8 +9,8 @@
 Drive a prompt three ways over ONE contract — a local TTY, a headless broker, or an SSE bridge — all on the pure core:
 
 ```ts
-import { createPrompt } from '@src/core'
-import { createTerminal } from '@src/server'
+import { createPrompt } from '@orkestrel/terminal'
+import { createTerminal } from '@orkestrel/terminal/server'
 
 // 1. The local TTY (the server Terminal) — answer at THIS keyboard.
 const terminal = createTerminal()
@@ -24,7 +24,7 @@ const remote = await prompt.input({ message: 'Your name' }) // parks; resolves o
 // ...elsewhere: prompt.answer(id, 'Ada')
 
 // 3. The SSE bridge — receive remote prompts, dispatch each to a LOCAL terminal.
-import { createPromptClient } from '@src/core'
+import { createPromptClient } from '@orkestrel/terminal'
 const client = createPromptClient({ url: 'http://host/prompts', terminal })
 await client.connect() // streams remote prompts to `terminal`, POSTs answers back
 ```
@@ -377,7 +377,7 @@ Deliberately **not** part of this surface yet, by the same "build only what earn
 ### A TTY prompt (the local Terminal)
 
 ```ts
-import { createTerminal } from '@src/server'
+import { createTerminal } from '@orkestrel/terminal/server'
 
 const terminal = createTerminal() // process.stdin / process.stdout by default
 const name = await terminal.input({
@@ -396,7 +396,7 @@ const scopes = await terminal.checkbox({
 const proceed = await terminal.confirm({ message: 'Continue?', default: true })
 
 // ctrl-c rejects with a TerminalError('CANCEL') — branch on the code:
-import { isTerminalError } from '@src/core'
+import { isTerminalError } from '@orkestrel/terminal'
 try {
 	await terminal.password({ message: 'Token' }) // masked, never echoed
 } catch (error) {
@@ -407,7 +407,7 @@ try {
 ### The headless broker (park + answer)
 
 ```ts
-import { createPrompt } from '@src/core'
+import { createPrompt } from '@orkestrel/terminal'
 
 const prompt = createPrompt({ timeout: 60_000 })
 prompt.emitter.on('pending', (pending) => send(pending)) // forward to whoever can answer
@@ -425,7 +425,7 @@ prompt.destroy() // expire every still-pending prompt (their Promises reject) an
 ### Parking a prompt directly (the general entry)
 
 ```ts
-import { createPrompt } from '@src/core'
+import { createPrompt } from '@orkestrel/terminal'
 
 const prompt = createPrompt()
 const ticket = prompt.park({ form: 'input', options: { message: 'Your name' } })
@@ -437,8 +437,8 @@ const value = await ticket.value // 'Ada' (a PromptValue)
 ### The SSE bridge (remote prompt → local terminal)
 
 ```ts
-import { createPromptClient, createPrompt } from '@src/core'
-import { createTerminal } from '@src/server'
+import { createPromptClient, createPrompt } from '@orkestrel/terminal'
+import { createTerminal } from '@orkestrel/terminal/server'
 
 // Issue prompts on a server through the broker; answer them on a CLIENT machine's terminal.
 const client = createPromptClient({
@@ -454,7 +454,7 @@ client.destroy() // disconnect(), drop in-flight ids, and destroy the emitter
 ### Driving a reducer directly (the pure path)
 
 ```ts
-import { createInputState, inputReduce, parseKey } from '@src/core'
+import { createInputState, inputReduce, parseKey } from '@orkestrel/terminal'
 
 // No TTY, no broker — drive the pure state machine yourself (this is what a Terminal does internally).
 let state = createInputState({ message: 'Name', validate: { required: true } })
@@ -469,7 +469,7 @@ for (const byte of ['A', 'd', 'a', '\r']) {
 ### A validated input (declarative rules)
 
 ```ts
-import { resolveValidation } from '@src/core'
+import { resolveValidation } from '@orkestrel/terminal'
 
 // The rules compile into ONE composed validator — first failing rule short-circuits.
 const validate = resolveValidation({ required: true, minimum: 3, email: true })
@@ -492,7 +492,7 @@ import {
 	evaluateRule,
 	isPrintable,
 	passing,
-} from '@src/core'
+} from '@orkestrel/terminal'
 
 isPrintable('a') // true — a printable, non-control character
 isPrintable('\x7f') // false — DEL
@@ -540,7 +540,7 @@ import {
 	errorLine,
 	toggleIndex,
 	inputView,
-} from '@src/core'
+} from '@orkestrel/terminal'
 
 // Passwords — identical line-editing to input(), but the view masks the value.
 let password = createPasswordState({ message: 'Token' })
@@ -599,7 +599,7 @@ import {
 	serializeChoices,
 	serializePromptOptions,
 	serializeValidationRules,
-} from '@src/core'
+} from '@orkestrel/terminal'
 import { isString } from '@orkestrel/contract'
 
 // A broker serializes a prompt's raw options for the wire (drops the styler + function validators):
@@ -625,7 +625,7 @@ isInsecureRemote('https://example.com') // false — encrypted
 sanitizeChoiceLabels(['plain', { name: 'B', value: 'b', description: 'ok' }]) // control chars stripped
 
 // The bridge dispatch step + its wiring seams:
-import { createTerminal } from '@src/server'
+import { createTerminal } from '@orkestrel/terminal/server'
 const pending = {
 	id: '1',
 	form: 'input' as const,
@@ -646,8 +646,13 @@ parseWireJSON('{"a":1}') // { a: 1 } — malformed / empty input yields undefine
 ### Transport-neutral wire seams (mounting the broker on a custom HTTP/SSE spine)
 
 ```ts
-import { isAnswerPayload, serializeExpire, serializePending, serializeShutdown } from '@src/core'
-import { createPrompt } from '@src/core'
+import {
+	isAnswerPayload,
+	serializeExpire,
+	serializePending,
+	serializeShutdown,
+} from '@orkestrel/terminal'
+import { createPrompt } from '@orkestrel/terminal'
 
 const prompt = createPrompt()
 prompt.emitter.on('pending', (pending) => {
@@ -665,7 +670,7 @@ if (isAnswerPayload(body)) prompt.answer(body.id, body.value)
 ### The multi-endpoint terminal manager (`ask` / `answer` / durable config)
 
 ```ts
-import { createTerminalManager, isTerminalError } from '@src/core'
+import { createTerminalManager, isTerminalError } from '@orkestrel/terminal'
 
 const manager = createTerminalManager()
 manager.add('agent') // mint (or reuse, unchanged) the 'agent' endpoint's broker
@@ -732,7 +737,7 @@ try {
 ### The terminal store (memory + database twins)
 
 ```ts
-import { createDatabaseTerminalStore, createMemoryTerminalStore } from '@src/core'
+import { createDatabaseTerminalStore, createMemoryTerminalStore } from '@orkestrel/terminal'
 
 const memory = createMemoryTerminalStore()
 await memory.set({ id: 'agent', timeout: 30_000 })
@@ -745,7 +750,7 @@ await database.get('agent') // narrowed back from the opaque JSON column via isT
 await database.delete('agent')
 
 // A manager wires either twin as its `store`:
-import { createTerminalManager } from '@src/core'
+import { createTerminalManager } from '@orkestrel/terminal'
 const manager = createTerminalManager({ store: database })
 ```
 
@@ -761,7 +766,7 @@ import {
 	lineCount,
 	moveUp,
 	redrawPrefix,
-} from '@src/server'
+} from '@orkestrel/terminal/server'
 
 isInputStream(process.stdin) // true — callable on/off
 isOutputStream(process.stdout) // true — callable write
