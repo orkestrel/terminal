@@ -68,6 +68,7 @@ import {
 export class Terminal implements TerminalInterface {
 	readonly #input: InputStreamInterface
 	readonly #output: OutputStreamInterface
+	readonly #handlers = new Map<object, (chunk: string | Uint8Array) => void>()
 
 	constructor(options?: TerminalOptions) {
 		// Resolve each stream through its guard (§14): a present, well-shaped injected stream is used as
@@ -180,19 +181,23 @@ export class Terminal implements TerminalInterface {
 	/**
 	 * The irreducible Node raw-mode primitive — the ONLY place raw mode is touched. Switches the input
 	 * into raw mode (each keypress delivered immediately, no echo), resumes its flow, and subscribes
-	 * `handler` to `'data'`; returns a cleanup closure that unsubscribes, leaves raw mode, and pauses
-	 * the stream. The closure is ALWAYS invoked (submit / cancel / throw), so raw mode and the listener
-	 * never leak.
+	 * `handler` to `'data'`. The paired {@link #leaveRaw} operation unsubscribes the exact handler,
+	 * leaves raw mode, and pauses the stream on submit, cancel, or throw.
 	 */
-	#enterRaw(handler: (chunk: string | Uint8Array) => void): () => void {
+	#enterRaw(token: object, handler: (chunk: string | Uint8Array) => void): void {
+		this.#handlers.set(token, handler)
 		this.#input.setRawMode?.(true)
 		this.#input.resume?.()
 		this.#input.on('data', handler)
-		return () => {
-			this.#input.off('data', handler)
-			this.#input.setRawMode?.(false)
-			this.#input.pause?.()
-		}
+	}
+
+	#leaveRaw(token: object): void {
+		const handler = this.#handlers.get(token)
+		if (handler === undefined) return
+		this.#handlers.delete(token)
+		this.#input.off('data', handler)
+		this.#input.setRawMode?.(false)
+		this.#input.pause?.()
 	}
 
 	/**
@@ -206,7 +211,7 @@ export class Terminal implements TerminalInterface {
 	 */
 	#drive<T, S>(initial: S, reduce: (state: S, key: KeyEvent) => PromptStep<T, S>): Promise<T> {
 		return new Promise<T>((resolve, reject) => {
-			let state = initial
+			const state = initial
 			// Render the first view, tracking how many lines it spans so the next redraw climbs over them.
 			this.#output.write(CURSOR_HIDE)
 			let firstView: string
@@ -219,35 +224,53 @@ export class Terminal implements TerminalInterface {
 				reject(error)
 				return
 			}
-			let lines = lineCount(firstView)
-
-			const handler = (chunk: string | Uint8Array): void => {
-				try {
-					const step = reduce(state, parseKey(chunk))
-					state = step.state
-					if (step.status === 'active') {
-						this.#render(step.view, lines)
-						lines = lineCount(step.view)
-						return
-					}
-					// Terminal step (submit / cancel): paint the final committed view, then tear down.
-					this.#render(step.view, lines)
-					cleanup()
-					this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
-					if (step.status === 'cancel') reject(new TerminalError('CANCEL', 'Prompt cancelled'))
-					else if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
-					else reject(new TerminalError('DRIVER', 'submit produced no value'))
-				} catch (error) {
-					// A throw inside the reducer/validator/styler: tear down raw mode + the listener,
-					// restore the cursor exactly as the normal exit path does, then reject.
-					cleanup()
-					this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
-					reject(error)
-				}
-			}
-
-			const cleanup = this.#enterRaw(handler)
+			const token = {}
+			const handler = this.#createHandler(
+				token,
+				state,
+				lineCount(firstView),
+				reduce,
+				resolve,
+				reject,
+			)
+			this.#enterRaw(token, handler)
 		})
+	}
+
+	#createHandler<T, S>(
+		token: object,
+		initial: S,
+		initialLines: number,
+		reduce: (state: S, key: KeyEvent) => PromptStep<T, S>,
+		resolve: (value: T | PromiseLike<T>) => void,
+		reject: (reason?: unknown) => void,
+	): (chunk: string | Uint8Array) => void {
+		let state = initial
+		let lines = initialLines
+		return (chunk) => {
+			try {
+				const step = reduce(state, parseKey(chunk))
+				state = step.state
+				if (step.status === 'active') {
+					this.#render(step.view, lines)
+					lines = lineCount(step.view)
+					return
+				}
+				// Terminal step (submit / cancel): paint the final committed view, then tear down.
+				this.#render(step.view, lines)
+				this.#leaveRaw(token)
+				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				if (step.status === 'cancel') reject(new TerminalError('CANCEL', 'Prompt cancelled'))
+				else if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
+				else reject(new TerminalError('DRIVER', 'submit produced no value'))
+			} catch (error) {
+				// A throw inside the reducer/validator/styler: tear down raw mode + the listener,
+				// restore the cursor exactly as the normal exit path does, then reject.
+				this.#leaveRaw(token)
+				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				reject(error)
+			}
+		}
 	}
 
 	/** Redraw a prompt view in place — climb over the previous view's `previousLines`, clear, and write the new view (the pure cursor-math is {@link redrawPrefix}). */
@@ -357,14 +380,8 @@ export class Terminal implements TerminalInterface {
 	): Promise<{ readonly answer: string; readonly ended: boolean }> {
 		const rl = createInterface(this.#readline(masked))
 		return new Promise<{ readonly answer: string; readonly ended: boolean }>((resolve) => {
-			let settled = false
 			let last = ''
-			const settle = (answer: string, ended: boolean): void => {
-				if (settled) return
-				settled = true
-				rl.close()
-				resolve({ answer, ended })
-			}
+			const settle = this.#createQuestionSettler(rl, resolve)
 			// Track the most recent line so an EOF-on-`close` can recover an unterminated final line.
 			rl.on('line', (line) => {
 				last = line
@@ -373,6 +390,19 @@ export class Terminal implements TerminalInterface {
 			// EOF before a completed question: settle the recovered partial line (or '') as ended.
 			rl.on('close', () => settle(last, true))
 		})
+	}
+
+	#createQuestionSettler(
+		rl: ReturnType<typeof createInterface>,
+		resolve: (value: { readonly answer: string; readonly ended: boolean }) => void,
+	): (answer: string, ended: boolean) => void {
+		let settled = false
+		return (answer, ended) => {
+			if (settled) return
+			settled = true
+			rl.close()
+			resolve({ answer, ended })
+		}
 	}
 
 	/** Read every line from the input until EOF and resolve them joined by newlines (the editor fallback's reader). */
@@ -404,7 +434,7 @@ export class Terminal implements TerminalInterface {
 		// never rendered on a TTY that lacks `setRawMode` (the raw-mode `#drive` path already masks it).
 		return {
 			input,
-			output: isWritable(output) ? output : undefined,
+			...(isWritable(output) ? { output } : {}),
 			...(masked ? { terminal: false } : {}),
 		}
 	}

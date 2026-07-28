@@ -471,9 +471,9 @@ export interface Parked {
  * - `expire` — a parked prompt timed out (or was torn down) unanswered (carries its `id`).
  */
 export type PromptEventMap = {
-	pending: [prompt: PendingPrompt]
-	answer: [id: string, value: unknown]
-	expire: [id: string]
+	readonly pending: readonly [prompt: PendingPrompt]
+	readonly answer: readonly [id: string, value: unknown]
+	readonly expire: readonly [id: string]
 }
 
 /**
@@ -608,10 +608,10 @@ export interface FetchInit {
  * - `error` — a connection / dispatch / POST fault (errors are `unknown`).
  */
 export type PromptClientEventMap = {
-	connect: []
-	disconnect: []
-	expire: [id: string]
-	error: [error: unknown]
+	readonly connect: readonly []
+	readonly disconnect: readonly []
+	readonly expire: readonly [id: string]
+	readonly error: readonly [error: unknown]
 }
 
 /**
@@ -688,9 +688,9 @@ export interface TerminalOptions {
  * - `expire` — an endpoint's parked prompt timed out (`to` names the endpoint).
  */
 export type TerminalManagerEventMap = {
-	pending: [prompt: PendingPrompt]
-	answer: [to: string, id: string, value: unknown]
-	expire: [to: string, id: string]
+	readonly pending: readonly [prompt: PendingPrompt]
+	readonly answer: readonly [to: string, id: string, value: unknown]
+	readonly expire: readonly [to: string, id: string]
 }
 
 /**
@@ -791,7 +791,7 @@ export interface TerminalSnapshot {
 	readonly timeout?: number
 }
 
-/** One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads/writes; `snapshot` is narrowed with {@link import('./helpers.js').isTerminalSnapshot} on read. */
+/** One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads/writes; `snapshot` is narrowed with {@link import('./validators.js').isTerminalSnapshot} on read. */
 export interface TerminalSnapshotRow {
 	readonly id: string
 	readonly snapshot: unknown

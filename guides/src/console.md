@@ -9,7 +9,7 @@
 Build a styled, leveled logger and a narrative reporter over the shared substrate; the SAME code retargets to any environment by swapping the `sink`:
 
 ```ts
-import { createLogger, createReporter, createSpinner } from '@src/core'
+import { createLogger, createReporter, createSpinner } from '@orkestrel/console'
 
 const logger = createLogger({ name: 'http', level: 'info' }) // ANSI to the console by default
 logger.info('request', { method: 'GET', path: '/' }) // a styled, leveled line + an `entry` event
@@ -214,14 +214,14 @@ The default intercepted-method set, the bounded-buffer cap, the level projection
 
 The browser `%c` console sink — translates the core's ANSI output into a `console.log('%c…', css)` call at the OUTPUT boundary ([`src/browser`](../../src/browser), surfaced through `@src/browser`). The core owns the `SinkInterface` contract + the style DATA model; this module owns only the browser-side translation.
 
-| API                 | Kind      | Summary                                                                                                                             |
-| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `ConsoleOutput`     | interface | The `console.log`-ready output `ansiToConsole` produces — a `%c`-segmented `format` string + the parallel `styles` CSS array.       |
-| `StyleAccumulator`  | interface | The mutable scan state `ansiToConsole` carries while translating SGR codes to CSS — a `foreground` / `background` + attribute list. |
-| `createBrowserSink` | function  | Create the browser `%c` `SinkInterface` — translates ANSI `text` to a `console[method](format, ...styles)` call; level-routing.     |
-| `ansiToConsole`     | function  | Translate an ANSI-styled string into a browser `ConsoleOutput` (`%c` format + CSS array) — pure, total, and `%`-safe.               |
-| `escapePercent`     | function  | Double every literal `%` in a text segment to `%%` — the `%`-escape that keeps the console from reading a stray `%` as a directive. |
-| `parseParameters`   | function  | Parse an SGR parameter list (`'1;31'` → `[1, 31]`) into its numeric codes — a bare / empty field becomes a `0` reset.               |
+| API                 | Kind      | Summary                                                                                                                                         |
+| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConsoleOutput`     | interface | The `console.log`-ready output `ansiToConsole` produces — a `%c`-segmented `format` string + the parallel `styles` CSS array.                   |
+| `StyleAccumulator`  | interface | The immutable scan state `ansiToConsole` replaces while translating SGR codes to CSS — a `foreground` / `background` + readonly attribute list. |
+| `createBrowserSink` | function  | Create the browser `%c` `SinkInterface` — translates ANSI `text` to a `console[method](format, ...styles)` call; level-routing.                 |
+| `ansiToConsole`     | function  | Translate an ANSI-styled string into a browser `ConsoleOutput` (`%c` format + CSS array) — pure, total, and `%`-safe.                           |
+| `escapePercent`     | function  | Double every literal `%` in a text segment to `%%` — the `%`-escape that keeps the console from reading a stray `%` as a directive.             |
+| `parseParameters`   | function  | Parse an SGR parameter list (`'1;31'` → `[1, 31]`) into its numeric codes — a bare / empty field becomes a `0` reset.                           |
 
 ### Browser sink constants
 
@@ -394,7 +394,7 @@ What ships is the **cross-environment core** (the style engine, structured loggi
 ### A styled, leveled logger
 
 ```ts
-import { createLogger } from '@src/core'
+import { createLogger } from '@orkestrel/console'
 
 const logger = createLogger({ name: 'http', level: 'info' })
 logger.debug('verbose') // dropped — below the `info` threshold
@@ -411,7 +411,7 @@ logger.destroy() // clear() then destroy the emitter
 ### A logger registry
 
 ```ts
-import { createLoggerManager } from '@src/core'
+import { createLoggerManager } from '@orkestrel/console'
 
 const manager = createLoggerManager({ level: 'info' })
 manager.register('http') // mints + stores a logger named 'http', the manager's defaults flow in
@@ -423,7 +423,7 @@ manager.clear() // empty the registry
 ### A reporter narration
 
 ```ts
-import { createReporter } from '@src/core'
+import { createReporter } from '@orkestrel/console'
 
 const reporter = createReporter()
 reporter.section('Deploy') // ── Deploy ──────────────
@@ -446,7 +446,7 @@ reporter.status('success', 'all green') // ✔ all green
 ### Scoping third-party `console.*` with `withCapture`
 
 ```ts
-import { withCapture } from '@src/core'
+import { withCapture } from '@orkestrel/console'
 
 // Create your loggers BEFORE this — they snapshot the real console, so they are never recaptured.
 const { value, messages } = withCapture(() => {
@@ -463,7 +463,7 @@ const out = await withCapture(async () => fetchAndLog())
 ### Capture lifecycle
 
 ```ts
-import { createCapture } from '@src/core'
+import { createCapture } from '@orkestrel/console'
 
 const capture = createCapture()
 capture.start() // snapshot the configured console.* and install the interceptors
@@ -477,7 +477,7 @@ capture.destroy() // stop() then destroy the emitter
 ### A spinner and a progress bar
 
 ```ts
-import { createProgress, createSpinner } from '@src/core'
+import { createProgress, createSpinner } from '@orkestrel/console'
 
 const spinner = createSpinner({ message: 'connecting' })
 spinner.start() // a self-driving glyph cycle; a TTY sink redraws on the `\r`
@@ -504,8 +504,8 @@ interrupted.destroy() // tear down the emitter
 ### The browser — `%c` styling in DevTools
 
 ```ts
-import { createLogger } from '@src/core'
-import { createBrowserSink } from '@src/browser'
+import { createLogger } from '@orkestrel/console'
+import { createBrowserSink } from '@orkestrel/console/browser'
 
 // The SAME core logger; only the sink changes. ANSI is translated to `%c` at the sink,
 // so a DevTools console renders the same 16 colors a terminal would.
@@ -516,8 +516,8 @@ logger.error('boom') // → console.error('%c…', 'color:#cd0000;…') in DevTo
 ### The server — a TTY sink and a process capture
 
 ```ts
-import { createLogger, createReporter } from '@src/core'
-import { createProcessCapture, createServerSink } from '@src/server'
+import { createLogger, createReporter } from '@orkestrel/console'
+import { createProcessCapture, createServerSink } from '@orkestrel/console/server'
 
 const sink = createServerSink() // process.stdout / process.stderr; ANSI verbatim on a TTY, stripped to a pipe
 const logger = createLogger({ name: 'server', sink })
@@ -537,9 +537,9 @@ capture.destroy() // stop() then tear down the emitter
 ### One logger, different sink per environment (the cross-env one-liner)
 
 ```ts
-import { createLogger } from '@src/core'
-import { createBrowserSink } from '@src/browser'
-import { createServerSink } from '@src/server'
+import { createLogger } from '@orkestrel/console'
+import { createBrowserSink } from '@orkestrel/console/browser'
+import { createServerSink } from '@orkestrel/console/server'
 
 // The Logger code is identical everywhere — only the sink is chosen per environment.
 const sink = inBrowser ? createBrowserSink() : createServerSink()
@@ -559,7 +559,7 @@ import {
 	paint,
 	renderBox,
 	renderTable,
-} from '@src/core'
+} from '@orkestrel/console'
 
 const renderer = createANSIRenderer()
 renderer.render('hi', { foreground: 'red', attributes: [] }) // wraps 'hi' in the red SGR codes
@@ -581,7 +581,7 @@ formatDuration(1230) // '1.23s'
 ### Server helpers directly
 
 ```ts
-import { columnsOf, isBufferEncoding } from '@src/server'
+import { columnsOf, isBufferEncoding } from '@orkestrel/console/server'
 
 columnsOf(process.stdout) // the live TTY width, or the DEFAULT_COLUMNS fallback off a TTY
 isBufferEncoding('utf8') // true — a value accepted by Buffer#toString

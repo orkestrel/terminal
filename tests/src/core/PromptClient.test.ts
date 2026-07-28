@@ -5,6 +5,7 @@ import {
 	createRecordingTerminal,
 	createSSEResponse,
 	recordEmitterEvents,
+	requireElement,
 	waitForDelay,
 } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
@@ -34,7 +35,12 @@ function scriptedFetch(responses: readonly Response[]): {
 	const calls: FetchCall[] = []
 	const fetch: FetchHandler = (url, init) => {
 		const method = init?.method ?? 'GET'
-		calls.push({ url, method, headers: init?.headers ?? {}, body: init?.body })
+		calls.push({
+			url,
+			method,
+			headers: init?.headers ?? {},
+			...(init?.body !== undefined ? { body: init.body } : {}),
+		})
 		if (method === 'POST') return Promise.resolve(new Response(null, { status: 200 }))
 		return Promise.resolve(queue.shift() ?? createSSEResponse([]))
 	}
@@ -82,7 +88,7 @@ describe('PromptClient — dispatch + answer', () => {
 
 		// The terminal received the reconstructed options (default + validate rules survived the wire).
 		expect(recorded.input.count).toBe(1)
-		const [options] = recorded.input.calls[0]
+		const [options] = requireElement(recorded.input.calls, 0)
 		expect(options.message).toBe('Name?')
 		expect(options.default).toBe('Ada')
 		expect(options.validate).toEqual({ required: true })
@@ -107,7 +113,7 @@ describe('PromptClient — dispatch + answer', () => {
 		const client = createPromptClient({ url: 'http://broker/p', terminal, reconnect: false, fetch })
 
 		await client.connect()
-		const [options] = recorded.select.calls[0]
+		const [options] = requireElement(recorded.select.calls, 0)
 		expect(options.choices).toEqual(['a', { name: 'Bee', value: 'b' }])
 		expect(options.default).toBe('b')
 	})

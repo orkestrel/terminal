@@ -1,6 +1,6 @@
 import type { TerminalSnapshot, TerminalSnapshotRow, TerminalStoreInterface } from './types.js'
 import type { TableInterface } from '@orkestrel/database'
-import { isTerminalSnapshot } from './helpers.js'
+import { isTerminalSnapshot } from './validators.js'
 
 /**
  * A {@link TerminalStoreInterface} backed by one table of the `databases` layer — an endpoint's
@@ -25,7 +25,7 @@ import { isTerminalSnapshot } from './helpers.js'
  * - **`set(snapshot)` upserts under the snapshot's OWN `id`** (no separate id param) — it writes
  *   the row `{ id: snapshot.id, snapshot }`.
  * - **`get(id)` resolves the stored snapshot for an id**, narrowing the opaque JSON column back to
- *   a {@link TerminalSnapshot} ({@link import('./helpers.js').isTerminalSnapshot} — the AGENTS §14
+ *   a {@link TerminalSnapshot} ({@link import('./validators.js').isTerminalSnapshot} — the AGENTS §14
  *   boundary narrow for an untrusted storage read), or `undefined` if none is stored.
  * - **`delete(id)` drops a snapshot by id**; an absent id is a no-op (no throw).
  *

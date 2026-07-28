@@ -23,9 +23,9 @@ import {
 	globalFetch,
 	isAbortError,
 	isInsecureRemote,
-	isPendingPrompt,
 	parseWireJSON,
 } from './helpers.js'
+import { isPendingPrompt } from './validators.js'
 import { Emitter } from '@orkestrel/emitter'
 import { createSSEParser } from '@orkestrel/sse'
 import { isRecord, isString } from '@orkestrel/contract'
@@ -94,7 +94,10 @@ export class PromptClient implements PromptClientInterface {
 		this.#delay = options.delay ?? DEFAULT_RECONNECT_DELAY_MS
 		this.#fetch = options.fetch ?? globalFetch
 		this.#timer = options.timer ?? defaultTimer
-		this.#emitter = new Emitter({ on: options.on, error: options.error })
+		this.#emitter = new Emitter({
+			...(options.on !== undefined ? { on: options.on } : {}),
+			...(options.error !== undefined ? { error: options.error } : {}),
+		})
 	}
 
 	get emitter(): EmitterInterface<PromptClientEventMap> {
@@ -265,15 +268,17 @@ export class PromptClient implements PromptClientInterface {
 	// early (cancel the timer + resolve now); both clear on settle so they never fire twice.
 	#wait(ms: number): Promise<void> {
 		return new Promise((resolve) => {
-			const settle = (): void => {
-				this.#backoff = undefined
-				this.#wake = undefined
-				resolve()
-			}
+			const settle = this.#createSettler(resolve)
 			this.#wake = settle
-			this.#backoff = this.#timer(() => {
-				settle()
-			}, ms)
+			this.#backoff = this.#timer(settle, ms)
 		})
+	}
+
+	#createSettler(resolve: () => void): () => void {
+		return () => {
+			this.#backoff = undefined
+			this.#wake = undefined
+			resolve()
+		}
 	}
 }

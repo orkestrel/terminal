@@ -56,7 +56,7 @@ import {
 } from '@src/core'
 import { createStyler, strip } from '@orkestrel/console'
 import { isNumber, isString } from '@orkestrel/contract'
-import { createRecordingTerminal, feedReducer } from '../../setup.js'
+import { createRecordingTerminal, feedReducer, requireElement } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The PURE prompt core — parseKey (a total key decoder), the validation engine
@@ -974,8 +974,8 @@ describe('resolveValidation — combinations & first-error order', () => {
 		expect(validator('exact')).toBe(true)
 	})
 
-	it('an all-false / all-undefined rules bag yields an always-passing validator', () => {
-		const allOff: ValidationRules = { required: false, email: false, numeric: undefined }
+	it('an all-false rules bag yields an always-passing validator', () => {
+		const allOff: ValidationRules = { required: false, email: false }
 		const validator = resolveValidation(allOff)
 		expect(validator('')).toBe(true)
 		expect(validator('@@@')).toBe(true)
@@ -1223,7 +1223,7 @@ describe('passwordReduce — mask fidelity & no-leak (ANSI-stripped)', () => {
 			status: 'active',
 		}
 		for (let index = 0; index < secret.length; index += 1) {
-			step = passwordReduce(step.state, parseKey(secret[index]))
+			step = passwordReduce(step.state, parseKey(requireElement(secret, index)))
 			const masked = strip(step.view)
 			// The plain-text view contains exactly (index+1) mask glyphs.
 			expect((masked.match(/\*/g) ?? []).length).toBe(index + 1)
@@ -1609,7 +1609,7 @@ describe('dispatchPendingPrompt — per-form option reconstruction', () => {
 		expect(calls.confirm.calls[0]?.[0]).toEqual({ message: 'confirm?', default: true })
 		const second = createRecordingTerminal({ answers: ANSWERS })
 		await dispatchPendingPrompt(second.terminal, pendingOf('confirm', { default: 'yes' }))
-		expect(second.calls.confirm.calls[0]?.[0]).toEqual({ message: 'confirm?', default: undefined })
+		expect(second.calls.confirm.calls[0]?.[0]).toEqual({ message: 'confirm?' })
 	})
 
 	it('checkbox — reconstructs choices + numeric min / max', async () => {
@@ -1657,11 +1657,7 @@ describe('dispatchPendingPrompt — per-form option reconstruction', () => {
 		const { terminal, calls } = createRecordingTerminal({ answers: ANSWERS })
 		const value = await dispatchPendingPrompt(terminal, pendingOf('input', {}))
 		expect(value).toBe('i')
-		expect(calls.input.calls[0]?.[0]).toEqual({
-			message: 'input?',
-			default: undefined,
-			validate: undefined,
-		})
+		expect(calls.input.calls[0]?.[0]).toEqual({ message: 'input?' })
 	})
 })
 

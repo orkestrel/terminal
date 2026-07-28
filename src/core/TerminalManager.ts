@@ -87,7 +87,10 @@ export class TerminalManager implements TerminalManagerInterface {
 		this.#timeout = options?.timeout
 		this.#timer = options?.timer
 		this.#cap = options?.cap
-		this.#emitter = new Emitter({ on: options?.on, error: options?.error })
+		this.#emitter = new Emitter({
+			...(options?.on !== undefined ? { on: options.on } : {}),
+			...(options?.error !== undefined ? { error: options.error } : {}),
+		})
 	}
 
 	get emitter(): EmitterInterface<TerminalManagerEventMap> {
@@ -124,9 +127,9 @@ export class TerminalManager implements TerminalManagerInterface {
 		}
 		const broker = createPrompt(promptOptions)
 		const listeners = {
-			pending: (prompt: PendingPrompt) => this.#emitter.emit('pending', prompt),
-			answer: (id: string, value: unknown) => this.#emitter.emit('answer', name, id, value),
-			expire: (id: string) => this.#emitter.emit('expire', name, id),
+			pending: this.#createPendingListener(),
+			answer: this.#createAnswerListener(name),
+			expire: this.#createExpireListener(name),
 		}
 		broker.emitter.on('pending', listeners.pending)
 		broker.emitter.on('answer', listeners.answer)
@@ -187,9 +190,7 @@ export class TerminalManager implements TerminalManagerInterface {
 		const ticket = broker.park({ form, options, from, to })
 		if (broker.pending(ticket.id) !== undefined) {
 			this.#edges.set(ticket.id, { from, to })
-			const clear = (): void => {
-				this.#edges.delete(ticket.id)
-			}
+			const clear = this.#createEdgeClear(ticket.id)
 			ticket.value.then(clear, clear)
 		}
 		return ticket.value
@@ -269,6 +270,24 @@ export class TerminalManager implements TerminalManagerInterface {
 	}
 
 	// === Private helpers
+
+	#createPendingListener(): (prompt: PendingPrompt) => void {
+		return (prompt) => this.#emitter.emit('pending', prompt)
+	}
+
+	#createAnswerListener(name: string): (id: string, value: unknown) => void {
+		return (id, value) => this.#emitter.emit('answer', name, id, value)
+	}
+
+	#createExpireListener(name: string): (id: string) => void {
+		return (id) => this.#emitter.emit('expire', name, id)
+	}
+
+	#createEdgeClear(id: string): () => void {
+		return () => {
+			this.#edges.delete(id)
+		}
+	}
 
 	// Drop one endpoint: destroy its broker FIRST (its expire loop re-emits `expire` for every
 	// still-parked prompt through the manager's listeners — still attached at this point, so

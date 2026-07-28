@@ -31,6 +31,21 @@ export function waitForDelay(ms = 0): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Read one indexed collection element and fail loudly when it is absent.
+ *
+ * @typeParam T - The collection element type
+ * @param values - The readonly collection to read
+ * @param index - The zero-based index to require
+ * @returns The element at `index`
+ */
+export function requireElement<T>(values: readonly T[], index: number): T {
+	const value = values[index]
+	if (value === undefined)
+		throw new Error(`Missing required test element at index ${String(index)}`)
+	return value
+}
+
 // ── Recorder — a real callback with recorded calls, not a mock ─────────────────
 // Use instead of a test-framework spy when the test only needs to count calls or
 // inspect arguments (AGENTS §16.1).
@@ -358,4 +373,10 @@ export function createRecordingTerminal(
 	}
 
 	return { terminal, calls, controller }
+}
+
+/** Whether a repository-relative Vue SFC path belongs to the private browser application. */
+export function isBrowserVuePath(path: string): boolean {
+	const normalized = path.replaceAll('\\', '/')
+	return normalized.startsWith('app/browser/')
 }

@@ -13,14 +13,11 @@ import type {
 	PasswordOptions,
 	PasswordState,
 	PendingPrompt,
-	PendingPromptStatus,
 	PromptChoice,
 	PromptFormInterface,
 	PromptStep,
-	PromptType,
 	SelectOptions,
 	SelectState,
-	TerminalSnapshot,
 	TimerCancel,
 	ValidationRules,
 	Validator,
@@ -46,7 +43,6 @@ import {
 	isNumber,
 	isRecord,
 	isString,
-	literalOf,
 	recordOf,
 } from '@orkestrel/contract'
 import { createStyler, STATUS_ICONS, stripControls } from '@orkestrel/console'
@@ -344,6 +340,7 @@ export function inputView(state: InputState): string {
  */
 export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
 	if (key.ctrl && key.name === 'c') return { state, view: inputView(state), status: 'cancel' }
+	const { error: _error, ...clear } = state
 
 	if (key.name === 'return') {
 		const answer = state.value.length > 0 ? state.value : state.default
@@ -352,7 +349,7 @@ export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string
 			const next: InputState = { ...state, error: result }
 			return { state: next, view: inputView(next), status: 'active' }
 		}
-		const next: InputState = { ...state, value: answer, error: undefined }
+		const next: InputState = { ...clear, value: answer }
 		return {
 			state: next,
 			view: `${submitHeader(state.styler, state.message)} ${state.styler.dim(answer)}`,
@@ -363,7 +360,7 @@ export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string
 
 	const value = editLine(state.value, key)
 	if (value === undefined) return { state, view: inputView(state), status: 'active' }
-	const next: InputState = { ...state, value, error: undefined }
+	const next: InputState = { ...clear, value }
 	return { state: next, view: inputView(next), status: 'active' }
 }
 
@@ -398,6 +395,7 @@ export function passwordReduce(
 	key: KeyEvent,
 ): PromptStep<string, PasswordState> {
 	if (key.ctrl && key.name === 'c') return { state, view: passwordView(state), status: 'cancel' }
+	const { error: _error, ...clear } = state
 
 	if (key.name === 'return') {
 		const result = state.validator(state.value)
@@ -406,7 +404,7 @@ export function passwordReduce(
 			return { state: next, view: passwordView(next), status: 'active' }
 		}
 		return {
-			state: { ...state, error: undefined },
+			state: clear,
 			view: `${submitHeader(state.styler, state.message)} ${state.styler.dim(state.mask.repeat(state.value.length))}`,
 			status: 'submit',
 			value: state.value,
@@ -415,7 +413,7 @@ export function passwordReduce(
 
 	const value = editLine(state.value, key)
 	if (value === undefined) return { state, view: passwordView(state), status: 'active' }
-	const next: PasswordState = { ...state, value, error: undefined }
+	const next: PasswordState = { ...clear, value }
 	return { state: next, view: passwordView(next), status: 'active' }
 }
 
@@ -542,8 +540,8 @@ export function createCheckboxState(options: CheckboxOptions): CheckboxState {
 		styler: options.styler ?? createStyler(),
 		focused: 0,
 		checked,
-		min: options.min,
-		max: options.max,
+		...(options.min !== undefined ? { min: options.min } : {}),
+		...(options.max !== undefined ? { max: options.max } : {}),
 	}
 }
 
@@ -580,22 +578,22 @@ export function checkboxReduce(
 	if (key.ctrl && key.name === 'c') return { state, view: checkboxView(state), status: 'cancel' }
 
 	const count = state.choices.length
+	const { error: _error, ...clear } = state
 
 	if ((key.name === 'up' || key.name === 'k') && count > 0) {
 		const next: CheckboxState = {
-			...state,
+			...clear,
 			focused: (state.focused - 1 + count) % count,
-			error: undefined,
 		}
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if ((key.name === 'down' || key.name === 'j') && count > 0) {
-		const next: CheckboxState = { ...state, focused: (state.focused + 1) % count, error: undefined }
+		const next: CheckboxState = { ...clear, focused: (state.focused + 1) % count }
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if (key.name === 'space' && count > 0) {
 		const checked = toggleIndex(state.checked, state.focused)
-		const next: CheckboxState = { ...state, checked, error: undefined }
+		const next: CheckboxState = { ...clear, checked }
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if (key.name === 'return') {
@@ -613,7 +611,7 @@ export function checkboxReduce(
 			.filter((name): name is string => name !== undefined)
 			.join(', ')
 		return {
-			state: { ...state, error: undefined },
+			state: clear,
 			view: `${submitHeader(state.styler, state.message)} ${state.styler.dim(summary)}`,
 			status: 'submit',
 			value: values,
@@ -667,6 +665,7 @@ export function editorView(state: EditorState): string {
  */
 export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
 	if (key.ctrl && key.name === 'c') return { state, view: editorView(state), status: 'cancel' }
+	const { error: _error, ...clear } = state
 
 	if (key.ctrl && key.name === 'd') {
 		const lines = state.current.length > 0 ? [...state.lines, state.current] : state.lines
@@ -678,7 +677,7 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 			return { state: next, view: editorView(next), status: 'active' }
 		}
 		return {
-			state: { ...state, error: undefined },
+			state: clear,
 			view: `${submitHeader(state.styler, state.message)} ${state.styler.dim(`${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
 			status: 'submit',
 			value: answer,
@@ -687,17 +686,16 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 
 	if (key.name === 'return') {
 		const next: EditorState = {
-			...state,
+			...clear,
 			lines: [...state.lines, state.current],
 			current: '',
-			error: undefined,
 		}
 		return { state: next, view: editorView(next), status: 'active' }
 	}
 
 	const current = editLine(state.current, key)
 	if (current === undefined) return { state, view: editorView(state), status: 'active' }
-	const next: EditorState = { ...state, current, error: undefined }
+	const next: EditorState = { ...clear, current }
 	return { state: next, view: editorView(next), status: 'active' }
 }
 
@@ -795,43 +793,6 @@ export function serializeChoices(choices: unknown): readonly unknown[] {
 	})
 }
 
-// === Wire guards (§14 — narrow every wire-decoded value)
-
-/** Narrow an unknown value to a {@link PromptType} — one of the six prompt forms. */
-export const isPromptType: Guard<PromptType> = literalOf(
-	'input',
-	'password',
-	'confirm',
-	'select',
-	'checkbox',
-	'editor',
-)
-
-/** Narrow an unknown value to a {@link PendingPromptStatus}. */
-export const isPendingPromptStatus: Guard<PendingPromptStatus> = literalOf(
-	'pending',
-	'answered',
-	'expired',
-)
-
-/**
- * Narrow an unknown wire value to a {@link PendingPrompt} — the §14 guard a {@link PromptClient}
- * applies to each decoded SSE `pending` payload before dispatching it (never an `as`).
- */
-export const isPendingPrompt: Guard<PendingPrompt> = recordOf(
-	{
-		id: isNonEmptyString,
-		form: isPromptType,
-		message: isString,
-		options: isRecord,
-		status: isPendingPromptStatus,
-		time: isNumber,
-		from: isString,
-		to: isString,
-	},
-	['from', 'to'],
-)
-
 // === Remote prompt dispatch (T-b)
 
 /**
@@ -912,9 +873,13 @@ export function sanitizeChoiceLabels<TChoice extends PromptChoice | CheckboxChoi
 ): readonly (string | TChoice)[] {
 	return choices.map((choice) => {
 		if (isString(choice)) return stripControls(choice)
-		const description =
-			choice.description === undefined ? undefined : stripControls(choice.description)
-		return { ...choice, name: stripControls(choice.name), description }
+		return {
+			...choice,
+			name: stripControls(choice.name),
+			...(choice.description !== undefined
+				? { description: stripControls(choice.description) }
+				: {}),
+		}
 	})
 }
 
@@ -941,44 +906,49 @@ export function dispatchPendingPrompt(
 			const value = resolveOption(options, 'default', isString)
 			return terminal.input({
 				message,
-				default: value === undefined ? undefined : stripControls(value),
-				validate,
+				...(value !== undefined ? { default: stripControls(value) } : {}),
+				...(validate !== undefined ? { validate } : {}),
 			})
 		}
 		case 'password': {
 			const value = resolveOption(options, 'mask', isString)
 			return terminal.password({
 				message,
-				mask: value === undefined ? undefined : stripControls(value),
-				validate,
+				...(value !== undefined ? { mask: stripControls(value) } : {}),
+				...(validate !== undefined ? { validate } : {}),
 			})
 		}
-		case 'confirm':
+		case 'confirm': {
+			const value = resolveOption(options, 'default', isBoolean)
 			return terminal.confirm({
 				message,
-				default: resolveOption(options, 'default', isBoolean),
+				...(value !== undefined ? { default: value } : {}),
 			})
+		}
 		case 'select': {
 			const value = resolveOption(options, 'default', isString)
 			return terminal.select({
 				message,
 				choices: sanitizeChoiceLabels(resolveChoices(options, isPromptChoice)),
-				default: value === undefined ? undefined : stripControls(value),
+				...(value !== undefined ? { default: stripControls(value) } : {}),
 			})
 		}
-		case 'checkbox':
+		case 'checkbox': {
+			const min = resolveOption(options, 'min', isNumber)
+			const max = resolveOption(options, 'max', isNumber)
 			return terminal.checkbox({
 				message,
 				choices: sanitizeChoiceLabels(resolveChoices(options, isCheckboxChoice)),
-				min: resolveOption(options, 'min', isNumber),
-				max: resolveOption(options, 'max', isNumber),
+				...(min !== undefined ? { min } : {}),
+				...(max !== undefined ? { max } : {}),
 			})
+		}
 		case 'editor': {
 			const value = resolveOption(options, 'default', isString)
 			return terminal.editor({
 				message,
-				default: value === undefined ? undefined : stripControls(value),
-				validate,
+				...(value !== undefined ? { default: stripControls(value) } : {}),
+				...(validate !== undefined ? { validate } : {}),
 			})
 		}
 	}
@@ -1081,9 +1051,3 @@ export function isAnswerPayload(
 ): value is { readonly id: string; readonly value: unknown } {
 	return isRecord(value) && isNonEmptyString(value.id) && 'value' in value
 }
-
-/** Narrow an unknown value to a {@link TerminalSnapshot} — a non-empty `id` plus an optional numeric `timeout`. */
-export const isTerminalSnapshot: Guard<TerminalSnapshot> = recordOf(
-	{ id: isNonEmptyString, timeout: isNumber },
-	['timeout'],
-)

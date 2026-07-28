@@ -1,5 +1,5 @@
 import { createPrompt, createPromptClient } from '@src/core'
-import { createManualTimer, createRecordingTerminal } from '../../setup.js'
+import { createManualTimer, createRecordingTerminal, requireElement } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The terminals factories are thin constructors — these tests assert each returns a working
@@ -14,7 +14,7 @@ describe('createPrompt', () => {
 
 		const answer = prompt.input({ message: 'Name?' })
 		expect(prompt.count).toBe(1)
-		const [pending] = prompt.pending()
+		const pending = requireElement(prompt.pending(), 0)
 		expect(parked).toEqual([pending.id]) // the on hook fired
 		prompt.answer(pending.id, 'Ada')
 		expect(await answer).toBe('Ada')

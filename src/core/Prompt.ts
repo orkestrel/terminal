@@ -77,7 +77,10 @@ export class Prompt implements PromptInterface {
 		this.#timeout = options?.timeout ?? DEFAULT_PROMPT_TIMEOUT_MS
 		this.#timer = options?.timer ?? defaultTimer
 		this.#cap = options?.cap
-		this.#emitter = new Emitter({ on: options?.on, error: options?.error })
+		this.#emitter = new Emitter({
+			...(options?.on !== undefined ? { on: options.on } : {}),
+			...(options?.error !== undefined ? { error: options.error } : {}),
+		})
 	}
 
 	get emitter(): EmitterInterface<PromptEventMap> {
@@ -210,24 +213,33 @@ export class Prompt implements PromptInterface {
 		}
 		const value = new Promise<T>((resolve, reject) => {
 			const cancel = this.#timer(() => this.#expire(id), this.#timeout)
-			// The gate-and-resolve closure: re-mark the record `answered`, resolve with the typed value.
-			const respond = (answer: unknown): T | undefined => {
-				const accepted = gate(answer)
-				if (accepted === undefined) return undefined
-				const current = this.#parked.get(id)
-				if (current !== undefined) {
-					this.#parked.set(id, { ...current, prompt: { ...current.prompt, status: 'answered' } })
-				}
-				resolve(accepted)
-				return accepted
-			}
-			const expire = (): void => {
-				reject(new TerminalError('EXPIRE', `prompt ${id} expired`, { id }))
-			}
+			const respond = this.#createRespond(id, gate, resolve)
+			const expire = this.#createExpire(id, reject)
 			this.#parked.set(id, { prompt, respond, expire, cancel })
 			this.#emitter.emit('pending', prompt)
 		})
 		return { id, value }
+	}
+
+	#createRespond<T>(
+		id: string,
+		gate: (value: unknown) => T | undefined,
+		resolve: (value: T | PromiseLike<T>) => void,
+	): (answer: unknown) => T | undefined {
+		return (answer) => {
+			const accepted = gate(answer)
+			if (accepted === undefined) return undefined
+			const current = this.#parked.get(id)
+			if (current !== undefined) {
+				this.#parked.set(id, { ...current, prompt: { ...current.prompt, status: 'answered' } })
+			}
+			resolve(accepted)
+			return accepted
+		}
+	}
+
+	#createExpire(id: string, reject: (reason?: unknown) => void): () => void {
+		return () => reject(new TerminalError('EXPIRE', `prompt ${id} expired`, { id }))
 	}
 
 	// The per-form gate factory — validates + type-checks an answer to the form's precise value

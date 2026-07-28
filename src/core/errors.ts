@@ -31,7 +31,7 @@ export class TerminalError extends Error {
 		super(message)
 		this.name = 'TerminalError'
 		this.code = code
-		this.context = context
+		if (context !== undefined) this.context = context
 	}
 }
 

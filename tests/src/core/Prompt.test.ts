@@ -1,6 +1,11 @@
 import type { PendingPrompt, PromptInterface } from '@src/core'
 import { createPrompt, isTerminalError } from '@src/core'
-import { createManualTimer, createRecorder, recordEmitterEvents } from '../../setup.js'
+import {
+	createManualTimer,
+	createRecorder,
+	recordEmitterEvents,
+	requireElement,
+} from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
 // The headless prompt BROKER, driven deterministically: every prompt is PARKED as a Promise that
@@ -26,7 +31,7 @@ describe('Prompt — park as a Promise', () => {
 
 		// The call parked exactly one pending prompt, addressable by id.
 		expect(prompt.count).toBe(1)
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(parked.form).toBe('input')
 		expect(parked.message).toBe('Name?')
 		expect(parked.status).toBe('pending')
@@ -43,7 +48,9 @@ describe('Prompt — park as a Promise', () => {
 		const { prompt } = broker()
 		const confirmed = prompt.confirm({ message: 'OK?' })
 		const checked = prompt.checkbox({ message: 'Pick', choices: ['a', 'b', 'c'] })
-		const [confirm, checkbox] = prompt.pending()
+		const pending = prompt.pending()
+		const confirm = requireElement(pending, 0)
+		const checkbox = requireElement(pending, 1)
 
 		expect(prompt.answer(confirm.id, true)).toEqual({ success: true, value: true })
 		expect(prompt.answer(checkbox.id, ['a', 'c'])).toEqual({ success: true, value: ['a', 'c'] })
@@ -64,7 +71,7 @@ describe('Prompt — answer validation + type check', () => {
 	it('rejects an answer that fails the resolved validator (stays pending)', async () => {
 		const { prompt } = broker()
 		const answer = prompt.input({ message: 'Name?', validate: { required: true, minimum: 2 } })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		// An empty answer fails `required`; a too-short answer fails `minimum` — both rejected.
 		expect(prompt.answer(parked.id, '')).toEqual({ success: false, error: 'rejected' })
@@ -81,7 +88,9 @@ describe('Prompt — answer validation + type check', () => {
 		const { prompt } = broker()
 		void prompt.confirm({ message: 'OK?' })
 		void prompt.checkbox({ message: 'Pick', choices: ['a'] })
-		const [confirm, checkbox] = prompt.pending()
+		const pending = prompt.pending()
+		const confirm = requireElement(pending, 0)
+		const checkbox = requireElement(pending, 1)
 
 		// confirm wants a boolean; checkbox wants a string[] — a mismatched type is refused.
 		expect(prompt.answer(confirm.id, 'yes')).toEqual({ success: false, error: 'rejected' })
@@ -98,7 +107,7 @@ describe('Prompt — answer validation + type check', () => {
 	it('accepts a legitimate false confirm answer (false is a value, not a rejection)', async () => {
 		const { prompt } = broker()
 		const confirmed = prompt.confirm({ message: 'OK?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		// `false` is the answered VALUE, distinct from the gate's `undefined` rejection — so the answer
 		// is ACCEPTED and the awaited Promise resolves to `false`, not rejected/left pending.
@@ -113,7 +122,7 @@ describe('Prompt — timeout → expire → reject', () => {
 		const { prompt, timer } = broker()
 		const events = recordEmitterEvents(prompt.emitter, ['pending', 'answer', 'expire'])
 		const answer = prompt.input({ message: 'Name?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(timer.pending).toBe(1) // a deadline is armed
 
 		// Fire the injected timer — the prompt expires and its Promise rejects.
@@ -130,7 +139,7 @@ describe('Prompt — timeout → expire → reject', () => {
 		const { prompt, timer } = broker()
 		const events = recordEmitterEvents(prompt.emitter, ['pending', 'answer', 'expire'])
 		const answer = prompt.input({ message: 'Name?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		expect(prompt.answer(parked.id, 'Ada')).toEqual({ success: true, value: 'Ada' })
 		expect(await answer).toBe('Ada')
@@ -150,7 +159,7 @@ describe('Prompt — events', () => {
 		void prompt.input({ message: 'Name?', default: 'Ada' })
 
 		expect(pending.count).toBe(1)
-		const [record] = pending.calls[0]
+		const [record] = requireElement(pending.calls, 0)
 		expect(record.form).toBe('input')
 		// The options are serialized — declarative data kept (message + default), styler / functions dropped.
 		expect(record.options).toEqual({ message: 'Name?', default: 'Ada' })
@@ -189,7 +198,7 @@ describe('Prompt — answer state machine (totality)', () => {
 	it('answering an ALREADY-answered id returns unknown (the prompt is gone)', async () => {
 		const { prompt } = broker()
 		const answer = prompt.input({ message: 'Name?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		expect(prompt.answer(parked.id, 'Ada')).toEqual({ success: true, value: 'Ada' })
 		expect(await answer).toBe('Ada')
@@ -201,7 +210,7 @@ describe('Prompt — answer state machine (totality)', () => {
 	it('answering an EXPIRED id returns unknown (expiry removed it)', async () => {
 		const { prompt, timer } = broker()
 		const answer = prompt.input({ message: 'Name?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		timer.flush() // expire it
 		await expect(answer).rejects.toSatisfy(isTerminalError)
@@ -211,7 +220,7 @@ describe('Prompt — answer state machine (totality)', () => {
 	it('a rejected answer leaves the prompt addressable and re-answerable', async () => {
 		const { prompt } = broker()
 		const answer = prompt.input({ message: 'Name?', validate: { minimum: 3 } })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 
 		expect(prompt.answer(parked.id, 'ab')).toEqual({ success: false, error: 'rejected' }) // too short
 		expect(prompt.pending(parked.id)?.status).toBe('pending') // still pending, not corrupted
@@ -223,7 +232,9 @@ describe('Prompt — answer state machine (totality)', () => {
 		const { prompt } = broker()
 		const pw = prompt.password({ message: 'PIN', validate: { minimum: 4 } })
 		const ed = prompt.editor({ message: 'Body', validate: { required: true } })
-		const [password, editor] = prompt.pending()
+		const pending = prompt.pending()
+		const password = requireElement(pending, 0)
+		const editor = requireElement(pending, 1)
 
 		expect(prompt.answer(password.id, 'ab')).toEqual({ success: false, error: 'rejected' }) // fails minimum
 		expect(prompt.answer(editor.id, '   ')).toEqual({ success: false, error: 'rejected' }) // fails required (whitespace)
@@ -237,7 +248,9 @@ describe('Prompt — answer state machine (totality)', () => {
 		const { prompt } = broker()
 		const selected = prompt.select({ message: 'Pick', choices: ['a', 'b'] })
 		const checked = prompt.checkbox({ message: 'Pick', choices: ['a', 'b'] })
-		const [select, checkbox] = prompt.pending()
+		const pending = prompt.pending()
+		const select = requireElement(pending, 0)
+		const checkbox = requireElement(pending, 1)
 
 		// select gates on choice membership — an offered value is accepted, an unoffered one is not.
 		expect(prompt.answer(select.id, 'anything')).toEqual({ success: false, error: 'rejected' })
@@ -255,7 +268,7 @@ describe('Prompt — choice gates (select membership, checkbox min/max/membershi
 	it('select rejects a value not in the offered choices, and accepts a valid member', async () => {
 		const { prompt } = broker()
 		const selected = prompt.select({ message: 'Pick', choices: ['a', 'b', 'c'] })
-		const [select] = prompt.pending()
+		const select = requireElement(prompt.pending(), 0)
 
 		expect(prompt.answer(select.id, 'z')).toEqual({ success: false, error: 'rejected' }) // not offered
 		expect(prompt.pending(select.id)?.status).toBe('pending')
@@ -271,7 +284,7 @@ describe('Prompt — choice gates (select membership, checkbox min/max/membershi
 			min: 2,
 			max: 3,
 		})
-		const [checkbox] = prompt.pending()
+		const checkbox = requireElement(prompt.pending(), 0)
 
 		expect(prompt.answer(checkbox.id, ['a'])).toEqual({ success: false, error: 'rejected' }) // below min
 		expect(prompt.answer(checkbox.id, ['a', 'b', 'c', 'd'])).toEqual({
@@ -308,7 +321,7 @@ describe('Prompt — accessors (§9.1) totality', () => {
 			default: 'Ada',
 			validate: { required: true, custom: () => true },
 		})
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		// Only declarative data survives; the custom function rule flattened to `true`.
 		expect(parked.options).toEqual({
 			message: 'Name?',
@@ -321,7 +334,7 @@ describe('Prompt — accessors (§9.1) totality', () => {
 	it('a bare-function validate is dropped from the parked record (no wire form)', () => {
 		const { prompt } = broker()
 		void prompt.input({ message: 'Name?', validate: (input) => (input ? true : 'x') })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(parked.options).toEqual({ message: 'Name?' })
 		expect('validate' in parked.options).toBe(false)
 	})
@@ -360,13 +373,15 @@ describe('Prompt — timer cleanup & idempotent destroy', () => {
 		const { prompt } = broker()
 		const first = prompt.input({ message: 'one' })
 		void prompt.input({ message: 'two' })
-		const [a, b] = prompt.pending()
+		const pending = prompt.pending()
+		const a = requireElement(pending, 0)
+		const b = requireElement(pending, 1)
 
 		expect(prompt.answer(a.id, 'A')).toEqual({ success: true, value: 'A' })
 		expect(await first).toBe('A')
 		const remaining = prompt.pending()
 		expect(remaining).toHaveLength(1)
-		expect(remaining[0].id).toBe(b.id)
+		expect(requireElement(remaining, 0).id).toBe(b.id)
 	})
 })
 
@@ -451,7 +466,7 @@ describe('Prompt — answer() AnswerResult totality', () => {
 	it('an already-answered id returns { success: false, error: "unknown" }', async () => {
 		const { prompt } = broker()
 		const answer = prompt.input({ message: 'Name?' })
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(prompt.answer(parked.id, 'Ada')).toEqual({ success: true, value: 'Ada' })
 		await answer
 		expect(prompt.answer(parked.id, 'Grace')).toEqual({ success: false, error: 'unknown' })
@@ -461,7 +476,7 @@ describe('Prompt — answer() AnswerResult totality', () => {
 		const { prompt } = broker()
 		const confirm = prompt.confirm({ message: 'OK?' })
 		void confirm
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(prompt.answer(parked.id, 'not-a-boolean')).toEqual({
 			success: false,
 			error: 'rejected',
@@ -473,7 +488,7 @@ describe('Prompt — answer() AnswerResult totality', () => {
 		const { prompt } = broker()
 		const checked = prompt.checkbox({ message: 'Pick', choices: ['a', 'b'] })
 		void checked
-		const [parked] = prompt.pending()
+		const parked = requireElement(prompt.pending(), 0)
 		expect(prompt.answer(parked.id, ['a'])).toEqual({ success: true, value: ['a'] })
 	})
 })

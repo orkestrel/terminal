@@ -122,11 +122,6 @@ describe('rawCapable', () => {
 	it('false on a TTY without setRawMode (a piped-but-marked stream)', () => {
 		expect(rawCapable({ on() {}, off() {}, isTTY: true })).toBe(false)
 	})
-
-	it('requires isTTY to be exactly true (a truthy non-true value does not qualify)', () => {
-		// isTTY is `boolean | undefined`; the guard tests `=== true`, so only a real TTY flag passes.
-		expect(rawCapable({ on() {}, off() {}, setRawMode() {}, isTTY: undefined })).toBe(false)
-	})
 })
 
 describe('lineCount', () => {
