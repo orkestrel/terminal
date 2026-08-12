@@ -1,6 +1,6 @@
 {
 	"name": "@orkestrel/terminal",
-	"version": "0.0.5",
+	"version": "0.0.6",
 	"description": "An interactive terminal-prompt toolkit — a headless prompt state-machine broker, an SSE client bridge, and a raw-mode terminal driver. Part of the @orkestrel line.",
 	"keywords": [
 		"cli",
@@ -76,11 +76,11 @@
 		"prepublishOnly": "npm run format:check && npm run lint:check && npm run check && npm run build && npm test"
 	},
 	"dependencies": {
-		"@orkestrel/console": "^0.0.4",
-		"@orkestrel/contract": "^0.0.10",
-		"@orkestrel/database": "^0.0.7",
-		"@orkestrel/emitter": "^0.0.5",
-		"@orkestrel/sse": "^0.0.4"
+		"@orkestrel/console": "^0.0.5",
+		"@orkestrel/contract": "^0.0.11",
+		"@orkestrel/database": "^0.0.8",
+		"@orkestrel/emitter": "^0.0.6",
+		"@orkestrel/sse": "^0.0.5"
 	},
 	"devDependencies": {
 		"@microsoft/api-extractor": "^7.58.12",
