@@ -13,6 +13,7 @@ import type {
 	PromptStep,
 	PromptType,
 	SelectOptions,
+	TerminalStoreInterface,
 	TimerCancel,
 	TimerHandler,
 } from '@src/core'
@@ -380,3 +381,81 @@ export function isBrowserVuePath(path: string): boolean {
 	const normalized = path.replaceAll('\\', '/')
 	return normalized.startsWith('app/browser/')
 }
+
+// ── Terminal store contract matrix — the shared case table both twins run ──────
+//
+// `MemoryTerminalStore` and `DatabaseTerminalStore` are twin backends behind the one
+// `TerminalStoreInterface` persistence seam, so their shared behavioral cases sit here as
+// a data table (AGENTS §16.1 — a case matrix lives in a setup file; test registration does
+// not). Each twin's own mirrored test file registers this table against the store it builds.
+
+/** One {@link TerminalStoreInterface} behavioral case — a label, the acts to run, and the value the last act must equal. */
+export interface TerminalStoreScenario {
+	readonly label: string
+	readonly act: (store: TerminalStoreInterface) => Promise<unknown>
+	readonly expected: unknown
+}
+
+/**
+ * The shared {@link TerminalStoreInterface} contract cases every twin backend satisfies — a
+ * miss, a round-trip with and without the optional `timeout`, a same-id upsert, a delete, a
+ * delete of an absent id, and independent coexistence of two ids.
+ */
+export const TERMINAL_STORE_SCENARIOS: readonly TerminalStoreScenario[] = Object.freeze([
+	{
+		label: 'resolves undefined for a never-stored id (miss)',
+		act: (store) => store.get('nope'),
+		expected: undefined,
+	},
+	{
+		label: 'set then get round-trips a snapshot with a timeout',
+		act: async (store) => {
+			await store.set({ id: 'shell', timeout: 5000 })
+			return store.get('shell')
+		},
+		expected: { id: 'shell', timeout: 5000 },
+	},
+	{
+		label: 'set then get round-trips a snapshot WITHOUT a timeout (optional field absent)',
+		act: async (store) => {
+			await store.set({ id: 'plain' })
+			return store.get('plain')
+		},
+		expected: { id: 'plain' },
+	},
+	{
+		label: 'a second set under the SAME id upserts (replaces) rather than duplicating',
+		act: async (store) => {
+			await store.set({ id: 'shell', timeout: 1000 })
+			await store.set({ id: 'shell', timeout: 9000 })
+			return store.get('shell')
+		},
+		expected: { id: 'shell', timeout: 9000 },
+	},
+	{
+		label: 'delete drops a stored snapshot; a subsequent get misses',
+		act: async (store) => {
+			await store.set({ id: 'shell', timeout: 5000 })
+			await store.delete('shell')
+			return store.get('shell')
+		},
+		expected: undefined,
+	},
+	{
+		label: 'delete of an absent id is a no-op (no throw)',
+		act: (store) => store.delete('never-existed'),
+		expected: undefined,
+	},
+	{
+		label: 'two distinct ids coexist independently',
+		act: async (store) => {
+			await store.set({ id: 'shell', timeout: 1000 })
+			await store.set({ id: 'bash', timeout: 2000 })
+			return [await store.get('shell'), await store.get('bash')]
+		},
+		expected: [
+			{ id: 'shell', timeout: 1000 },
+			{ id: 'bash', timeout: 2000 },
+		],
+	},
+])

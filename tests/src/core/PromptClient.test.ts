@@ -304,7 +304,7 @@ describe('PromptClient — error events (T8)', () => {
 describe('PromptClient — concurrent connect() (N1)', () => {
 	it('two concurrent connect() calls do not double-open a stream', async () => {
 		let opens = 0
-		const fetch: FetchHandler = (url, init) => {
+		const fetch: FetchHandler = (_url, init) => {
 			if ((init?.method ?? 'GET') === 'GET') {
 				opens += 1
 				return Promise.resolve(hangingStream(init?.signal))
@@ -452,7 +452,7 @@ describe('PromptClient — oversized SSE event is bounded (N9)', () => {
 			})
 			return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
 		}
-		const fetch: FetchHandler = (url, init) => {
+		const fetch: FetchHandler = (_url, init) => {
 			if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(oversizedStream())
 			return Promise.resolve(new Response(null, { status: 200 }))
 		}
