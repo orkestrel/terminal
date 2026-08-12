@@ -848,7 +848,7 @@ export function isCheckboxChoice(value: unknown): value is CheckboxChoice {
 export function resolveChoices<TChoice extends PromptChoice | CheckboxChoice>(
 	options: Readonly<Record<string, unknown>>,
 	guard: Guard<TChoice>,
-): readonly (string | TChoice)[] {
+): ReadonlyArray<string | TChoice> {
 	const choices = options.choices
 	if (!Array.isArray(choices)) return []
 	return choices.map((choice: unknown) => {
@@ -869,8 +869,8 @@ export function resolveChoices<TChoice extends PromptChoice | CheckboxChoice>(
  * @returns The same choices with every `name` / `description` control-stripped
  */
 export function sanitizeChoiceLabels<TChoice extends PromptChoice | CheckboxChoice>(
-	choices: readonly (string | TChoice)[],
-): readonly (string | TChoice)[] {
+	choices: ReadonlyArray<string | TChoice>,
+): ReadonlyArray<string | TChoice> {
 	return choices.map((choice) => {
 		if (isString(choice)) return stripControls(choice)
 		return {

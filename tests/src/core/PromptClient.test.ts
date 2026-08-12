@@ -605,7 +605,7 @@ describe('PromptClient — malformed wire payloads (§14 guards, no throw / disp
 
 	// Each malformed payload must be silently rejected: no terminal dispatch, no POST, no error event,
 	// no throw out of connect().
-	const payloads: readonly { readonly label: string; readonly raw: string }[] = [
+	const payloads: ReadonlyArray<{ readonly label: string; readonly raw: string }> = [
 		{ label: 'a non-JSON line', raw: 'not json at all' },
 		{ label: 'a JSON number (not a record)', raw: '42' },
 		{ label: 'a JSON string (not a record)', raw: '"hello"' },

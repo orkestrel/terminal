@@ -239,7 +239,7 @@ export interface ConfirmState {
  */
 export interface SelectOptions {
 	readonly message: string
-	readonly choices: readonly (string | PromptChoice)[]
+	readonly choices: ReadonlyArray<string | PromptChoice>
 	readonly default?: string
 	readonly styler?: StylerInterface
 }
@@ -273,7 +273,7 @@ export interface SelectState {
  */
 export interface CheckboxOptions {
 	readonly message: string
-	readonly choices: readonly (string | CheckboxChoice)[]
+	readonly choices: ReadonlyArray<string | CheckboxChoice>
 	readonly min?: number
 	readonly max?: number
 	readonly styler?: StylerInterface

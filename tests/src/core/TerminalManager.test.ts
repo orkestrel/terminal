@@ -509,8 +509,12 @@ describe('TerminalManager — pressure: fan-out', () => {
 		// legitimately DEADLOCK — a directed ring cannot fully park without answering in between,
 		// per TerminalManager#findCycle). 200 round-robin asks over this open chain accumulate
 		// MULTIPLE edges per (from, to) pair — the multiset — with no cycle ever formed.
-		const tickets: { readonly to: string; readonly id: string; readonly value: PromptValue }[] = []
-		const promises: Promise<PromptValue>[] = []
+		const tickets: Array<{
+			readonly to: string
+			readonly id: string
+			readonly value: PromptValue
+		}> = []
+		const promises: Array<Promise<PromptValue>> = []
 		for (let k = 0; k < 200; k++) {
 			const i = k % 49
 			const from = names[i]
@@ -588,7 +592,7 @@ describe('TerminalManager — pressure: deadlock chain', () => {
 		for (const name of names) manager.add(name)
 
 		// t1 -> t2 -> ... -> t19 -> t20 (19 parked asks forming an open chain).
-		const links: Promise<string>[] = []
+		const links: Array<Promise<string>> = []
 		for (let i = 1; i < 20; i++) {
 			links.push(manager.ask(`t${i}`, `t${i + 1}`, 'input', { message: `link${i}` }))
 		}
@@ -803,7 +807,7 @@ describe('TerminalManager — pressure: mass expiry', () => {
 		const expireEvents = createRecorder<readonly [string, string]>()
 		manager.emitter.on('expire', expireEvents.handler)
 
-		const asks: Promise<string>[] = []
+		const asks: Array<Promise<string>> = []
 		for (let i = 0; i < 100; i++) {
 			const target = targets[i % 10]
 			if (target === undefined) throw new Error('unreachable')

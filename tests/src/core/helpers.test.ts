@@ -74,14 +74,14 @@ const plain = createStyler({ enabled: false })
 describe('parseKey', () => {
 	// One row per (input bytes → expected name / modifiers). Covers control bytes, the CSI and SS3
 	// arrow forms, home / end / delete, the ctrl combos, and a printable char.
-	const cases: readonly {
+	const cases: ReadonlyArray<{
 		readonly label: string
 		readonly input: string
 		readonly name: string
 		readonly ctrl?: boolean
 		readonly meta?: boolean
 		readonly shift?: boolean
-	}[] = [
+	}> = [
 		{ label: 'carriage return → return', input: '\r', name: 'return' },
 		{ label: 'line feed → return', input: '\n', name: 'return' },
 		{ label: 'tab', input: '\t', name: 'tab' },
@@ -789,7 +789,7 @@ describe('parseKey — totality & exotic input', () => {
 
 	// Every input that is NOT a recognized control / escape / printable falls to `name: ''`,
 	// preserving the raw sequence — and NEVER throws. One row per hostile / partial / garbage shape.
-	const fallbacks: readonly { readonly label: string; readonly input: string }[] = [
+	const fallbacks: ReadonlyArray<{ readonly label: string; readonly input: string }> = [
 		{ label: 'a partial CSI (no final byte)', input: '\x1b[' },
 		{ label: 'a partial SS3 (no final byte)', input: '\x1bO' },
 		{ label: 'a truncated tilde sequence', input: '\x1b[3' },
@@ -993,7 +993,7 @@ describe('resolveValidation — ReDoS / pathological-input promptness', () => {
 	// `pattern` source). Each built-in is linear — no nested quantifier — so a 50k adversarial input
 	// that forces the no-match (backtracking) path must still return in well under a wall-clock budget.
 	const long = 'a'.repeat(50_000)
-	const probes: readonly { readonly label: string; readonly rules: ValidationRules }[] = [
+	const probes: ReadonlyArray<{ readonly label: string; readonly rules: ValidationRules }> = [
 		{ label: 'email', rules: { email: true } },
 		{ label: 'url', rules: { url: true } },
 		{ label: 'numeric', rules: { numeric: true } },

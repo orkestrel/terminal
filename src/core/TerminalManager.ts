@@ -315,7 +315,7 @@ export class TerminalManager implements TerminalManagerInterface {
 	#findCycle(from: string, to: string): readonly string[] | undefined {
 		if (from === to) return [from, to]
 		const visited = new Set<string>([to])
-		const queue: (readonly string[])[] = [[to]]
+		const queue: Array<readonly string[]> = [[to]]
 		while (queue.length > 0) {
 			const path = queue.shift()
 			if (path === undefined) break

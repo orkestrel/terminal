@@ -2,7 +2,7 @@
 
 > The interactive prompt system — `input` / `password` / `confirm` / `select` / `checkbox` / `editor`, with ONE async contract (`PromptFormInterface`) and THREE implementations riding one pure prompt core. The TRI-SURFACE: the server TTY `Terminal` answers a prompt at this machine's keyboard (raw-mode stdin, live in-place re-render, a `node:readline` fallback when piped); the headless `Prompt` broker PARKS each prompt as a Promise and resolves it when an answer arrives over a transport (remote / programmatic / a host elicitation bridge); the `PromptClient` SSE bridge receives prompts parked elsewhere and dispatches each to a LOCAL terminal. All three sit on ONE pure prompt core — the `parseKey` key decoder, the six event-free `(state, key) → PromptStep` reducers, and the declarative validation engine — and that core is universal (no `node:*`, no TTY, no I/O). The ONLY impure part of the whole stack is the server `Terminal`'s raw-mode / readline driver.
 >
-> The design is **one pure core, three drivers**. The cross-environment core ([`src/core`](../../src/core), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server`](../../src/server), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
+> The design is **one pure core, three drivers**. The cross-environment core ([`src/core`](../src/core), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server`](../src/server), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
 
 ## Surface
 
@@ -33,7 +33,7 @@ The core is **pure + total**: every reducer is a `(state, key) → PromptStep` t
 
 ### Pure prompt core
 
-The universal logic — the key decoder, the six event-free reducers + their state factories + view renderers, the declarative validation engine, the choice normalizers, and the broker/bridge wiring helpers ([`src/core`](../../src/core)). All pure, all exported, all unit-tested (AGENTS §5); no `node:*`, no I/O.
+The universal logic — the key decoder, the six event-free reducers + their state factories + view renderers, the declarative validation engine, the choice normalizers, and the broker/bridge wiring helpers ([`src/core`](../src/core)). All pure, all exported, all unit-tested (AGENTS §5); no `node:*`, no I/O.
 
 | API                          | Kind      | Summary                                                                                                                                                                    |
 | ---------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -112,7 +112,7 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 
 ### The pure-core constants
 
-The decode tables, default mask, validation patterns, prompt-view glyphs, rule messages, and broker / SSE-bridge defaults the core reads ([`src/core`](../../src/core)). UPPER_SNAKE, `Object.freeze`d data; control bytes built via `String.fromCharCode` so no raw control character appears in source.
+The decode tables, default mask, validation patterns, prompt-view glyphs, rule messages, and broker / SSE-bridge defaults the core reads ([`src/core`](../src/core)). UPPER_SNAKE, `Object.freeze`d data; control bytes built via `String.fromCharCode` so no raw control character appears in source.
 
 | API                          | Kind  | Summary                                                                                                                               |
 | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -149,7 +149,7 @@ The decode tables, default mask, validation patterns, prompt-view glyphs, rule m
 
 ### The terminal error
 
-A real error type (AGENTS §12) a parked broker prompt rejects with, or the server `Terminal` rejects with on ctrl-c ([`src/core`](../../src/core)).
+A real error type (AGENTS §12) a parked broker prompt rejects with, or the server `Terminal` rejects with on ctrl-c ([`src/core`](../src/core)).
 
 | API                 | Kind     | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -159,7 +159,7 @@ A real error type (AGENTS §12) a parked broker prompt rejects with, or the serv
 
 ### The headless broker
 
-The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` with no terminal, parking each call and resolving it when an answer arrives over a transport ([`src/core`](../../src/core)). Observable (§13).
+The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` with no terminal, parking each call and resolving it when an answer arrives over a transport ([`src/core`](../src/core)). Observable (§13).
 
 | API                      | Kind      | Summary                                                                                                                                                                             |
 | ------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -184,7 +184,7 @@ The PARK-as-Promise arm of the tri-surface — implements `PromptFormInterface` 
 
 ### Transport-neutral bridge wire seams
 
-The `http`-free wire helpers a consumer's own HTTP/SSE spine mounts the broker over — an SSE frame shape plus the serializers that build one for each broker signal, and the guard that narrows an answer POST body ([`src/core`](../../src/core)).
+The `http`-free wire helpers a consumer's own HTTP/SSE spine mounts the broker over — an SSE frame shape plus the serializers that build one for each broker signal, and the guard that narrows an answer POST body ([`src/core`](../src/core)).
 
 | API                 | Kind      | Summary                                                                                                                          |
 | ------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -196,7 +196,7 @@ The `http`-free wire helpers a consumer's own HTTP/SSE spine mounts the broker o
 
 ### The SSE bridge
 
-The client-side counterpart to the broker — connects to a remote broker's SSE endpoint, dispatches each received prompt to a LOCAL `PromptFormInterface`, and POSTs the answer back ([`src/core`](../../src/core)). Observable (§13); universal (`fetch` + SSE are web-standard).
+The client-side counterpart to the broker — connects to a remote broker's SSE endpoint, dispatches each received prompt to a LOCAL `PromptFormInterface`, and POSTs the answer back ([`src/core`](../src/core)). Observable (§13); universal (`fetch` + SSE are web-standard).
 
 | API                     | Kind      | Summary                                                                                                                                                 |
 | ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -210,7 +210,7 @@ The client-side counterpart to the broker — connects to a remote broker's SSE 
 
 ### The terminal manager
 
-The multi-endpoint MANAGER — a named registry of `PromptInterface` brokers so several parties (agents, tools, humans) can `ask` prompts of each other by NAME, attributed with a `from` → `to` edge on every parked `PendingPrompt`, and guarded by a transitive DEADLOCK check across every in-flight ask ([`src/core`](../../src/core)). Observable (§13); §9.1 accessors + §9.2 array-overload-first batch removal.
+The multi-endpoint MANAGER — a named registry of `PromptInterface` brokers so several parties (agents, tools, humans) can `ask` prompts of each other by NAME, attributed with a `from` → `to` edge on every parked `PendingPrompt`, and guarded by a transitive DEADLOCK check across every in-flight ask ([`src/core`](../src/core)). Observable (§13); §9.1 accessors + §9.2 array-overload-first batch removal.
 
 | API                        | Kind      | Summary                                                                                                                                                       |
 | -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +225,7 @@ The multi-endpoint MANAGER — a named registry of `PromptInterface` brokers so 
 
 ### The terminal store
 
-The point-access persistence seam (AGENTS §5 — Stores) for a `TerminalManagerInterface`'s endpoint CONFIG snapshots — config only, never live broker state (a parked Promise is process-bound and is never resurrected) ([`src/core`](../../src/core)). Two 10-rule twins over one interface.
+The point-access persistence seam (AGENTS §5 — Stores) for a `TerminalManagerInterface`'s endpoint CONFIG snapshots — config only, never live broker state (a parked Promise is process-bound and is never resurrected) ([`src/core`](../src/core)). Two 10-rule twins over one interface.
 
 | API                           | Kind      | Summary                                                                                                                                         |
 | ----------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -240,7 +240,7 @@ The point-access persistence seam (AGENTS §5 — Stores) for a `TerminalManager
 
 ### The server Terminal (TTY driver)
 
-The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface and the ONLY impure part of the stack ([`src/server`](../../src/server), surfaced through `@src/server`). Reads raw-mode stdin, drives the pure core reducers, renders each view in place, and falls back to `node:readline` when piped. The core owns every prompt contract (imported, never redeclared); this module owns only the raw-mode / readline mechanics + the stream-boundary types.
+The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface and the ONLY impure part of the stack ([`src/server`](../src/server), surfaced through `@src/server`). Reads raw-mode stdin, drives the pure core reducers, renders each view in place, and falls back to `node:readline` when piped. The core owns every prompt contract (imported, never redeclared); this module owns only the raw-mode / readline mechanics + the stream-boundary types.
 
 | API                     | Kind      | Summary                                                                                                                                                                                              |
 | ----------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -261,7 +261,7 @@ The local-TTY arm of the tri-surface — the third `PromptFormInterface` surface
 
 ### The server-Terminal constants
 
-The cursor / line-clear ANSI control sequences the `Terminal` writes to redraw a view in place, plus the readline-fallback hints ([`src/server`](../../src/server)). UPPER_SNAKE, `Object.freeze`d; sequences built from a named ESC byte so no raw control character appears in source.
+The cursor / line-clear ANSI control sequences the `Terminal` writes to redraw a view in place, plus the readline-fallback hints ([`src/server`](../src/server)). UPPER_SNAKE, `Object.freeze`d; sequences built from a named ESC byte so no raw control character appears in source.
 
 | API                      | Kind  | Summary                                                                                                                    |
 | ------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -781,21 +781,21 @@ redrawPrefix(3) // climb 2 lines, return to column 0, erase to end of screen —
 
 ## Tests
 
-- [`tests/guides.test.ts`](../../tests/guides.test.ts) — the `## Surface` ↔ source bijection across `src/core` and the `src/server` backend (value + type exports), plus each interface ↔ implementing-class method bijection.
-- [`tests/src/core/helpers.test.ts`](../../tests/src/core/helpers.test.ts) — the pure core: `parseKey` totality (control bytes / arrow sequences both forms / printable / unknown), the validation engine (each built-in rule + composition + `resolveValidation`), the choice normalizers, the six reducers (every key path + copy-on-write + submit/cancel), the wire serialize/reconstruct round-trip + the §14 wire guards, and the broker/bridge wiring helpers.
-- [`tests/src/core/Prompt.test.ts`](../../tests/src/core/Prompt.test.ts) — the broker: park-as-Promise + `pending` accessors + `count`, `answer` validate + type-check (accept / reject stays pending), timeout → `expire` → reject (manual timer), `destroy` expiry, and the `pending` / `answer` / `expire` events + emit-safety.
-- [`tests/src/core/PromptClient.test.ts`](../../tests/src/core/PromptClient.test.ts) — the SSE bridge over a scripted `fetch`: connect + dispatch a `pending` to a local terminal + POST the answer, the replay dedupe (same id in flight ignored), `expire` / `shutdown` server signals, reconnect backoff (manual timer), `disconnect` stops the reconnect loop, and the `connect` / `disconnect` / `error` events.
-- [`tests/src/core/factories.test.ts`](../../tests/src/core/factories.test.ts) — `createPrompt` / `createPromptClient` / `createTerminalManager` / `createMemoryTerminalStore` / `createDatabaseTerminalStore` each return a working instance of their interface.
-- [`tests/src/core/TerminalManager.test.ts`](../../tests/src/core/TerminalManager.test.ts) — the manager: registry accessors + idempotent `add`, attributed `ask` (requires `to` pre-`add`ed, `TARGET` rejection), the transitive `DEADLOCK` guard across every in-flight edge (cleared on answer / expire / remove / clear / destroy), `pending` / `answer` routing, durable `open` / `save`, batch `remove` (§9.2), `clear`, `destroy`, and the name-attributed event re-emission.
-- [`tests/src/core/stores.test.ts`](../../tests/src/core/stores.test.ts) — the shared 10-rule suite run against both `MemoryTerminalStore` and `DatabaseTerminalStore`: `get` / `set` / `delete`, upsert-by-own-id, absent-id no-op, and the `isTerminalSnapshot` narrow on a `DatabaseTerminalStore` read.
-- [`tests/src/server/Terminal.test.ts`](../../tests/src/server/Terminal.test.ts) — the driver over a fake TTY emitting scripted key chunks: each prompt form resolves its value, cancel-on-ctrl-c rejects a `TerminalError('CANCEL')`, raw mode entered exactly once + always cleaned up (no leak), the in-place re-render output, password masking, and the non-TTY readline fallback (numbered list / EOF editor).
-- [`tests/src/server/helpers.test.ts`](../../tests/src/server/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `rawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
-- [`tests/src/server/factories.test.ts`](../../tests/src/server/factories.test.ts) — `createTerminal` returns a working `TerminalInterface` over the resolved (or injected) streams.
+- [`tests/guides.test.ts`](../tests/guides.test.ts) — the `## Surface` ↔ source bijection across `src/core` and the `src/server` backend (value + type exports), plus each interface ↔ implementing-class method bijection.
+- [`tests/src/core/helpers.test.ts`](../tests/src/core/helpers.test.ts) — the pure core: `parseKey` totality (control bytes / arrow sequences both forms / printable / unknown), the validation engine (each built-in rule + composition + `resolveValidation`), the choice normalizers, the six reducers (every key path + copy-on-write + submit/cancel), the wire serialize/reconstruct round-trip + the §14 wire guards, and the broker/bridge wiring helpers.
+- [`tests/src/core/Prompt.test.ts`](../tests/src/core/Prompt.test.ts) — the broker: park-as-Promise + `pending` accessors + `count`, `answer` validate + type-check (accept / reject stays pending), timeout → `expire` → reject (manual timer), `destroy` expiry, and the `pending` / `answer` / `expire` events + emit-safety.
+- [`tests/src/core/PromptClient.test.ts`](../tests/src/core/PromptClient.test.ts) — the SSE bridge over a scripted `fetch`: connect + dispatch a `pending` to a local terminal + POST the answer, the replay dedupe (same id in flight ignored), `expire` / `shutdown` server signals, reconnect backoff (manual timer), `disconnect` stops the reconnect loop, and the `connect` / `disconnect` / `error` events.
+- [`tests/src/core/factories.test.ts`](../tests/src/core/factories.test.ts) — `createPrompt` / `createPromptClient` / `createTerminalManager` / `createMemoryTerminalStore` / `createDatabaseTerminalStore` each return a working instance of their interface.
+- [`tests/src/core/TerminalManager.test.ts`](../tests/src/core/TerminalManager.test.ts) — the manager: registry accessors + idempotent `add`, attributed `ask` (requires `to` pre-`add`ed, `TARGET` rejection), the transitive `DEADLOCK` guard across every in-flight edge (cleared on answer / expire / remove / clear / destroy), `pending` / `answer` routing, durable `open` / `save`, batch `remove` (§9.2), `clear`, `destroy`, and the name-attributed event re-emission.
+- [`tests/src/core/stores.test.ts`](../tests/src/core/stores.test.ts) — the shared 10-rule suite run against both `MemoryTerminalStore` and `DatabaseTerminalStore`: `get` / `set` / `delete`, upsert-by-own-id, absent-id no-op, and the `isTerminalSnapshot` narrow on a `DatabaseTerminalStore` read.
+- [`tests/src/server/Terminal.test.ts`](../tests/src/server/Terminal.test.ts) — the driver over a fake TTY emitting scripted key chunks: each prompt form resolves its value, cancel-on-ctrl-c rejects a `TerminalError('CANCEL')`, raw mode entered exactly once + always cleaned up (no leak), the in-place re-render output, password masking, and the non-TTY readline fallback (numbered list / EOF editor).
+- [`tests/src/server/helpers.test.ts`](../tests/src/server/helpers.test.ts) — the server helpers: the stream-boundary guards (`isInputStream` / `isOutputStream` / `isReadable` / `isWritable`), `rawCapable`, and the pure cursor-math (`lineCount` / `moveUp` / `redrawPrefix`).
+- [`tests/src/server/factories.test.ts`](../tests/src/server/factories.test.ts) — `createTerminal` returns a working `TerminalInterface` over the resolved (or injected) streams.
 
 ## See also
 
-- [`AGENTS.md`](../../AGENTS.md) — the rules; §11 immutability (copy-on-write reducers), §13 the emitter pattern (the broker / client listener isolation), §14 boundary narrowing (the wire + stream guards), §21 minimal interface (the stream shapes), §22 documentation-as-contracts.
+- [`AGENTS.md`](../AGENTS.md) — the rules; §11 immutability (copy-on-write reducers), §13 the emitter pattern (the broker / client listener isolation), §14 boundary narrowing (the wire + stream guards), §21 minimal interface (the stream shapes), §22 documentation-as-contracts.
 - [`console.md`](console.md) — the `StylerInterface` the reducers render their `view` through (one style engine), and the `strip` / `width` the views are measured against.
 - [`emitter.md`](emitter.md) — the typed emitter the `Prompt` broker / `PromptClient` own for their `pending` / `answer` / `expire` / `connect` events.
 - [`sse.md`](sse.md) — the `SSEParser` the `PromptClient` decodes the broker's event stream with.
-- [`README.md`](../README.md) — the guides index.
+- [`README.md`](README.md) — the guides index.

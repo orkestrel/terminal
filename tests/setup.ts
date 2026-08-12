@@ -171,7 +171,7 @@ export interface ManualTimerInterface {
  * @returns A manual timer whose `handler` is the injectable {@link TimerHandler}
  */
 export function createManualTimer(): ManualTimerInterface {
-	let armed: { readonly callback: () => void; cancelled: boolean }[] = []
+	let armed: Array<{ readonly callback: () => void; cancelled: boolean }> = []
 	return {
 		handler(callback: () => void): TimerCancel {
 			const timer = { callback, cancelled: false }
@@ -202,7 +202,7 @@ export function createManualTimer(): ManualTimerInterface {
  * @returns A `Response` with a `text/event-stream` body of the encoded events
  */
 export function createSSEResponse(
-	events: readonly { readonly event: string; readonly data: unknown }[],
+	events: ReadonlyArray<{ readonly event: string; readonly data: unknown }>,
 ): Response {
 	const encoder = new TextEncoder()
 	const stream = new ReadableStream<Uint8Array>({
@@ -331,7 +331,7 @@ export function createRecordingTerminal(
 		checkbox: createRecorder<readonly [CheckboxOptions]>(),
 		editor: createRecorder<readonly [EditorOptions]>(),
 	}
-	const waiting: { readonly form: PromptType; readonly resolve: () => void }[] = []
+	const waiting: Array<{ readonly form: PromptType; readonly resolve: () => void }> = []
 
 	function call<TOptions, TValue>(
 		form: PromptType,

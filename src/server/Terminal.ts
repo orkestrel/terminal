@@ -320,7 +320,7 @@ export class Terminal implements TerminalInterface {
 	async #listFallback<T>(
 		message: string,
 		styler: StylerInterface | undefined,
-		choices: readonly { readonly name: string }[],
+		choices: ReadonlyArray<{ readonly name: string }>,
 		hint: string,
 		take: (line: string) => { readonly value: T } | undefined,
 		eof: T,
