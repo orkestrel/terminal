@@ -18,19 +18,9 @@ import type {
 	TimerHandler,
 } from '@src/core'
 import type { EmitterInterface, EventMap } from '@orkestrel/emitter'
+import type { RecorderInterface } from '@orkestrel/test'
 import { parseKey } from '@src/core'
-
-/**
- * Resolve after `ms` milliseconds — the single shared delay helper (AGENTS §16.1),
- * for letting a real short timer (the `PromptClient` reconnect backoff) elapse instead
- * of inlining a `setTimeout` promise per test.
- *
- * @param ms - Milliseconds to wait; defaults to `0` (a macrotask turn)
- * @returns A promise that resolves once the delay elapses
- */
-export function waitForDelay(ms = 0): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
-}
+import { createRecorder } from '@orkestrel/test'
 
 /**
  * Read one indexed collection element and fail loudly when it is absent.
@@ -47,46 +37,9 @@ export function requireElement<T>(values: readonly T[], index: number): T {
 	return value
 }
 
-// ── Recorder — a real callback with recorded calls, not a mock ─────────────────
-// Use instead of a test-framework spy when the test only needs to count calls or
-// inspect arguments (AGENTS §16.1).
-
-/** A real call-recording callback over an argument tuple (AGENTS §16.1). */
-export interface TestRecorderInterface<TArgs extends readonly unknown[]> {
-	readonly calls: readonly TArgs[]
-	readonly count: number
-	readonly handler: (...args: TArgs) => void
-	clear(): void
-}
-
-/**
- * Create a {@link TestRecorderInterface} — a real callback that records each
- * invocation's arguments, for asserting what fired and with what (AGENTS §16.1).
- *
- * @typeParam TArgs - The argument tuple the recorded handler receives
- * @returns A recorder whose `handler` records into `calls`
- */
-export function createRecorder<TArgs extends readonly unknown[]>(): TestRecorderInterface<TArgs> {
-	const calls: TArgs[] = []
-	return {
-		get calls() {
-			return calls
-		},
-		get count() {
-			return calls.length
-		},
-		handler(...args: TArgs) {
-			calls.push(args)
-		},
-		clear() {
-			calls.length = 0
-		},
-	}
-}
-
 /** A {@link createRecorder} per listed event of an `EmitterInterface`, keyed by event name. */
 export type EmitterRecorders<TMap extends EventMap, TName extends keyof TMap> = {
-	readonly [K in TName]: TestRecorderInterface<TMap[K]>
+	readonly [K in TName]: RecorderInterface<TMap[K]>
 }
 
 /**
@@ -280,12 +233,12 @@ export interface RecordingTerminalOptions {
 
 /** A {@link createRecorder} per {@link PromptFormInterface} form, keyed by form name. */
 export interface RecordingTerminalCalls {
-	readonly input: TestRecorderInterface<readonly [InputOptions]>
-	readonly password: TestRecorderInterface<readonly [PasswordOptions]>
-	readonly confirm: TestRecorderInterface<readonly [ConfirmOptions]>
-	readonly select: TestRecorderInterface<readonly [SelectOptions]>
-	readonly checkbox: TestRecorderInterface<readonly [CheckboxOptions]>
-	readonly editor: TestRecorderInterface<readonly [EditorOptions]>
+	readonly input: RecorderInterface<readonly [InputOptions]>
+	readonly password: RecorderInterface<readonly [PasswordOptions]>
+	readonly confirm: RecorderInterface<readonly [ConfirmOptions]>
+	readonly select: RecorderInterface<readonly [SelectOptions]>
+	readonly checkbox: RecorderInterface<readonly [CheckboxOptions]>
+	readonly editor: RecorderInterface<readonly [EditorOptions]>
 }
 
 /** One deferred, still-unresolved {@link createRecordingTerminal} form call. */
@@ -336,7 +289,7 @@ export function createRecordingTerminal(
 
 	function call<TOptions, TValue>(
 		form: PromptType,
-		recorder: TestRecorderInterface<readonly [TOptions]>,
+		recorder: RecorderInterface<readonly [TOptions]>,
 		formOptions: TOptions,
 		value: TValue,
 	): Promise<TValue> {

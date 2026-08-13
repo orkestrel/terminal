@@ -6,8 +6,8 @@ import {
 	createSSEResponse,
 	recordEmitterEvents,
 	requireElement,
-	waitForDelay,
 } from '../../setup.js'
+import { waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 // The SSE prompt BRIDGE, driven deterministically by an INJECTED fetch returning a controlled SSE

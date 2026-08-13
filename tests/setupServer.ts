@@ -2,11 +2,11 @@
 // `src:server` test project. `node:*` imports belong here, never in `setup.ts`.
 
 import type { InputStreamInterface, OutputStreamInterface } from '@src/server'
-import type { TestRecorderInterface } from './setup.js'
+import type { RecorderInterface } from '@orkestrel/test'
 import { EventEmitter } from 'node:events'
 import { expect } from 'vitest'
 import { strip } from '@orkestrel/console'
-import { createRecorder } from './setup.js'
+import { createRecorder } from '@orkestrel/test'
 
 /**
  * A recording {@link OutputStreamInterface} — a stand-in `process.stdout` / `process.stderr`
@@ -21,7 +21,7 @@ import { createRecorder } from './setup.js'
  */
 export function createStreamTarget(options?: { isTTY?: boolean }): {
 	readonly target: OutputStreamInterface
-	readonly writes: TestRecorderInterface<readonly [text: string]>
+	readonly writes: RecorderInterface<readonly [text: string]>
 } {
 	const writes = createRecorder<readonly [text: string]>()
 	const target: OutputStreamInterface = {
@@ -109,7 +109,7 @@ export interface FakeTTYInterface {
 	/** The injectable recording output stream — pass as `createTerminal({ output })`. */
 	readonly output: OutputStreamInterface
 	/** Every written string, in order (`writes.calls` is the list of `[text]` tuples) — the raw record behind {@link text}. */
-	readonly writes: TestRecorderInterface<readonly [text: string]>
+	readonly writes: RecorderInterface<readonly [text: string]>
 	/** Emit one scripted key chunk into the input as a `'data'` event (a string or raw bytes `parseKey` decodes). */
 	push(chunk: string | Uint8Array): void
 	/** The full written output with ANSI stripped — assert a prompt view's rendered content against this. */

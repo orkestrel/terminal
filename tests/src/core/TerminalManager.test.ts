@@ -8,7 +8,8 @@ import type {
 	SelectOptions,
 } from '@src/core'
 import { createMemoryTerminalStore, createTerminalManager } from '@src/core'
-import { createManualTimer, createRecorder } from '../../setup.js'
+import { createManualTimer } from '../../setup.js'
+import { createRecorder } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 // src/core/TerminalManager.ts — the multi-endpoint registry of `Prompt` brokers: idempotent

@@ -1,11 +1,7 @@
 import type { PendingPrompt, PromptInterface } from '@src/core'
 import { createPrompt, isTerminalError } from '@src/core'
-import {
-	createManualTimer,
-	createRecorder,
-	recordEmitterEvents,
-	requireElement,
-} from '../../setup.js'
+import { createManualTimer, recordEmitterEvents, requireElement } from '../../setup.js'
+import { createRecorder } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 // The headless prompt BROKER, driven deterministically: every prompt is PARKED as a Promise that
