@@ -114,6 +114,24 @@ export const config = (options?: UserConfig): UserConfig =>
 		options ?? {},
 	)
 
+export const integration = (options?: UserConfig): UserConfig =>
+	mergeConfig(
+		{
+			resolve,
+			test: {
+				name: { label: 'integration', color: 'cyan' },
+				include: ['tests/integration.test.ts'],
+				setupFiles: ['./tests/setup.ts'],
+				environment: 'node',
+				browser: { enabled: false },
+				// A real loopback HTTP round trip and a scripted TTY walk under contention run slower
+				// than the default fast-suite budget.
+				testTimeout: 20_000,
+			},
+		},
+		options ?? {},
+	)
+
 export const guides = (options?: UserConfig): UserConfig =>
 	mergeConfig(
 		{
@@ -149,6 +167,6 @@ export const probe = (options?: UserConfig): UserConfig =>
 export default defineConfig({
 	resolve,
 	test: {
-		projects: [srcCore, srcServer, policy, config, guides, probe],
+		projects: [srcCore, srcServer, policy, config, integration, guides, probe],
 	},
 })
