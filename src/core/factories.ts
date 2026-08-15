@@ -3,7 +3,6 @@ import type {
 	PromptClientOptions,
 	PromptInterface,
 	PromptOptions,
-	TerminalManagerInterface,
 	TerminalManagerOptions,
 	TerminalSnapshotRow,
 	TerminalStoreInterface,
@@ -18,30 +17,26 @@ import { createDatabase, createMemoryDriver } from '@orkestrel/database'
 import { rawShape, stringShape } from '@orkestrel/contract'
 
 /**
- * Create the headless prompt {@link PromptInterface} BROKER — it parks each prompt call as a
- * pending prompt and resolves it when {@link PromptInterface.answer} arrives (or rejects on
- * timeout). The tri-surface's headless arm: subscribe `emitter.on('pending', …)` to forward each
- * prompt to whoever can answer (an SSE transport, a remote terminal), then route the answer back
- * through `answer(id, value)`.
+ * Create the headless {@link PromptInterface} broker. It parks live forms and applies remote
+ * answers to the authoritative instances.
  *
  * @param options - See {@link PromptOptions}
  * @returns A {@link PromptInterface}
  *
  * @remarks
- * - **Park-as-Promise.** `await prompt.input({ message })` blocks until `answer(id, value)` accepts
- *   a matching value; the value is validated (text forms) and type-checked to the form first.
- * - **Timeout → expire → reject (deterministic).** An unanswered prompt expires after
- *   `options.timeout` (default {@link import('./constants.js').DEFAULT_PROMPT_TIMEOUT_MS}) and its
- *   Promise rejects with a {@link import('./errors.js').TerminalError}; inject `options.timer` to
- *   drive expiry without real time.
+ * The caller awaits the parked form's own `answer`. Timeout or teardown destroys the form, so that
+ * promise rejects with the Form package's `ABANDONED` error. Inject `options.timer` to drive
+ * expiry without real time.
  *
  * @example
  * ```ts
  * import { createPrompt } from '@src/core'
+ * import { createForm } from '@orkestrel/form'
  *
  * const prompt = createPrompt()
- * prompt.emitter.on('pending', (pending) => send(pending)) // forward to a remote client
- * const name = await prompt.input({ message: 'Your name', validate: { required: true } })
+ * const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+ * const id = prompt.park(form)
+ * prompt.answer(id, { name: 'Ada' })
  * ```
  */
 export function createPrompt(options?: PromptOptions): PromptInterface {
@@ -50,9 +45,8 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
 
 /**
  * Create the SSE prompt {@link PromptClientInterface} BRIDGE — it connects to a remote broker's SSE
- * endpoint, dispatches each received prompt to a LOCAL {@link import('./types.js').PromptFormInterface}
- * terminal (so a human at this machine answers a prompt parked elsewhere), and POSTs the answer
- * back. Universal — `fetch` / SSE are web-standard.
+ * endpoint, dispatches each received form to a local {@link import('./types.js').TerminalInterface},
+ * and POSTs the answer back. Universal — `fetch` / SSE are web-standard.
  *
  * @param options - See {@link PromptClientOptions} (`url` + `terminal` required)
  * @returns A {@link PromptClientInterface}
@@ -77,12 +71,12 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
 }
 
 /**
- * Create the multi-endpoint {@link TerminalManagerInterface} — a named registry of
+ * Create the multi-endpoint {@link TerminalManager} — a named registry of
  * {@link PromptInterface} brokers so several parties can `ask` prompts of each other by name,
  * with a transitive DEADLOCK check across every in-flight ask.
  *
  * @param options - See {@link TerminalManagerOptions}
- * @returns A {@link TerminalManagerInterface}
+ * @returns A {@link TerminalManager}
  *
  * @example
  * ```ts
@@ -92,7 +86,7 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
  * manager.add('agent')
  * ```
  */
-export function createTerminalManager(options?: TerminalManagerOptions): TerminalManagerInterface {
+export function createTerminalManager(options?: TerminalManagerOptions): TerminalManager {
 	return new TerminalManager(options)
 }
 

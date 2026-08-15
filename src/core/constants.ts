@@ -1,12 +1,9 @@
 import type { PromptRole, PromptTheme } from './types.js'
 import { freezeStyle, STATUS_ICONS } from '@orkestrel/console'
 
-// The constant DATA the pure prompt core reads — the control-byte → key-name decode table
-// {@link parseKey} consults, the default mask, the validation regex patterns the rule engine
-// tests against, the prompt-view icon glyphs, the default theme, and the default rule error
-// messages. UPPER_SNAKE, `Object.freeze`d, every member exported (AGENTS §5). Control bytes are
-// built with `String.fromCharCode` so no raw control character appears in source (the
-// console-module idiom).
+// The constant DATA the pure terminal core reads: key decoding, rendering, and transport defaults.
+// UPPER_SNAKE, `Object.freeze`d, every member exported. Control bytes are built with
+// `String.fromCharCode` so no raw control character appears in source.
 
 // === Control bytes (named, no raw control characters in source)
 
@@ -105,46 +102,8 @@ export const CONTROL_NAMES: Readonly<
 
 // === Prompt defaults
 
-/** The default mask glyph a {@link import('./types.js').PasswordState} renders each input character as — `*`. */
+/** The default mask glyph {@link import('./helpers.js').createPasswordState} uses — `*`. */
 export const DEFAULT_MASK = '*'
-
-// === Validation patterns
-
-/**
- * Matches an HTTP(S) URL. The `url` rule tests against this. Kept locally because it is
- * narrower than `FORMAT_PATTERNS.uri`, which accepts other URI schemes.
- */
-export const URL_PATTERN = /^https?:\/\/.+/
-
-/** Matches a numeric value (integer or decimal, optional sign). The `numeric` rule tests against this. */
-export const NUMERIC_PATTERN = /^-?\d+(\.\d+)?$/
-
-/** Matches an integer (optional sign). The `integer` rule tests against this. */
-export const INTEGER_PATTERN = /^-?\d+$/
-
-/** Matches an alphanumeric string (letters and digits only). The `alphanumeric` rule tests against this. */
-export const ALPHANUMERIC_PATTERN = /^[a-zA-Z0-9]+$/
-
-// === Default rule error messages
-
-/**
- * Each built-in validation rule's default error message — what the composed {@link
- * import('./types.js').Validator} returns when that rule fails (the `minimum` / `maximum`
- * messages are interpolated with the configured length at build time). Frozen; the source of
- * truth for the rule-failure copy.
- */
-export const RULE_MESSAGES = Object.freeze({
-	required: 'This field is required',
-	minimum: 'Must be at least {count} characters',
-	maximum: 'Must be at most {count} characters',
-	pattern: 'Must match pattern: {pattern}',
-	email: 'Must be a valid email address',
-	url: 'Must be a valid URL',
-	numeric: 'Must be a numeric value',
-	integer: 'Must be an integer',
-	alphanumeric: 'Must contain only letters and digits',
-	invalid: 'Invalid input',
-})
 
 // === Prompt-view icons
 
@@ -238,11 +197,11 @@ export const DEFAULT_PROMPT_TIMEOUT_MS = 300_000
 export const DEFAULT_RECONNECT_DELAY_MS = 2_000
 
 /**
- * The SSE `event:` names the broker emits and the {@link import('./types.js').PromptClient}
+ * The SSE `event:` names the broker emits and the {@link import('./types.js').PromptClientInterface}
  * dispatches on. Frozen; the source of truth for the wire event vocabulary.
  *
  * @remarks
- * - `pending` — a serialized {@link import('./types.js').PendingPrompt} to dispatch + answer.
+ * - `pending` — a serialized {@link import('./types.js').PendingForm} to dispatch and answer.
  * - `expire` — an `{ id }` payload: the broker expired a parked prompt (the client drops it).
  * - `shutdown` — the broker is going away; the client disconnects (no auto-reconnect) but stays reusable.
  */
@@ -252,14 +211,14 @@ export const SSE_EVENTS = Object.freeze({
 	shutdown: 'shutdown',
 })
 
-/** The auth-token request header the {@link import('./types.js').PromptClient} sends when a `token` is configured. */
+/** The auth-token request header the {@link import('./types.js').PromptClientInterface} sends. */
 export const HEADER_TOKEN = 'x-orkestrel-token'
 
 /** The `Accept` header value that opens the broker's SSE stream. */
 export const ACCEPT_EVENT_STREAM = 'text/event-stream'
 
 /**
- * The maximum number of characters the {@link import('./types.js').PromptClient} lets its
+ * The maximum number of characters the {@link import('./types.js').PromptClientInterface} lets its
  * SSE parser buffer before treating the stream as hostile — 1 MiB, comfortably above any
  * legitimate prompt payload. Passed as the `limit` to `createSSEParser` so an unterminated
  * or oversized `data:` field cannot grow the buffer without bound (a memory-exhaustion guard).

@@ -1,64 +1,40 @@
 import type {
-	CheckboxChoice,
-	CheckboxOptions,
-	CheckboxState,
-	ConfirmOptions,
-	ConfirmState,
-	EditorOptions,
-	EditorState,
 	FetchInit,
-	InputOptions,
-	InputState,
 	KeyEvent,
-	PasswordOptions,
-	PasswordState,
-	PendingPrompt,
-	PromptChoice,
-	PromptFormInterface,
+	PendingForm,
 	PromptIcon,
 	PromptRole,
 	PromptStep,
 	PromptTheme,
 	PromptThemeOptions,
-	SelectOptions,
-	SelectState,
 	TimerCancel,
-	ValidationRules,
-	Validator,
 	WireEvent,
 } from './types.js'
-import type { Guard } from '@orkestrel/contract'
 import type { Style, StylerInterface } from '@orkestrel/console'
+import type {
+	CheckboxField,
+	ConfirmField,
+	EditorField,
+	FormField,
+	FormSchema,
+	PasswordField,
+	SelectField,
+	TextField,
+} from '@orkestrel/form'
 import {
-	ALPHANUMERIC_PATTERN,
 	CONTROL_NAMES,
 	DEFAULT_MASK,
 	DEFAULT_PROMPT_THEME,
-	INTEGER_PATTERN,
-	NUMERIC_PATTERN,
 	PROMPT_ROLES,
-	RULE_MESSAGES,
 	SEQUENCE_NAMES,
-	URL_PATTERN,
 } from './constants.js'
-import { isPromptThemeOptions } from './validators.js'
-import {
-	FORMAT_PATTERNS,
-	isBoolean,
-	isNonEmptyString,
-	isNumber,
-	isRecord,
-	isString,
-	recordOf,
-} from '@orkestrel/contract'
-import { createStyler, freezeStyle, stripControls } from '@orkestrel/console'
+import { isString } from '@orkestrel/contract'
+import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested (AGENTS §5):
-// the key decoder, the validation rule engine, the choice normalizers, the per-prompt view
-// renderers, and the six `create*State` factories + `*Reduce` reducers. No `node:*`, no I/O,
-// no events. A reducer is a total `(state, key) → PromptStep`; the view is rendered through the
-// state's console {@link StylerInterface} (the ONE style engine), so the impure server driver
-// (T-c) only feeds bytes in and writes the rendered view out.
+// the key decoder, schema sanitization, per-field view renderers, and the six `create*State`
+// factories + `*Reduce` reducers. No `node:*`, no I/O, no events. Form owns validation and
+// settlement; these reducers only turn keys into candidate field values.
 
 // === Key decoding
 
@@ -128,179 +104,6 @@ export function isPrintable(character: string): boolean {
 	return code >= 32 && code !== 127
 }
 
-// === Validation engine
-
-/**
- * Evaluate ONE built-in validation rule against `input`, returning its error message when the
- * rule fails or `undefined` when it passes. The atomic check {@link buildRuleValidator} wraps
- * into a {@link Validator}. Pure.
- *
- * @remarks
- * A function `check` is the custom-override path: it is called and its `true` ⇒ pass, a string
- * ⇒ that message, anything else ⇒ the generic {@link RULE_MESSAGES.invalid}. A primitive `check`
- * runs the named built-in: `required` (non-empty trimmed), `minimum` / `maximum` (length
- * bounds, the message interpolated with the count), `pattern` (a regex source), and the
- * `email` / `url` / `numeric` / `integer` / `alphanumeric` pattern tests.
- *
- * @param rule - The rule name (`'required'`, `'minimum'`, …)
- * @param check - The configured value (a primitive toggle / bound / pattern, or a custom {@link Validator})
- * @param input - The input string to test
- * @returns The error message when the rule fails, else `undefined`
- */
-export function evaluateRule(
-	rule: string,
-	check: boolean | number | string | Validator,
-	input: string,
-): string | undefined {
-	// `typeof` (not the broad `isFunction` guard) so the union narrows to the precise `Validator`.
-	if (typeof check === 'function') {
-		const result = check(input)
-		if (result === true) return undefined
-		return isString(result) ? result : RULE_MESSAGES.invalid
-	}
-
-	switch (rule) {
-		case 'required':
-			if (check === true && input.trim().length === 0) return RULE_MESSAGES.required
-			break
-		case 'minimum':
-			if (isNumber(check) && [...input].length < check)
-				return RULE_MESSAGES.minimum.replace('{count}', String(check))
-			break
-		case 'maximum':
-			if (isNumber(check) && [...input].length > check)
-				return RULE_MESSAGES.maximum.replace('{count}', String(check))
-			break
-		case 'pattern':
-			if (isString(check)) {
-				let compiled: RegExp | undefined
-				try {
-					compiled = new RegExp(check)
-				} catch {
-					return RULE_MESSAGES.pattern.replace('{pattern}', check)
-				}
-				if (!compiled.test(input)) return RULE_MESSAGES.pattern.replace('{pattern}', check)
-			}
-			break
-		case 'email':
-			if (check === true && !FORMAT_PATTERNS.email.test(input)) return RULE_MESSAGES.email
-			break
-		case 'url':
-			if (check === true && !URL_PATTERN.test(input)) return RULE_MESSAGES.url
-			break
-		case 'numeric':
-			if (check === true && !NUMERIC_PATTERN.test(input)) return RULE_MESSAGES.numeric
-			break
-		case 'integer':
-			if (check === true && !INTEGER_PATTERN.test(input)) return RULE_MESSAGES.integer
-			break
-		case 'alphanumeric':
-			if (check === true && !ALPHANUMERIC_PATTERN.test(input)) return RULE_MESSAGES.alphanumeric
-			break
-	}
-
-	return undefined
-}
-
-/** Wrap a named rule + its primitive check into a {@link Validator} (returns `true` or the rule's message). */
-export function buildRuleValidator(rule: string, check: boolean | number | string): Validator {
-	return (input: string) => evaluateRule(rule, check, input) ?? true
-}
-
-/**
- * Append a rule-backed {@link Validator} to `validators` when the rule is enabled — a `false` /
- * `undefined` `check` is skipped, a function `check` is added verbatim (the custom override), and
- * a primitive `check` is wrapped via {@link buildRuleValidator}. Mutates `validators` in place.
- */
-export function appendRule(
-	validators: Validator[],
-	rule: string,
-	check: boolean | number | string | Validator | undefined,
-): void {
-	if (check === undefined || check === false) return
-	if (typeof check === 'function') {
-		validators.push(check)
-		return
-	}
-	validators.push(buildRuleValidator(rule, check))
-}
-
-/**
- * Compose several {@link Validator}s into ONE short-circuiting validator — it runs them in order
- * and returns the FIRST error message, or `true` when all pass. The empty composition always
- * passes.
- */
-export function composeValidators(...validators: Validator[]): Validator {
-	return (input: string) => {
-		for (const validator of validators) {
-			const result = validator(input)
-			if (result !== true) return result
-		}
-		return true
-	}
-}
-
-/**
- * Compile a {@link Validator} or declarative {@link ValidationRules} (or nothing) into ONE
- * composed {@link Validator}. A bare validator passes through; rules are appended in the fixed
- * order (required → minimum → maximum → pattern → email → url → numeric → integer → alphanumeric
- * → custom) and composed; absent / empty input yields an always-passing validator. Pure.
- *
- * @remarks
- * Unlike a prior variant (which returned `Validator | undefined`), this ALWAYS returns a
- * `Validator` — an absent or empty rule set yields a validator that returns `true` for every
- * input. That keeps a prompt's state unconditional (it always holds a real validator to apply on
- * submit), with no `undefined` branch at the call site.
- *
- * @param validate - A custom {@link Validator}, a {@link ValidationRules} bag, or `undefined`
- * @returns The composed {@link Validator} (always-passing when nothing was supplied)
- *
- * @example
- * ```ts
- * const v = resolveValidation({ required: true, minimum: 3 })
- * v('')    // 'This field is required'
- * v('ab')  // 'Must be at least 3 characters'
- * v('abc') // true
- * ```
- */
-export function resolveValidation(validate?: Validator | ValidationRules): Validator {
-	if (validate === undefined) return passing
-	// `typeof` (not the broad `isFunction` guard) so the union narrows to the precise `Validator`.
-	if (typeof validate === 'function') return validate
-
-	const validators: Validator[] = []
-	appendRule(validators, 'required', validate.required)
-	appendRule(validators, 'minimum', validate.minimum)
-	appendRule(validators, 'maximum', validate.maximum)
-	appendRule(validators, 'pattern', validate.pattern)
-	appendRule(validators, 'email', validate.email)
-	appendRule(validators, 'url', validate.url)
-	appendRule(validators, 'numeric', validate.numeric)
-	appendRule(validators, 'integer', validate.integer)
-	appendRule(validators, 'alphanumeric', validate.alphanumeric)
-	if (typeof validate.custom === 'function') validators.push(validate.custom)
-
-	if (validators.length === 0) return passing
-	return composeValidators(...validators)
-}
-
-/** The always-passing {@link Validator} — the resolved validator when no rules were supplied. */
-export function passing(_input: string): true {
-	return true
-}
-
-// === Choice normalization
-
-/** Normalize a select choice input into a full {@link PromptChoice} (a bare string becomes both name and value). */
-export function normalizeChoice(choice: string | PromptChoice): PromptChoice {
-	return isString(choice) ? { name: choice, value: choice } : choice
-}
-
-/** Normalize a checkbox choice input into a full {@link CheckboxChoice} (a bare string becomes both name and value). */
-export function normalizeCheckboxChoice(choice: string | CheckboxChoice): CheckboxChoice {
-	return isString(choice) ? { name: choice, value: choice } : choice
-}
-
 // === Prompt theme
 
 /**
@@ -334,11 +137,11 @@ export function createPromptTheme(options?: PromptThemeOptions): PromptTheme {
 }
 
 /**
- * Sanitize text for one single-line display slot. Composes console's {@link stripControls} pass
- * with removal of tab, line feed, and carriage return, so no C0 control or DEL survives.
+ * Sanitize text for one single-line display slot. Composes console's ANSI {@link strip} and C0
+ * {@link stripControls} passes with removal of tab, line feed, and carriage return.
  *
  * @param text - The text to sanitize for a glyph or hint slot
- * @returns The text with every C0 control character and DEL removed
+ * @returns The text with ANSI sequences, every C0 control character, and DEL removed
  *
  * @example
  * ```ts
@@ -346,7 +149,154 @@ export function createPromptTheme(options?: PromptThemeOptions): PromptTheme {
  * ```
  */
 export function sanitizeDisplayText(text: string): string {
-	return stripControls(text).replaceAll('\t', '').replaceAll('\n', '').replaceAll('\r', '')
+	return stripControls(strip(text)).replaceAll('\t', '').replaceAll('\n', '').replaceAll('\r', '')
+}
+
+/**
+ * Sanitize every terminal-readable string in a parsed form schema.
+ *
+ * @remarks
+ * Names, labels, help, placeholders, masks, choices, string defaults, file accept entries, and
+ * string rule operands pass through {@link sanitizeDisplayText}. Group references receive the
+ * same projection as group names so the relation stays intact. Field metadata is removed because
+ * terminal neither renders nor interprets it. Pattern sources are sanitized as text only and are
+ * never compiled or executed here.
+ *
+ * @param schema - A schema already accepted by the Form package's `parseForm`
+ * @returns A new schema with terminal-readable strings sanitized and field metadata omitted
+ *
+ * @example
+ * ```ts
+ * sanitizeSchema({ fields: [{ control: 'text', name: 'na\u001bme', label: 'N\u0000ame' }] })
+ * // { fields: [{ control: 'text', name: 'name', label: 'Name' }] }
+ * ```
+ */
+export function sanitizeSchema(schema: FormSchema): FormSchema {
+	const groups = schema.groups?.map((group) => ({
+		name: sanitizeDisplayText(group.name),
+		label: sanitizeDisplayText(group.label),
+		...(group.help !== undefined ? { help: sanitizeDisplayText(group.help) } : {}),
+	}))
+	const fields: FormField[] = []
+	for (const source of schema.fields) {
+		const { meta: _meta, ...field } = source
+		const rule =
+			field.rule === undefined
+				? undefined
+				: {
+						...field.rule,
+						...(typeof field.rule.minimum === 'string'
+							? { minimum: sanitizeDisplayText(field.rule.minimum) }
+							: {}),
+						...(typeof field.rule.maximum === 'string'
+							? { maximum: sanitizeDisplayText(field.rule.maximum) }
+							: {}),
+						...(field.rule.pattern !== undefined
+							? { pattern: sanitizeDisplayText(field.rule.pattern) }
+							: {}),
+					}
+		const shared = {
+			name: sanitizeDisplayText(field.name),
+			...(field.label !== undefined ? { label: sanitizeDisplayText(field.label) } : {}),
+			...(field.help !== undefined ? { help: sanitizeDisplayText(field.help) } : {}),
+			...(field.group !== undefined ? { group: sanitizeDisplayText(field.group) } : {}),
+			...(rule !== undefined ? { rule } : {}),
+		}
+
+		switch (field.control) {
+			case 'text':
+			case 'editor': {
+				fields.push({
+					...field,
+					...shared,
+					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
+					...(field.placeholder !== undefined
+						? { placeholder: sanitizeDisplayText(field.placeholder) }
+						: {}),
+				})
+				break
+			}
+			case 'password': {
+				fields.push({
+					...field,
+					...shared,
+					...(field.mask !== undefined ? { mask: sanitizeDisplayText(field.mask) } : {}),
+				})
+				break
+			}
+			case 'number': {
+				fields.push({
+					...field,
+					...shared,
+					...(field.placeholder !== undefined
+						? { placeholder: sanitizeDisplayText(field.placeholder) }
+						: {}),
+				})
+				break
+			}
+			case 'date':
+			case 'time':
+			case 'datetime':
+			case 'color': {
+				fields.push({
+					...field,
+					...shared,
+					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
+				})
+				break
+			}
+			case 'confirm': {
+				fields.push({ ...field, ...shared })
+				break
+			}
+			case 'select': {
+				fields.push({
+					...field,
+					...shared,
+					choices: field.choices.map((choice) => ({
+						...choice,
+						value: sanitizeDisplayText(choice.value),
+						label: sanitizeDisplayText(choice.label),
+						...(choice.help !== undefined ? { help: sanitizeDisplayText(choice.help) } : {}),
+					})),
+					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
+				})
+				break
+			}
+			case 'checkbox': {
+				fields.push({
+					...field,
+					...shared,
+					choices: field.choices.map((choice) => ({
+						...choice,
+						value: sanitizeDisplayText(choice.value),
+						label: sanitizeDisplayText(choice.label),
+						...(choice.help !== undefined ? { help: sanitizeDisplayText(choice.help) } : {}),
+					})),
+					...(field.default !== undefined
+						? { default: field.default.map(sanitizeDisplayText) }
+						: {}),
+				})
+				break
+			}
+			case 'file': {
+				fields.push({
+					...field,
+					...shared,
+					...(field.accept !== undefined ? { accept: field.accept.map(sanitizeDisplayText) } : {}),
+				})
+				break
+			}
+		}
+	}
+
+	return {
+		...(schema.name !== undefined ? { name: sanitizeDisplayText(schema.name) } : {}),
+		...(schema.label !== undefined ? { label: sanitizeDisplayText(schema.label) } : {}),
+		...(schema.help !== undefined ? { help: sanitizeDisplayText(schema.help) } : {}),
+		...(groups !== undefined ? { groups } : {}),
+		fields,
+	}
 }
 
 /**
@@ -397,55 +347,58 @@ export function submitHeader(styler: StylerInterface, theme: PromptTheme, messag
 	return `${styler.render(theme.roles.success, theme.icons.success)} ${styler.render(theme.roles.message, message)}`
 }
 
-/** The styled error line (`✖ message`) — appended beneath a prompt view when the last submit failed validation, themed by the `error` role. */
+/** The styled error line (`✖ message`) a form driver appends for a field failure. */
 export function errorLine(styler: StylerInterface, theme: PromptTheme, message: string): string {
 	return `${styler.render(theme.roles.error, theme.icons.error)} ${styler.render(theme.roles.error, message)}`
 }
 
 // === Input prompt
 
-/** Build the initial {@link InputState} from {@link InputOptions} — resolving the validator + styler + theme, seeding an empty value. */
-export function createInputState(options: InputOptions): InputState {
+/**
+ * Build the initial text-field key state.
+ *
+ * @param field - The text field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createInputState(
+	field: TextField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
 	return {
-		message: options.message,
-		default: options.default ?? '',
-		validator: resolveValidation(options.validate),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
+		message: field.label ?? field.name,
+		default: field.default ?? '',
+		styler,
+		theme: createPromptTheme(theme),
 		value: '',
 	}
 }
 
-/** Render an {@link InputState} as a styled view — the header, the typed value painted by the `content` role (or the default painted as a hint), and any error. */
-export function inputView(state: InputState): string {
+/** Render a text-field key state as a styled view. */
+export function inputView(state: ReturnType<typeof createInputState>): string {
 	const shown =
 		state.value.length > 0
 			? state.styler.render(state.theme.roles.content, state.value)
 			: state.styler.render(state.theme.roles.hint, state.default)
-	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
-	return state.error === undefined
-		? head
-		: `${head}\n${errorLine(state.styler, state.theme, state.error)}`
+	return `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
 }
 
 /**
  * Advance an input prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the value; backspace shrinks it; ctrl-u clears it; ctrl-c
- * cancels; return submits (the empty line falls back to the default) through the validator — an
- * invalid submit stays active with the error in the view.
+ * cancels; return produces the candidate value, with an empty line falling back to the default.
  */
-export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
+export function inputReduce(
+	state: ReturnType<typeof createInputState>,
+	key: KeyEvent,
+): PromptStep<string, ReturnType<typeof createInputState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: inputView(state), status: 'cancel' }
-	const { error: _error, ...clear } = state
 
 	if (key.name === 'return') {
 		const answer = state.value.length > 0 ? state.value : state.default
-		const result = state.validator(answer)
-		if (result !== true) {
-			const next: InputState = { ...state, error: result }
-			return { state: next, view: inputView(next), status: 'active' }
-		}
-		const next: InputState = { ...clear, value: answer }
+		const next = { ...state, value: answer }
 		return {
 			state: next,
 			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer)}`,
@@ -456,57 +409,57 @@ export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string
 
 	const value = editLine(state.value, key)
 	if (value === undefined) return { state, view: inputView(state), status: 'active' }
-	const next: InputState = { ...clear, value }
+	const next = { ...state, value }
 	return { state: next, view: inputView(next), status: 'active' }
 }
 
 // === Password prompt
 
-/** Build the initial {@link PasswordState} from {@link PasswordOptions} — resolving the validator + styler + theme + mask. */
-export function createPasswordState(options: PasswordOptions): PasswordState {
+/**
+ * Build the initial password-field key state.
+ *
+ * @param field - The password field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createPasswordState(
+	field: PasswordField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
 	return {
-		message: options.message,
-		mask: options.mask ?? DEFAULT_MASK,
-		validator: resolveValidation(options.validate),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
+		message: field.label ?? field.name,
+		mask: field.mask ?? DEFAULT_MASK,
+		styler,
+		theme: createPromptTheme(theme),
 		value: '',
 	}
 }
 
-/** Render a {@link PasswordState} as a styled view — the header, the value masked to `mask` repeated and painted by the `content` role, and any error. */
-export function passwordView(state: PasswordState): string {
+/** Render a password-field key state as a styled view. */
+export function passwordView(state: ReturnType<typeof createPasswordState>): string {
 	const masked = state.styler.render(
 		state.theme.roles.content,
 		state.mask.repeat(state.value.length),
 	)
-	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
-	return state.error === undefined
-		? head
-		: `${head}\n${errorLine(state.styler, state.theme, state.error)}`
+	return `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
 }
 
 /**
  * Advance a password prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Identical line-editing to {@link inputReduce} (printable extends, backspace shrinks,
- * ctrl-u clears, ctrl-c cancels) but the view masks the value; return submits through the
- * validator (no default fallback — a password has no echoed default).
+ * ctrl-u clears, ctrl-c cancels) but the view masks the value. Return produces the candidate value.
  */
 export function passwordReduce(
-	state: PasswordState,
+	state: ReturnType<typeof createPasswordState>,
 	key: KeyEvent,
-): PromptStep<string, PasswordState> {
+): PromptStep<string, ReturnType<typeof createPasswordState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: passwordView(state), status: 'cancel' }
-	const { error: _error, ...clear } = state
 
 	if (key.name === 'return') {
-		const result = state.validator(state.value)
-		if (result !== true) {
-			const next: PasswordState = { ...state, error: result }
-			return { state: next, view: passwordView(next), status: 'active' }
-		}
 		return {
-			state: clear,
+			state,
 			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, state.mask.repeat(state.value.length))}`,
 			status: 'submit',
 			value: state.value,
@@ -515,32 +468,37 @@ export function passwordReduce(
 
 	const value = editLine(state.value, key)
 	if (value === undefined) return { state, view: passwordView(state), status: 'active' }
-	const next: PasswordState = { ...clear, value }
+	const next = { ...state, value }
 	return { state: next, view: passwordView(next), status: 'active' }
 }
 
 // === Confirm prompt
 
-/** Build the initial {@link ConfirmState} from {@link ConfirmOptions} — defaulting the answer to `false`, resolving the styler + theme, carrying any hint override. */
-export function createConfirmState(options: ConfirmOptions): ConfirmState {
+/**
+ * Build the initial confirm-field key state.
+ *
+ * @param field - The confirm field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createConfirmState(
+	field: ConfirmField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
 	return {
-		message: options.message,
-		default: options.default ?? false,
-		...(options.hint !== undefined ? { hint: options.hint } : {}),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
+		message: field.label ?? field.name,
+		default: field.default ?? false,
+		styler,
+		theme: createPromptTheme(theme),
 	}
 }
 
 /**
- * Render a {@link ConfirmState} as a styled view — the header plus the `(Y/n)` group with the
- * default letter painted by the `selected` role. A supplied `hint` replaces that whole group,
- * parentheses included, painted by the `hint` role.
+ * Render a confirm-field key state as a styled view. The selected role paints the default letter.
  */
-export function confirmView(state: ConfirmState): string {
-	if (state.hint !== undefined) {
-		return hintedHeader(state.styler, state.theme, state.message, state.hint)
-	}
+export function confirmView(state: ReturnType<typeof createConfirmState>): string {
 	const head = promptHeader(state.styler, state.theme, state.message)
 	const answer = state.default
 		? `${state.styler.render(state.theme.roles.selected, 'Y')}${state.styler.render(state.theme.roles.hint, '/n')}`
@@ -554,9 +512,9 @@ export function confirmView(state: ConfirmState): string {
  * the `default`, ctrl-c cancels; any other key is ignored (stays active).
  */
 export function confirmReduce(
-	state: ConfirmState,
+	state: ReturnType<typeof createConfirmState>,
 	key: KeyEvent,
-): PromptStep<boolean, ConfirmState> {
+): PromptStep<boolean, ReturnType<typeof createConfirmState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: confirmView(state), status: 'cancel' }
 
 	let answer: boolean | undefined
@@ -576,22 +534,32 @@ export function confirmReduce(
 
 // === Select prompt
 
-/** Build the initial {@link SelectState} from {@link SelectOptions} — normalizing choices, resolving the styler + theme, carrying any hint, and pre-focusing the default. */
-export function createSelectState(options: SelectOptions): SelectState {
-	const choices = options.choices.map(normalizeChoice)
-	const index = choices.findIndex((choice) => choice.value === options.default)
+/**
+ * Build the initial select-field key state.
+ *
+ * @param field - The select field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createSelectState(
+	field: SelectField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
+	const choices = [...field.choices]
+	const index = choices.findIndex((choice) => choice.value === field.default)
 	return {
-		message: options.message,
+		message: field.label ?? field.name,
 		choices,
-		...(options.hint !== undefined ? { hint: options.hint } : {}),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
+		styler,
+		theme: createPromptTheme(theme),
 		focused: index >= 0 ? index : 0,
 	}
 }
 
-/** Render a {@link SelectState} as a MULTI-LINE styled view — the header (plus any hint) followed by one row per choice, the focused row marked. */
-export function selectView(state: SelectState): string {
+/** Render a select-field key state as a multi-line styled view. */
+export function selectView(state: ReturnType<typeof createSelectState>): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const pointer = active
@@ -601,15 +569,15 @@ export function selectView(state: SelectState): string {
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.selected)
 			: state.styler.render(state.theme.roles.muted, state.theme.icons.dot)
 		const label = active
-			? state.styler.render(state.theme.roles.focus, choice.name)
-			: state.styler.render(state.theme.roles.content, choice.name)
+			? state.styler.render(state.theme.roles.focus, choice.label)
+			: state.styler.render(state.theme.roles.content, choice.label)
 		const description =
-			choice.description === undefined
+			choice.help === undefined
 				? ''
-				: `  ${state.styler.render(state.theme.roles.description, choice.description)}`
+				: `  ${state.styler.render(state.theme.roles.description, choice.help)}`
 		return `${pointer} ${marker} ${label}${description}`
 	})
-	return [hintedHeader(state.styler, state.theme, state.message, state.hint), ...lines].join('\n')
+	return [promptHeader(state.styler, state.theme, state.message), ...lines].join('\n')
 }
 
 /**
@@ -618,18 +586,21 @@ export function selectView(state: SelectState): string {
  * focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer
  * guards against it); any other key is ignored.
  */
-export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<string, SelectState> {
+export function selectReduce(
+	state: ReturnType<typeof createSelectState>,
+	key: KeyEvent,
+): PromptStep<string, ReturnType<typeof createSelectState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: selectView(state), status: 'cancel' }
 
 	const count = state.choices.length
 	if (count === 0) return { state, view: selectView(state), status: 'active' }
 
 	if (key.name === 'up' || key.name === 'k') {
-		const next: SelectState = { ...state, focused: (state.focused - 1 + count) % count }
+		const next = { ...state, focused: (state.focused - 1 + count) % count }
 		return { state: next, view: selectView(next), status: 'active' }
 	}
 	if (key.name === 'down' || key.name === 'j') {
-		const next: SelectState = { ...state, focused: (state.focused + 1) % count }
+		const next = { ...state, focused: (state.focused + 1) % count }
 		return { state: next, view: selectView(next), status: 'active' }
 	}
 	if (key.name === 'return') {
@@ -637,7 +608,7 @@ export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<stri
 		const value = choice?.value ?? ''
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, choice?.name ?? '')}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, choice?.label ?? '')}`,
 			status: 'submit',
 			value,
 		}
@@ -647,28 +618,36 @@ export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<stri
 
 // === Checkbox prompt
 
-/** Build the initial {@link CheckboxState} from {@link CheckboxOptions} — normalizing choices, resolving the styler + theme, carrying any hint, seeding the checked set, carrying min/max. */
-export function createCheckboxState(options: CheckboxOptions): CheckboxState {
-	const choices = options.choices.map(normalizeCheckboxChoice)
-	const checked = choices.reduce<number[]>((indices, choice, index) => {
-		if (choice.checked === true) indices.push(index)
+/**
+ * Build the initial checkbox-field key state.
+ *
+ * @param field - The checkbox field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createCheckboxState(
+	field: CheckboxField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
+	const choices = [...field.choices]
+	const checked: readonly number[] = choices.reduce<number[]>((indices, choice, index) => {
+		if (field.default?.includes(choice.value) === true) indices.push(index)
 		return indices
 	}, [])
 	return {
-		message: options.message,
+		message: field.label ?? field.name,
 		choices,
-		...(options.hint !== undefined ? { hint: options.hint } : {}),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
+		styler,
+		theme: createPromptTheme(theme),
 		focused: 0,
 		checked,
-		...(options.min !== undefined ? { min: options.min } : {}),
-		...(options.max !== undefined ? { max: options.max } : {}),
 	}
 }
 
-/** Render a {@link CheckboxState} as a MULTI-LINE styled view — the header (plus any hint), one box per choice (focused + checked marked), a count, and any error. */
-export function checkboxView(state: CheckboxState): string {
+/** Render a checkbox-field key state as a multi-line styled view. */
+export function checkboxView(state: ReturnType<typeof createCheckboxState>): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const ticked = state.checked.includes(index)
@@ -679,73 +658,62 @@ export function checkboxView(state: CheckboxState): string {
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.checked)
 			: state.styler.render(state.theme.roles.muted, state.theme.icons.unchecked)
 		const label = active
-			? state.styler.render(state.theme.roles.focus, choice.name)
-			: state.styler.render(state.theme.roles.content, choice.name)
+			? state.styler.render(state.theme.roles.focus, choice.label)
+			: state.styler.render(state.theme.roles.content, choice.label)
 		const description =
-			choice.description === undefined
+			choice.help === undefined
 				? ''
-				: `  ${state.styler.render(state.theme.roles.description, choice.description)}`
+				: `  ${state.styler.render(state.theme.roles.description, choice.help)}`
 		return `${pointer} ${box} ${label}${description}`
 	})
 	const summary = state.styler.render(state.theme.roles.hint, `${state.checked.length} selected`)
-	const body = [
-		hintedHeader(state.styler, state.theme, state.message, state.hint),
-		...lines,
-		summary,
-	].join('\n')
-	return state.error === undefined
-		? body
-		: `${body}\n${errorLine(state.styler, state.theme, state.error)}`
+	const body = [promptHeader(state.styler, state.theme, state.message), ...lines, summary].join(
+		'\n',
+	)
+	return body
 }
 
 /**
  * Advance a checkbox prompt by one {@link KeyEvent} — the pure
  * `(state, key) → PromptStep<readonly string[]>` reducer. `up` / `down` (and `k` / `j`) move the
  * focus (wrapping); `space` toggles the focused index in the checked set; return submits the
- * checked values in CHOICE order — gated by `min` / `max` (an out-of-range count stays active with
- * the reason in the view); ctrl-c cancels.
+ * checked values in choice order; ctrl-c cancels. The form applies selection-count rules.
  */
 export function checkboxReduce(
-	state: CheckboxState,
+	state: ReturnType<typeof createCheckboxState>,
 	key: KeyEvent,
-): PromptStep<readonly string[], CheckboxState> {
+): PromptStep<readonly string[], ReturnType<typeof createCheckboxState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: checkboxView(state), status: 'cancel' }
 
 	const count = state.choices.length
-	const { error: _error, ...clear } = state
 
 	if ((key.name === 'up' || key.name === 'k') && count > 0) {
-		const next: CheckboxState = {
-			...clear,
+		const next = {
+			...state,
 			focused: (state.focused - 1 + count) % count,
 		}
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if ((key.name === 'down' || key.name === 'j') && count > 0) {
-		const next: CheckboxState = { ...clear, focused: (state.focused + 1) % count }
+		const next = { ...state, focused: (state.focused + 1) % count }
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if (key.name === 'space' && count > 0) {
 		const checked = toggleIndex(state.checked, state.focused)
-		const next: CheckboxState = { ...clear, checked }
+		const next = { ...state, checked }
 		return { state: next, view: checkboxView(next), status: 'active' }
 	}
 	if (key.name === 'return') {
-		const error = gateSelection(state.checked.length, state.min, state.max)
-		if (error !== undefined) {
-			const next: CheckboxState = { ...state, error }
-			return { state: next, view: checkboxView(next), status: 'active' }
-		}
 		const ordered = [...state.checked].sort((a, b) => a - b)
 		const values = ordered
 			.map((index) => state.choices[index]?.value)
 			.filter((value): value is string => value !== undefined)
 		const summary = ordered
-			.map((index) => state.choices[index]?.name)
+			.map((index) => state.choices[index]?.label)
 			.filter((name): name is string => name !== undefined)
 			.join(', ')
 		return {
-			state: clear,
+			state,
 			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, summary)}`,
 			status: 'submit',
 			value: values,
@@ -759,77 +727,64 @@ export function toggleIndex(indices: readonly number[], index: number): readonly
 	return indices.includes(index) ? indices.filter((i) => i !== index) : [...indices, index]
 }
 
-/** The min/max gate for a checkbox submit — the rejection message when `count` is out of range, else `undefined`. */
-export function gateSelection(count: number, min?: number, max?: number): string | undefined {
-	if (min !== undefined && count < min)
-		return `Select at least ${String(min)} option${min === 1 ? '' : 's'}`
-	if (max !== undefined && count > max)
-		return `Select no more than ${String(max)} option${max === 1 ? '' : 's'}`
-	return undefined
-}
-
 // === Editor prompt
 
-/** Build the initial {@link EditorState} from {@link EditorOptions} — resolving the validator + styler + theme, carrying any hint override, seeding empty lines. */
-export function createEditorState(options: EditorOptions): EditorState {
+/**
+ * Build the initial editor-field key state.
+ *
+ * @param field - The editor field to render
+ * @param styler - The styler used to render the view
+ * @param theme - The optional terminal theme
+ * @returns The initial immutable key state
+ */
+export function createEditorState(
+	field: EditorField,
+	styler: StylerInterface = createStyler(),
+	theme?: PromptThemeOptions,
+) {
+	const lines: readonly string[] = []
 	return {
-		message: options.message,
-		default: options.default ?? '',
-		...(options.hint !== undefined ? { hint: options.hint } : {}),
-		validator: resolveValidation(options.validate),
-		styler: options.styler ?? createStyler(),
-		theme: createPromptTheme(options.theme),
-		lines: [],
+		message: field.label ?? field.name,
+		default: field.default ?? '',
+		styler,
+		theme: createPromptTheme(theme),
+		lines,
 		current: '',
 	}
 }
 
 /**
- * Render an {@link EditorState} as a MULTI-LINE styled view — the header with its finish hint, the
- * committed and in-progress lines painted by the `content` role, and any error. A supplied `hint`
- * replaces `(Ctrl+D to finish)` in full; the finish key stays ctrl-d.
+ * Render an editor-field key state as a multi-line styled view with its finish hint.
  */
-export function editorView(state: EditorState): string {
-	const head = hintedHeader(
-		state.styler,
-		state.theme,
-		state.message,
-		state.hint ?? '(Ctrl+D to finish)',
-	)
+export function editorView(state: ReturnType<typeof createEditorState>): string {
+	const head = hintedHeader(state.styler, state.theme, state.message, '(Ctrl+D to finish)')
 	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 	const committed = state.lines.map((line) => state.styler.render(state.theme.roles.content, line))
 	const body = [
 		...committed,
 		`${pointer} ${state.styler.render(state.theme.roles.content, state.current)}`,
 	]
-	const view = [head, ...body].join('\n')
-	return state.error === undefined
-		? view
-		: `${view}\n${errorLine(state.styler, state.theme, state.error)}`
+	return [head, ...body].join('\n')
 }
 
 /**
  * Advance an editor prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the current line; backspace shrinks it; return commits the
  * current line and starts a fresh one; ctrl-d FINISHES (joining all lines, falling back to the
- * default when empty) through the validator; ctrl-c cancels. An invalid finish stays active with
- * the error.
+ * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
  */
-export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
+export function editorReduce(
+	state: ReturnType<typeof createEditorState>,
+	key: KeyEvent,
+): PromptStep<string, ReturnType<typeof createEditorState>> {
 	if (key.ctrl && key.name === 'c') return { state, view: editorView(state), status: 'cancel' }
-	const { error: _error, ...clear } = state
 
 	if (key.ctrl && key.name === 'd') {
 		const lines = state.current.length > 0 ? [...state.lines, state.current] : state.lines
 		const joined = lines.join('\n')
 		const answer = joined.length > 0 ? joined : state.default
-		const result = state.validator(answer)
-		if (result !== true) {
-			const next: EditorState = { ...state, error: result }
-			return { state: next, view: editorView(next), status: 'active' }
-		}
 		return {
-			state: clear,
+			state,
 			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, `${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
 			status: 'submit',
 			value: answer,
@@ -837,8 +792,8 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 	}
 
 	if (key.name === 'return') {
-		const next: EditorState = {
-			...clear,
+		const next = {
+			...state,
 			lines: [...state.lines, state.current],
 			current: '',
 		}
@@ -847,7 +802,7 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 
 	const current = editLine(state.current, key)
 	if (current === undefined) return { state, view: editorView(state), status: 'active' }
-	const next: EditorState = { ...clear, current }
+	const next = { ...state, current }
 	return { state: next, view: editorView(next), status: 'active' }
 }
 
@@ -871,261 +826,6 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
 		return `${value}${key.sequence}`
 	}
 	return undefined
-}
-
-// === Wire serialization (T-b)
-
-/**
- * Produce the WIRE-SAFE form of a prompt's options — the {@link PendingPrompt.options} a broker
- * serializes over SSE. Drops everything that cannot cross the wire (a `styler`, and any
- * function-valued `validate` rule), while KEEPING the declarative data a remote client needs to
- * reconstruct the prompt: the {@link ValidationRules} as data, plus `message` / `choices` /
- * `default` / `mask` / `min` / `max` / `hint` / `theme`. This is WHY T-a's validation is
- * rules-as-data, and why a theme is data too: a `Validator`
- * FUNCTION can't be serialized, but its declarative rules can — the client rebuilds the validator
- * from them via {@link resolveValidation}.
- *
- * @remarks
- * - **Functions are dropped.** A top-level function value (e.g. a bare-`Validator` `validate`) is
- *   omitted entirely; the `styler` (a fluent function-bearing object) is dropped by key.
- * - **`validate` rules are flattened.** A {@link ValidationRules} bag is copied with each
- *   function rule replaced by `true` (the rule's INTENT survives as the built-in check; its
- *   custom function does not). A bare-function `validate` is dropped (no declarative form to keep).
- * - **`choices` are function-stripped.** Each choice keeps its plain fields (`name` / `value` /
- *   `description` / `checked`); a bare string passes through.
- *
- * @param options - The raw prompt options bag (may hold functions / a styler)
- * @returns A JSON-safe options record — only serializable, declarative data
- */
-export function serializePromptOptions(options: object): Readonly<Record<string, unknown>> {
-	const result: Record<string, unknown> = {}
-	for (const [key, value] of Object.entries(options)) {
-		// Drop the non-serializable styler (a fluent function-bearing object) and any bare function.
-		if (key === 'styler' || typeof value === 'function') continue
-		if (key === 'validate') {
-			const rules = serializeValidationRules(value)
-			if (rules !== undefined) result[key] = rules
-			continue
-		}
-		if (key === 'choices') {
-			result[key] = serializeChoices(value)
-			continue
-		}
-		result[key] = value
-	}
-	return result
-}
-
-/**
- * Flatten a `validate` option to its wire-safe {@link ValidationRules} DATA — a function rule
- * becomes `true` (its built-in check survives; its body cannot cross the wire). A bare-function
- * `validate` (no rules object) has no declarative form, so it yields `undefined` (dropped).
- */
-export function serializeValidationRules(
-	validate: unknown,
-): Readonly<Record<string, unknown>> | undefined {
-	if (!isRecord(validate)) return undefined
-	const rules: Record<string, unknown> = {}
-	for (const [rule, value] of Object.entries(validate)) {
-		rules[rule] = typeof value === 'function' ? true : value
-	}
-	return rules
-}
-
-/** Strip functions from a `choices` option — each choice keeps its plain fields; a bare string passes through. */
-export function serializeChoices(choices: unknown): readonly unknown[] {
-	if (!Array.isArray(choices)) return []
-	return choices.map((choice: unknown) => {
-		if (isString(choice)) return choice
-		if (!isRecord(choice)) return choice
-		const normalized: Record<string, unknown> = {}
-		for (const [key, value] of Object.entries(choice)) {
-			if (typeof value !== 'function') normalized[key] = value
-		}
-		return normalized
-	})
-}
-
-// === Remote prompt dispatch (T-b)
-
-/**
- * Rebuild a wire-decoded `validate` payload into a {@link ValidationRules} bag — the inverse of
- * {@link serializeValidationRules}. Keeps only the primitive rule values (`boolean` / `number` /
- * `string`) a serialized prompt could carry; an empty / non-record / all-dropped payload yields
- * `undefined` (no rules to apply). The client feeds the result back through {@link resolveValidation}.
- */
-export function reconstructValidationRules(value: unknown): ValidationRules | undefined {
-	if (!isRecord(value)) return undefined
-	const rules: Record<string, boolean | number | string> = {}
-	let count = 0
-	for (const [rule, item] of Object.entries(value)) {
-		// `pattern` is dropped here: it is the only string-valued rule, and copying an untrusted
-		// wire-supplied regex source into a client-side `RegExp` risks ReDoS. The broker still
-		// re-validates authoritatively via its own answer() gate, so dropping it here is safe.
-		if (rule === 'pattern') continue
-		if (isBoolean(item) || isNumber(item) || isString(item)) {
-			rules[rule] = item
-			count += 1
-		}
-	}
-	if (count === 0) return undefined
-	return rules
-}
-
-/** Read one option by key, narrowed by `guard` — `undefined` when absent or off-shape (§14, never an `as`). */
-export function resolveOption<T>(
-	options: Readonly<Record<string, unknown>>,
-	key: string,
-	guard: Guard<T>,
-): T | undefined {
-	const value = options[key]
-	return guard(value) ? value : undefined
-}
-
-/** Narrow an unknown value to a {@link PromptChoice} — the `recordOf` shape inlined so no non-exported member lingers (§5). */
-export function isPromptChoice(value: unknown): value is PromptChoice {
-	return recordOf({ name: isString, value: isString, description: isString }, ['description'])(
-		value,
-	)
-}
-
-/** Narrow an unknown value to a {@link CheckboxChoice} — the `recordOf` shape inlined so no non-exported member lingers (§5). */
-export function isCheckboxChoice(value: unknown): value is CheckboxChoice {
-	return recordOf({ name: isString, value: isString, description: isString, checked: isBoolean }, [
-		'description',
-		'checked',
-	])(value)
-}
-
-/** Read a `choices` option as a list of bare strings / full choices — each element narrowed by `guard`, off-shape elements stringified. */
-export function resolveChoices<TChoice extends PromptChoice | CheckboxChoice>(
-	options: Readonly<Record<string, unknown>>,
-	guard: Guard<TChoice>,
-): ReadonlyArray<string | TChoice> {
-	const choices = options.choices
-	if (!Array.isArray(choices)) return []
-	return choices.map((choice: unknown) => {
-		if (isString(choice)) return choice
-		if (guard(choice)) return choice
-		return String(choice)
-	})
-}
-
-/**
- * Sanitize a list of resolved choices' human-readable labels (`name` + `description`) with
- * {@link stripControls} — shared by the `select` and `checkbox` branches of
- * {@link dispatchPendingPrompt} so a remote-supplied choice can never inject raw control bytes
- * into the local terminal's rendered view.
- *
- * @param choices - The resolved choices (bare strings or full {@link PromptChoice} /
- *   {@link CheckboxChoice} objects) as returned by {@link resolveChoices}
- * @returns The same choices with every `name` / `description` control-stripped
- */
-export function sanitizeChoiceLabels<TChoice extends PromptChoice | CheckboxChoice>(
-	choices: ReadonlyArray<string | TChoice>,
-): ReadonlyArray<string | TChoice> {
-	return choices.map((choice) => {
-		if (isString(choice)) return stripControls(choice)
-		return {
-			...choice,
-			name: stripControls(choice.name),
-			...(choice.description !== undefined
-				? { description: stripControls(choice.description) }
-				: {}),
-		}
-	})
-}
-
-/**
- * Dispatch a {@link PendingPrompt} to the matching {@link PromptFormInterface} method — the bridge
- * step a {@link PromptClient} runs to drive a LOCAL terminal with a prompt issued elsewhere.
- * Reconstructs typed options from the wire-safe {@link PendingPrompt.options} (every field
- * §14-narrowed, never an `as`; the validator rebuilt from rules via {@link reconstructValidationRules}),
- * then calls the matching prompt form and returns its resolved value.
- *
- * @remarks
- * `theme` and `hint` are plain data, so they cross the wire with the rest of the options bag and
- * are reconstructed here for every form that accepts them: the theme is narrowed by
- * {@link import('./validators.js').isPromptThemeOptions} (an off-shape theme is dropped, leaving
- * the defaults), then every glyph and hint is passed through {@link sanitizeDisplayText}. Choice
- * labels use the stream-safe {@link sanitizeChoiceLabels} treatment instead.
- *
- * @param terminal - The local {@link PromptFormInterface} to drive
- * @param pending - The decoded pending prompt to dispatch
- * @returns The prompt's resolved value (a `string` / `boolean` / `readonly string[]` per form)
- */
-export function dispatchPendingPrompt(
-	terminal: PromptFormInterface,
-	pending: PendingPrompt,
-): Promise<string | boolean | readonly string[]> {
-	const options = pending.options
-	const validate = reconstructValidationRules(options.validate)
-	const message = stripControls(pending.message)
-	const supplied = resolveOption(options, 'theme', isPromptThemeOptions)
-	const theme = supplied === undefined ? undefined : sanitizeThemeIcons(supplied)
-	const raw = resolveOption(options, 'hint', isString)
-	const hint = raw === undefined ? undefined : sanitizeDisplayText(raw)
-	switch (pending.form) {
-		case 'input': {
-			const value = resolveOption(options, 'default', isString)
-			return terminal.input({
-				message,
-				...(value !== undefined ? { default: stripControls(value) } : {}),
-				...(validate !== undefined ? { validate } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-		case 'password': {
-			const value = resolveOption(options, 'mask', isString)
-			return terminal.password({
-				message,
-				...(value !== undefined ? { mask: stripControls(value) } : {}),
-				...(validate !== undefined ? { validate } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-		case 'confirm': {
-			const value = resolveOption(options, 'default', isBoolean)
-			return terminal.confirm({
-				message,
-				...(value !== undefined ? { default: value } : {}),
-				...(hint !== undefined ? { hint } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-		case 'select': {
-			const value = resolveOption(options, 'default', isString)
-			return terminal.select({
-				message,
-				choices: sanitizeChoiceLabels(resolveChoices(options, isPromptChoice)),
-				...(value !== undefined ? { default: stripControls(value) } : {}),
-				...(hint !== undefined ? { hint } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-		case 'checkbox': {
-			const min = resolveOption(options, 'min', isNumber)
-			const max = resolveOption(options, 'max', isNumber)
-			return terminal.checkbox({
-				message,
-				choices: sanitizeChoiceLabels(resolveChoices(options, isCheckboxChoice)),
-				...(min !== undefined ? { min } : {}),
-				...(max !== undefined ? { max } : {}),
-				...(hint !== undefined ? { hint } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-		case 'editor': {
-			const value = resolveOption(options, 'default', isString)
-			return terminal.editor({
-				message,
-				...(value !== undefined ? { default: stripControls(value) } : {}),
-				...(validate !== undefined ? { validate } : {}),
-				...(hint !== undefined ? { hint } : {}),
-				...(theme !== undefined ? { theme } : {}),
-			})
-		}
-	}
 }
 
 // === Broker + bridge wiring helpers (T-b)
@@ -1190,9 +890,9 @@ export function isInsecureRemote(url: string): boolean {
 
 // === Terminal manager wire seams (transport-neutral, no http dependency)
 
-/** Serialize a parked {@link PendingPrompt} into a {@link WireEvent} — event `'pending'`, `data` the JSON-stringified prompt, `id` the prompt's own id (an SSE bridge sets its frame `id:` from this). */
-export function serializePending(prompt: PendingPrompt): WireEvent {
-	return { event: 'pending', data: JSON.stringify(prompt), id: prompt.id }
+/** Serialize a parked {@link PendingForm} into a {@link WireEvent}. */
+export function serializePending(form: PendingForm): WireEvent {
+	return { event: 'pending', data: JSON.stringify(form), id: form.id }
 }
 
 /** Serialize a parked prompt's expiry into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
@@ -1203,11 +903,4 @@ export function serializeExpire(id: string): WireEvent {
 /** The {@link WireEvent} a broker/manager sends when it is going away — event `'shutdown'`, no payload. */
 export function serializeShutdown(): WireEvent {
 	return { event: 'shutdown', data: '' }
-}
-
-/** Narrow an unknown wire payload to an answer POST body — a non-empty `id` string plus a `value` key (of any shape) present. */
-export function isAnswerPayload(
-	value: unknown,
-): value is { readonly id: string; readonly value: unknown } {
-	return isRecord(value) && isNonEmptyString(value.id) && 'value' in value
 }
