@@ -1,5 +1,5 @@
 import type {
-	AnswerResult,
+	AnswerError,
 	CheckboxOptions,
 	ConfirmOptions,
 	EditorOptions,
@@ -18,6 +18,7 @@ import type {
 	Ticket,
 	TimerHandler,
 } from './types.js'
+import type { Result } from '@orkestrel/contract'
 import type { EmitterInterface } from '@orkestrel/emitter'
 import { DEFAULT_PROMPT_TIMEOUT_MS } from './constants.js'
 import { TerminalError } from './errors.js'
@@ -104,7 +105,7 @@ export class Prompt implements PromptInterface {
 
 	// === Answer
 
-	answer(id: string, value: unknown): AnswerResult {
+	answer(id: string, value: unknown): Result<unknown, AnswerError> {
 		const parked = this.#parked.get(id)
 		if (parked === undefined) return { success: false, error: 'unknown' }
 		// The per-form gate validates + type-checks, and on accept resolves the Promise (it owns the

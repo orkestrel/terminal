@@ -1,3 +1,4 @@
+import type { Result } from '@orkestrel/contract'
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
 import type { Style, StylerInterface } from '@orkestrel/console'
 
@@ -667,11 +668,6 @@ export interface Ticket {
 /** The rejection reason a bare {@link PromptInterface.answer} returns — `'unknown'` (no such parked prompt) or `'rejected'` (failed validation / type-check). */
 export type AnswerError = 'unknown' | 'rejected'
 
-/** The outcome of a bare {@link PromptInterface.answer} call — the accepted `value` on success, else the {@link AnswerError}. */
-export type AnswerResult =
-	| { readonly success: true; readonly value: unknown }
-	| { readonly success: false; readonly error: AnswerError }
-
 /**
  * The headless prompt BROKER (observable §13) — implements {@link PromptFormInterface} by
  * PARKING each call as a {@link PendingPrompt} and returning a Promise that resolves when the
@@ -685,7 +681,7 @@ export type AnswerResult =
  *   general entry point the six form methods wrap.
  * - **Answer validates.** {@link answer} validates `value` against the prompt's resolved
  *   validator AND type-checks it to the prompt form before accepting; a bad answer is rejected
- *   (an {@link AnswerResult} failure, the prompt stays `pending`).
+ *   (a {@link Result}<unknown, {@link AnswerError}> failure, the prompt stays `pending`).
  * - **Timeout → expire → reject.** An unanswered prompt expires after `timeout` ms — `expire`
  *   fires and the parked Promise rejects (a {@link import('./errors.js').TerminalError}). The
  *   timer is injectable for deterministic tests.
@@ -697,7 +693,7 @@ export interface PromptInterface extends PromptFormInterface {
 	park(request: ParkRequest): Ticket
 	pending(): readonly PendingPrompt[]
 	pending(id: string): PendingPrompt | undefined
-	answer(id: string, value: unknown): AnswerResult
+	answer(id: string, value: unknown): Result<unknown, AnswerError>
 	destroy(): void
 }
 

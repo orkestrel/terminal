@@ -382,7 +382,7 @@ describe('Prompt — timer cleanup & idempotent destroy', () => {
 })
 
 // ============================================================================
-// T2 — park() as the general entry point, and AnswerResult totality.
+// T2 — park() as the general entry point, and Result totality.
 // ============================================================================
 
 describe('Prompt — park() general entry point', () => {
@@ -453,7 +453,7 @@ describe('Prompt — park() general entry point', () => {
 	})
 })
 
-describe('Prompt — answer() AnswerResult totality', () => {
+describe('Prompt — answer() Result totality', () => {
 	it('unknown id returns { success: false, error: "unknown" }', () => {
 		const { prompt } = broker()
 		expect(prompt.answer('nope', 'x')).toEqual({ success: false, error: 'unknown' })

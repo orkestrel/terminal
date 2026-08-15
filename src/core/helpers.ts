@@ -34,7 +34,6 @@ import {
 	CONTROL_NAMES,
 	DEFAULT_MASK,
 	DEFAULT_PROMPT_THEME,
-	EMAIL_PATTERN,
 	INTEGER_PATTERN,
 	NUMERIC_PATTERN,
 	PROMPT_ROLES,
@@ -44,6 +43,7 @@ import {
 } from './constants.js'
 import { isPromptThemeOptions } from './validators.js'
 import {
+	FORMAT_PATTERNS,
 	isBoolean,
 	isNonEmptyString,
 	isNumber,
@@ -183,7 +183,7 @@ export function evaluateRule(
 			}
 			break
 		case 'email':
-			if (check === true && !EMAIL_PATTERN.test(input)) return RULE_MESSAGES.email
+			if (check === true && !FORMAT_PATTERNS.email.test(input)) return RULE_MESSAGES.email
 			break
 		case 'url':
 			if (check === true && !URL_PATTERN.test(input)) return RULE_MESSAGES.url
@@ -1143,20 +1143,6 @@ export function globalFetch(input: string, init?: FetchInit): Promise<Response> 
  */
 export function isAbortError(error: unknown): boolean {
 	return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError'
-}
-
-/**
- * Parse a JSON wire string TOTAL — a malformed / empty payload yields `undefined` (the caller's
- * guard then rejects it), never a throw. The {@link import('./PromptClient.js').PromptClient}
- * decodes every SSE `data` field through this before §14-narrowing it.
- */
-export function parseWireJSON(text: string): unknown {
-	if (text.length === 0) return undefined
-	try {
-		return JSON.parse(text)
-	} catch {
-		return undefined
-	}
 }
 
 /**

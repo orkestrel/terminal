@@ -110,10 +110,10 @@ export const DEFAULT_MASK = '*'
 
 // === Validation patterns
 
-/** Matches an email address — a non-trivial `local@domain.tld` shape. The `email` rule tests against this. */
-export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-/** Matches an HTTP(S) URL. The `url` rule tests against this. */
+/**
+ * Matches an HTTP(S) URL. The `url` rule tests against this. Kept locally because it is
+ * narrower than `FORMAT_PATTERNS.uri`, which accepts other URI schemes.
+ */
 export const URL_PATTERN = /^https?:\/\/.+/
 
 /** Matches a numeric value (integer or decimal, optional sign). The `numeric` rule tests against this. */

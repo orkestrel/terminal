@@ -46,7 +46,6 @@ import {
 	normalizeCheckboxChoice,
 	normalizeChoice,
 	parseKey,
-	parseWireJSON,
 	passing,
 	passwordReduce,
 	passwordView,
@@ -68,7 +67,7 @@ import {
 	toggleIndex,
 } from '@src/core'
 import { createStyler, strip } from '@orkestrel/console'
-import { isNumber, isString } from '@orkestrel/contract'
+import { isNumber, isString, parseJSON } from '@orkestrel/contract'
 import { createRecordingTerminal, feedReducer, requireElement } from '../../setup.js'
 import { describe, expect, it } from 'vitest'
 
@@ -2229,7 +2228,7 @@ describe('wire — theme and hint cross as data', () => {
 			styler: createStyler(),
 		})
 		expect(wire).toEqual({ message: 'Pick', hint: 'arrows move', theme: themeOption })
-		expect(parseWireJSON(JSON.stringify(wire))).toEqual(wire)
+		expect(parseJSON(JSON.stringify(wire))).toEqual(wire)
 	})
 
 	it('dispatchPendingPrompt narrows the wire theme, strips its glyphs, and forwards the hint', async () => {

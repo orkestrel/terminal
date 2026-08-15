@@ -23,12 +23,11 @@ import {
 	globalFetch,
 	isAbortError,
 	isInsecureRemote,
-	parseWireJSON,
 } from './helpers.js'
 import { isPendingPrompt } from './validators.js'
 import { Emitter } from '@orkestrel/emitter'
 import { createSSEParser } from '@orkestrel/sse'
-import { isRecord, isString } from '@orkestrel/contract'
+import { isRecord, isString, parseJSON } from '@orkestrel/contract'
 
 /**
  * The SSE prompt BRIDGE (observable §13) — the client-side counterpart to
@@ -207,13 +206,13 @@ export class PromptClient implements PromptClientInterface {
 	// Route one decoded SSE event by its `event:` name (§14-narrow every payload).
 	async #handle(event: SSEEvent): Promise<void> {
 		if (event.event === SSE_EVENTS.pending) {
-			const parsed = parseWireJSON(event.data)
+			const parsed = parseJSON(event.data)
 			if (isPendingPrompt(parsed) && !this.#seen.has(parsed.id))
 				await this.#dispatch(parsed.id, parsed)
 			return
 		}
 		if (event.event === SSE_EVENTS.expire) {
-			const parsed = parseWireJSON(event.data)
+			const parsed = parseJSON(event.data)
 			if (isRecord(parsed) && isString(parsed.id)) {
 				this.#seen.delete(parsed.id)
 				this.#emitter.emit('expire', parsed.id)
