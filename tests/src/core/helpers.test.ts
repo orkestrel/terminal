@@ -55,6 +55,7 @@ import {
 	resolveChoices,
 	resolveOption,
 	resolveValidation,
+	sanitizeDisplayText,
 	sanitizeThemeIcons,
 	selectReduce,
 	selectView,
@@ -1890,6 +1891,7 @@ describe('createPromptTheme', () => {
 		expect(Object.isFrozen(theme.roles.error)).toBe(true)
 		expect(Object.isFrozen(theme.roles.error.attributes)).toBe(true)
 		expect(Object.isFrozen(theme.roles.hint)).toBe(true) // an untouched default is frozen too
+		expect(Object.isFrozen(theme.roles.muted)).toBe(true)
 		attributes.push('dim') // the caller's own array is not the theme's
 		expect(theme.roles.error).toEqual({ foreground: 'red', attributes: ['bold'] })
 	})
@@ -2042,6 +2044,7 @@ describe('a custom theme moves every role site', () => {
 			selected: { foreground: 'brightGreen', attributes: [] },
 			focus: { attributes: ['inverse'] },
 			hint: { attributes: ['italic'] },
+			muted: { foreground: 'yellow', attributes: ['dim'] },
 			description: { attributes: ['strikethrough'] },
 		},
 	}
@@ -2053,7 +2056,7 @@ describe('a custom theme moves every role site', () => {
 			theme,
 		})
 		expect(selectView(state)).toBe(
-			'\x1b[35m?\x1b[0m \x1b[4;34mPick\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m*\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[3m-\x1b[0m beta  \x1b[9mthe second\x1b[0m',
+			'\x1b[35m?\x1b[0m \x1b[4;34mPick\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m*\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[2;33m-\x1b[0m beta  \x1b[9mthe second\x1b[0m',
 		)
 	})
 
@@ -2067,7 +2070,7 @@ describe('a custom theme moves every role site', () => {
 			theme,
 		})
 		expect(checkboxView(state)).toBe(
-			'\x1b[35m?\x1b[0m \x1b[4;34mPick many\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m[x]\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[3m[ ]\x1b[0m beta\n\x1b[3m1 selected\x1b[0m',
+			'\x1b[35m?\x1b[0m \x1b[4;34mPick many\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m[x]\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[2;33m[ ]\x1b[0m beta\n\x1b[3m1 selected\x1b[0m',
 		)
 	})
 
@@ -2093,6 +2096,24 @@ describe('a custom theme moves every role site', () => {
 			'\x1b[32m<ok>\x1b[0m \x1b[1mName\x1b[0m \x1b[2mGrace\x1b[0m',
 		)
 		expect(inputView({ ...state, error: 'nope' })).toContain('\x1b[31m<no>\x1b[0m')
+	})
+})
+
+describe('the muted role owns dim off-state glyphs', () => {
+	it('a hint-only remap leaves the select dot and unchecked box at their dim defaults', () => {
+		const theme: PromptThemeOptions = {
+			roles: { hint: { foreground: 'blue', attributes: [] } },
+		}
+		const select = selectView(
+			createSelectState({ message: 'Pick', choices: ['alpha', 'beta'], hint: 'move', theme }),
+		)
+		const checkbox = checkboxView(
+			createCheckboxState({ message: 'Pick', choices: ['alpha'], hint: 'toggle', theme }),
+		)
+		expect(select).toContain('\x1b[34mmove\x1b[0m')
+		expect(select).toContain('\x1b[2m○\x1b[0m')
+		expect(checkbox).toContain('\x1b[34mtoggle\x1b[0m')
+		expect(checkbox).toContain('\x1b[2m☐\x1b[0m')
 	})
 })
 
@@ -2168,6 +2189,12 @@ describe('isStyle / isPromptThemeOptions', () => {
 	})
 })
 
+describe('sanitizeDisplayText', () => {
+	it('removes every C0 display control and DEL, including tab, line feed, and carriage return', () => {
+		expect(sanitizeDisplayText('Q\rOVERWRITE\nNEXT\tX\x07\x7f')).toBe('QOVERWRITENEXTX')
+	})
+})
+
 describe('sanitizeThemeIcons', () => {
 	it('strips control bytes from every supplied glyph and leaves the roles alone', () => {
 		const sanitized = sanitizeThemeIcons({
@@ -2207,15 +2234,16 @@ describe('wire — theme and hint cross as data', () => {
 
 	it('dispatchPendingPrompt narrows the wire theme, strips its glyphs, and forwards the hint', async () => {
 		const { terminal, calls } = createRecordingTerminal({ answers: { select: 's' } })
+		const injection = 'Q\rOVERWRITE\nNEXT\tX'
 		const pending: PendingPrompt = {
 			id: 'p1',
 			form: 'select',
 			message: 'Pick',
 			options: {
 				choices: ['alpha'],
-				hint: 'arrows\x07 move',
+				hint: injection,
 				theme: {
-					icons: { pointer: '=>\x1b[31m' },
+					icons: { pointer: injection },
 					roles: { message: { foreground: 'magenta', attributes: [] } },
 				},
 			},
@@ -2224,9 +2252,13 @@ describe('wire — theme and hint cross as data', () => {
 		}
 		await dispatchPendingPrompt(terminal, pending)
 		const seen = calls.select.calls[0]?.[0]
-		expect(seen?.hint).toBe('arrows move')
-		expect(seen?.theme?.icons?.pointer).not.toContain('\x1b')
+		expect(seen?.hint).toBe('QOVERWRITENEXTX')
+		expect(seen?.theme?.icons?.pointer).toBe('QOVERWRITENEXTX')
 		expect(seen?.theme?.roles?.message).toEqual({ foreground: 'magenta', attributes: [] })
+		if (seen === undefined) throw new Error('select options were not recorded')
+		expect(selectView(createSelectState({ ...seen, styler: plain }))).toBe(
+			'? Pick QOVERWRITENEXTX\nQOVERWRITENEXTX ● alpha',
+		)
 	})
 
 	const hostile: ReadonlyArray<{ readonly label: string; readonly roles: unknown }> = [

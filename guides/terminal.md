@@ -4,10 +4,10 @@
 >
 > The design is **one pure core, three drivers**. The cross-environment core ([`src/core`](../src/core), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server`](../src/server), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
 
-**Build requirement.** Every view paints a role through the console styler's `render(style, text)`, and
-every theme is frozen through console's `freezeStyle`. Both ship in `@orkestrel/console`'s next release:
-the published `0.0.6` declares no `render` on its `StylerInterface` and exports no `freezeStyle`, so this
-package's imports do not resolve against it. Build against a console that has both.
+**Build requirement.** Every view needs a console release greater than `0.0.6` that carries both
+`StylerInterface.render` and `freezeStyle`. This package still declares `@orkestrel/console` as
+`^0.0.6`; on `0.0.x`, that range pins exactly `0.0.6`. Re-pin it to the carrying release before a
+registry build or publish.
 
 ## Surface
 
@@ -58,7 +58,7 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `normalizeChoice`            | function  | Normalize a select choice input into a full `PromptChoice` (a bare string becomes both `name` and `value`).                                                                |
 | `normalizeCheckboxChoice`    | function  | Normalize a checkbox choice input into a full `CheckboxChoice` (a bare string becomes both `name` and `value`).                                                            |
 | `PromptIcon`                 | type      | One glyph slot a view draws — `question` / `pointer` / `dot` / `selected` / `checked` / `unchecked` / `success` / `error`.                                                 |
-| `PromptRole`                 | type      | One semantic styling slot — `question` / `pointer` / `message` / `success` / `error` / `selected` / `focus` / `hint` / `description`.                                      |
+| `PromptRole`                 | type      | One semantic styling slot — `question` / `pointer` / `message` / `success` / `error` / `selected` / `focus` / `hint` / `muted` / `description`.                            |
 | `PromptTheme`                | interface | A prompt's resolved presentation — a glyph per `PromptIcon` and a console `Style` per `PromptRole` (data-only, deeply frozen, wire-safe).                                  |
 | `PromptThemeOptions`         | interface | The PARTIAL theme an option bag carries — every icon and role optional, each role a console `Style`, merged leaf by leaf over the default (data-only).                     |
 | `createPromptTheme`          | function  | Merge a partial theme over `DEFAULT_PROMPT_THEME` — supplied leaves replace, the rest default; each supplied role is snapshotted through console's `freezeStyle`.          |
@@ -70,39 +70,39 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `PromptStep`                 | interface | One reducer step's output — the next `state`, the rendered `view`, the `status`, and (on submit) the `value` (data-only).                                                  |
 | `InputOptions`               | interface | A single-line text `inputReduce` prompt's options — `message` / `default?` / `validate?` / `styler?` / `theme?` (data-only).                                               |
 | `InputState`                 | interface | A text input prompt's immutable state — options + resolved validator/styler/theme + accumulated `value` + current `error` (data-only).                                     |
-| `createInputState`           | function  | Build the initial `InputState` from `InputOptions` — resolving the validator + styler, seeding an empty value.                                                             |
+| `createInputState`           | function  | Build the initial `InputState` from `InputOptions` — resolving the validator + styler + theme, seeding an empty value.                                                     |
 | `inputView`                  | function  | Render an `InputState` as a styled view — header, typed value (or dimmed default hint), and any error.                                                                     |
 | `inputReduce`                | function  | The pure input reducer `(state, key) → PromptStep<string>` — printable extends, backspace shrinks, ctrl-u clears, return submits.                                          |
 | `PasswordOptions`            | interface | A masked-password `passwordReduce` prompt's options — `message` / `mask?` / `validate?` / `styler?` / `theme?` (data-only).                                                |
 | `PasswordState`              | interface | A password prompt's immutable state — like `InputState` but with a `mask` the view renders per character (data-only).                                                      |
-| `createPasswordState`        | function  | Build the initial `PasswordState` from `PasswordOptions` — resolving the validator + styler + mask, seeding an empty value.                                                |
+| `createPasswordState`        | function  | Build the initial `PasswordState` from `PasswordOptions` — resolving the validator + styler + theme + mask, seeding an empty value.                                        |
 | `passwordView`               | function  | Render a `PasswordState` as a styled view — header, value masked to `mask` repeated, and any error.                                                                        |
 | `passwordReduce`             | function  | The pure password reducer `(state, key) → PromptStep<string>` — identical line-editing to input, but the view masks the value.                                             |
 | `ConfirmOptions`             | interface | A yes/no `confirmReduce` prompt's options — `message` / `default?` / `hint?` / `styler?` / `theme?`; `hint` replaces the whole `(Y/n)` group (data-only).                  |
 | `ConfirmState`               | interface | A confirm prompt's immutable state — `message` / `default` / `hint?` / `styler` / `theme` (data-only).                                                                     |
-| `createConfirmState`         | function  | Build the initial `ConfirmState` from `ConfirmOptions` — defaulting the answer to `false`.                                                                                 |
-| `confirmView`                | function  | Render a `ConfirmState` as a styled view — header plus a `(Y/n)` hint with the default letter emphasized.                                                                  |
+| `createConfirmState`         | function  | Build the initial `ConfirmState` from `ConfirmOptions` — resolving the styler + theme, carrying `hint`, and defaulting the answer to `false`.                              |
+| `confirmView`                | function  | Render a `ConfirmState` as a styled view — header plus the computed `(Y/n)` group, or the supplied `hint` replacing that group in full.                                    |
 | `confirmReduce`              | function  | The pure confirm reducer `(state, key) → PromptStep<boolean>` — `y`/`n` submit, return takes the default, ctrl-c cancels.                                                  |
 | `SelectOptions`              | interface | A single-selection `selectReduce` prompt's options — `message` / `choices` / `default?` / `hint?` / `styler?` / `theme?` (data-only).                                      |
 | `SelectState`                | interface | A select prompt's immutable state — normalized choices, optional hint, styler, theme, and the `focused` index (data-only).                                                 |
-| `createSelectState`          | function  | Build the initial `SelectState` from `SelectOptions` — normalizing choices and pre-focusing the default.                                                                   |
-| `selectView`                 | function  | Render a `SelectState` as a MULTI-LINE styled view — header then one row per choice, the focused row marked.                                                               |
+| `createSelectState`          | function  | Build the initial `SelectState` from `SelectOptions` — normalizing choices, resolving the styler + theme, carrying `hint`, and pre-focusing the default.                   |
+| `selectView`                 | function  | Render a `SelectState` as a MULTI-LINE styled view — header plus any `hint`, then one row per choice with the focused row marked.                                          |
 | `selectReduce`               | function  | The pure select reducer `(state, key) → PromptStep<string>` — up/down move the focus (wrapping), return submits the focused value.                                         |
 | `CheckboxOptions`            | interface | A multi-selection `checkboxReduce` prompt's options — `message` / `choices` / `min?` / `max?` / `hint?` / `styler?` / `theme?` (data-only).                                |
 | `CheckboxState`              | interface | A checkbox prompt's immutable state — choices, optional hint, styler, theme, `focused`, the `checked` index list, `min` / `max`, and `error` (data-only).                  |
-| `createCheckboxState`        | function  | Build the initial `CheckboxState` from `CheckboxOptions` — normalizing choices, seeding the checked set, carrying min/max.                                                 |
-| `checkboxView`               | function  | Render a `CheckboxState` as a MULTI-LINE styled view — header, one box per choice (focused + checked marked), a count, and any error.                                      |
+| `createCheckboxState`        | function  | Build the initial `CheckboxState` from `CheckboxOptions` — normalizing choices, resolving the styler + theme, carrying `hint`, and seeding the checked set and min/max.    |
+| `checkboxView`               | function  | Render a `CheckboxState` as a MULTI-LINE styled view — header plus any `hint`, one box per choice, a count, and any error.                                                 |
 | `checkboxReduce`             | function  | The pure checkbox reducer `(state, key) → PromptStep<readonly string[]>` — space toggles, return submits in choice order gated by min/max.                                 |
 | `toggleIndex`                | function  | Toggle an index in a readonly index list — copy-on-write, returning the new list (the checkbox check-set primitive).                                                       |
 | `gateSelection`              | function  | The min/max gate for a checkbox submit — the rejection message when the count is out of range, else `undefined`.                                                           |
 | `EditorOptions`              | interface | A multi-line `editorReduce` prompt's options (terminated by ctrl-d) — `message` / `default?` / `hint?` / `validate?` / `styler?` / `theme?` (data-only).                   |
 | `EditorState`                | interface | An editor prompt's immutable state — committed `lines`, in-progress `current`, resolved validator/styler/theme, default, optional hint, and `error` (data-only).           |
-| `createEditorState`          | function  | Build the initial `EditorState` from `EditorOptions` — resolving the validator + styler, seeding empty lines.                                                              |
-| `editorView`                 | function  | Render an `EditorState` as a MULTI-LINE styled view — header (with a Ctrl+D hint), committed lines, the in-progress line, and any error.                                   |
+| `createEditorState`          | function  | Build the initial `EditorState` from `EditorOptions` — resolving the validator + styler + theme, carrying `hint`, and seeding empty lines.                                 |
+| `editorView`                 | function  | Render an `EditorState` as a MULTI-LINE styled view — header with the computed Ctrl+D group or supplied `hint`, committed lines, current line, and any error.              |
 | `editorReduce`               | function  | The pure editor reducer `(state, key) → PromptStep<string>` — printable extends, return commits a line, ctrl-d finishes through the validator.                             |
 | `editLine`                   | function  | Apply one line-editing `KeyEvent` to a text buffer (the input/password/editor shared editing) — `undefined` when the key doesn't edit.                                     |
 | `PromptType`                 | type      | The six prompt KINDS — `input` / `password` / `confirm` / `select` / `checkbox` / `editor` (a named set; the broker dispatches on it).                                     |
-| `serializePromptOptions`     | function  | The WIRE-SAFE form of a prompt's options — drops the styler + function validators, KEEPS the declarative rules + choices/default/mask.                                     |
+| `serializePromptOptions`     | function  | The WIRE-SAFE form of a prompt's options — drops the styler + function validators, KEEPS theme + hint + declarative rules + choices/default/mask.                          |
 | `serializeValidationRules`   | function  | Flatten a `validate` option to wire-safe `ValidationRules` DATA — a function rule becomes `true`; a bare-function validate yields `undefined`.                             |
 | `serializeChoices`           | function  | Strip functions from a `choices` option — each choice keeps its plain fields; a bare string passes through.                                                                |
 | `reconstructValidationRules` | function  | Rebuild a wire-decoded `validate` payload into a `ValidationRules` bag — keeps only primitive rule values; the inverse of serialize.                                       |
@@ -113,14 +113,15 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `isPendingPrompt`            | const     | Narrow an unknown wire value to a `PendingPrompt` — the guard a `PromptClient` applies to each decoded SSE `pending` payload (§14, never an `as`; built via `recordOf`).   |
 | `isPromptChoice`             | function  | Narrow an unknown value to a `PromptChoice` — the wire guard `resolveChoices` filters a select `choices` payload through (§14, total).                                     |
 | `isCheckboxChoice`           | function  | Narrow an unknown value to a `CheckboxChoice` — the wire guard `resolveChoices` filters a checkbox `choices` payload through (§14, total).                                 |
-| `dispatchPendingPrompt`      | function  | Dispatch a `PendingPrompt` to the matching `PromptFormInterface` method — the bridge step that drives a local terminal with a remote prompt.                               |
+| `dispatchPendingPrompt`      | function  | Dispatch a `PendingPrompt` to the matching prompt form — reconstructing its theme + hint and the form's typed options before driving the local terminal.                   |
 | `defaultTimer`               | function  | The default `TimerHandler` — a thin host `setTimeout` / `clearTimeout` wrapper (the broker expiry + client backoff seam).                                                  |
 | `globalFetch`                | function  | The default `FetchHandler` — the global `fetch` adapted to the minimal injected shape the `PromptClient` uses.                                                             |
 | `isAbortError`               | function  | Whether a caught value is an `AbortError` — so the client treats a deliberate `disconnect` as a quiet exit, not a fault.                                                   |
 | `parseWireJSON`              | function  | Parse a JSON wire string TOTAL — a malformed / empty payload yields `undefined` (never a throw); the client decodes SSE data through it.                                   |
 | `isInsecureRemote`           | function  | Whether a URL is a non-loopback `http://` endpoint — the `PromptClient` warns once when a `token` is sent over it in cleartext.                                            |
 | `sanitizeChoiceLabels`       | function  | Control-strip every choice's `name` / `description` (bare strings too) — the `dispatchPendingPrompt` select/checkbox path runs remote choices through it before rendering. |
-| `sanitizeThemeIcons`         | function  | Control-strip every glyph a wire-supplied theme carries — the theme twin of `sanitizeChoiceLabels` (a role's style is already guard-narrowed).                             |
+| `sanitizeDisplayText`        | function  | Strip every C0 control and DEL from one single-line glyph or hint slot, including tab, line feed, and carriage return.                                                     |
+| `sanitizeThemeIcons`         | function  | Display-sanitize every glyph a wire-supplied theme carries — the theme twin of `sanitizeChoiceLabels` (a role's style is already guard-narrowed).                          |
 | `isStyle`                    | const     | Narrow an unknown value to a console `Style` — CLOSED, built from the console module's own `COLORS` + `ATTRIBUTES`, so the style vocabulary has one source.                |
 | `isPromptThemeOptions`       | const     | Narrow an unknown wire value to a `PromptThemeOptions` — CLOSED at every level, so an unknown slot or an off-shape role style drops the whole theme (§14, total).          |
 
@@ -385,7 +386,7 @@ These invariants hold across `src/core` ↔ `src/server` ↔ `terminal.md`:
 10. **The manager: named registry + attributed `ask` + transitive `DEADLOCK` + durable config.** `TerminalManager.add(name, options?)` mints (or reuses) one `Prompt` broker per endpoint and re-emits its `pending` / `answer` / `expire` events on the manager, attributed by `name` (`TerminalManagerEventMap`). `ask(from, to, form, options)` requires `to` to already be mounted (via `add`), records the `from → to` edge in the in-flight edge set, and parks through `to`'s broker — it rejects `TerminalError('TARGET', …)` for an unknown `to`, and `TerminalError('DEADLOCK', …)` when the new edge would close a transitive cycle over every CURRENT in-flight edge (walked ancestor-first, mirroring an agent-tool ancestry guard); the edge clears on every settle path (answer / expire / `remove` / `clear` / `destroy`). `answer(to, id, value)` routes to `to`'s broker (`TerminalAnswerResult`, `'terminal'` for an unknown endpoint). `open(name)` restores an EMPTY broker from the `store` (never resurrecting a parked Promise); `save(name)` persists the endpoint's configured `timeout`. `remove` (§9.2, array overload first) destroys one or a batch of endpoints, expiring every prompt still parked on each (settling its `ask` ticket and clearing its edge); `clear` removes all; `destroy` is idempotent.
 11. **Transport-neutral wire seams — no `http` dependency.** `serializePending` / `serializeExpire` / `serializeShutdown` build a `WireEvent` (`event` / `data` / optional `id`) for each broker signal, so a consumer's own HTTP/SSE spine mounts the broker without this package importing `node:http`; `isAnswerPayload` (§14) narrows an inbound answer POST body before it reaches `answer`.
 12. **The core / server split — universal logic, one impure driver.** The cross-environment core owns EVERYTHING universal: the `parseKey` decoder, the six reducers + their state factories + view renderers, the declarative validation, the broker, and the SSE bridge — all pure types + functions + immutable state, no `node:*`, no TTY, no I/O. The server module owns ONLY the `Terminal` raw-mode / readline driver — the one piece that touches a real `process.stdin` / `process.stdout` — and the stream-boundary types; it imports every prompt contract from `@src/core` (never redeclares them). The view is rendered through the shared console `StylerInterface` (one style engine), so swapping the byte source (TTY vs. wire) never touches the prompt logic.
-13. **Presentation is DATA — resolved once, carried by the state, and wire-safe.** Every option bag takes an optional `theme` (a partial `PromptThemeOptions`); `createPromptTheme` merges it leaf by leaf over `DEFAULT_PROMPT_THEME`, and each state carries the resolved `PromptTheme`. A prompt built without one carries the defaults exactly — `createPromptTheme()` returns `DEFAULT_PROMPT_THEME`'s glyphs and styles. Every view then reads its glyph from `state.theme.icons` and paints each role through `state.styler.render(state.theme.roles[role], text)`, the console module's by-value style door. A glyph and its color are therefore two independently overridable facts, and neither is fixed in a view or in a constant: `PROMPT_ICONS` supplies the six default glyphs `DEFAULT_PROMPT_THEME` is assembled from, and nothing reads it at render time. Because a theme is plain data it crosses the SSE wire with the rest of the options bag — `serializePromptOptions` keeps `theme` and `hint` and drops only the styler and function rules, and `dispatchPendingPrompt` narrows the decoded theme with `isPromptThemeOptions`. That guard is CLOSED at every level, so an unknown icon slot, an unknown role, an off-shape `Style`, or any extra key rejects the WHOLE theme and the prompt renders with the defaults: a remote theme arrives entire or not at all, never partly narrowed. (A theme that PASSES the guard is still a partial bag — the slots it names are merged over the defaults and the rest keep them.) Every glyph that survives the guard, and the hint beside it, are control-stripped before the local prompt renders them.
+13. **Presentation is DATA — resolved once, carried by the state, and wire-safe.** Every option bag takes an optional `theme` (a partial `PromptThemeOptions`); `createPromptTheme` merges it leaf by leaf over `DEFAULT_PROMPT_THEME`, and each state carries the resolved `PromptTheme`. A prompt built without one carries the defaults exactly — `createPromptTheme()` returns `DEFAULT_PROMPT_THEME`'s glyphs and styles. Every view then reads its glyph from `state.theme.icons` and paints each role through `state.styler.render(state.theme.roles[role], text)`, the console module's by-value style door. A glyph and its color are therefore two independently overridable facts, and neither is fixed in a view or in a constant: `PROMPT_ICONS` supplies the six default glyphs `DEFAULT_PROMPT_THEME` is assembled from, and nothing reads it at render time. Because a theme is plain data it crosses the SSE wire with the rest of the options bag — `serializePromptOptions` keeps `theme` and `hint` and drops only the styler and function rules, and `dispatchPendingPrompt` narrows the decoded theme with `isPromptThemeOptions`. That guard is CLOSED at every level, so an unknown icon slot, an unknown role, an off-shape `Style`, or any extra key rejects the WHOLE theme and the prompt renders with the defaults: a remote theme arrives entire or not at all, never partly narrowed. (A theme that PASSES the guard is still a partial bag — the slots it names are merged over the defaults and the rest keep them.) Before rendering, every wire glyph and hint is stripped of every C0 control character — including tab, line feed, and carriage return — plus DEL.
 14. **A `hint` changes the WORDS, never the KEYS.** `confirm` / `select` / `checkbox` / `editor` take an optional `hint`. On confirm and editor it replaces the computed group in full, parentheses included (the `(Y/n)` group, the raw-mode `(Ctrl+D to finish)` and the fallback's `(EOF to finish)`); on select and checkbox it is the key hint painted after the message, and the server's non-TTY fallback shows it in place of `FALLBACK_SELECT_HINT` / `FALLBACK_CHECKBOX_HINT`. The reducers' bindings are fixed and a hint does not move them: confirm still submits on `y` / `n` / return, the editor still finishes on ctrl-d, select and checkbox still navigate with the arrows and submit on return. A hint advertising other keys is the caller's own contradiction — this package renders the string it is given, and keeping that string truthful is the caller's responsibility. A prompt that needs different keys is built from the exported reducers and view helpers, not from a hint.
 
 Deliberately **not** part of this surface yet, by the same "build only what earns its keep" discipline: the SSE-server END of the bridge (the broker emits `pending` on its `emitter` — a consumer mounts it on their own HTTP spine's SSE-stream seam + answers via a POST route; this package ships the bridge, not that spine), and a cursor-movement / line-edit-within-a-line capability (the reducers edit at the END of the buffer — `ctrl-a` / `ctrl-e` decode but no left/right insertion is modelled).
@@ -403,14 +404,16 @@ columns), a columns fact on the output stream (`OutputStreamInterface` carries `
 optional `isTTY` and nothing else), and cursor-COLUMN tracking in the redraw, which tracks lines
 only.
 
-**Fixed, not seams.** A theme moves glyphs and role styles, and a `hint` moves hint text. The rest
-of a view is fixed by design: its layout (the single spaces between the header, the pointer and the
-value, the two-space gap before a choice's `description` on its row, the parentheses around a
-confirm hint group, the `N selected` checkbox summary), the server's cursor and clear mechanics
-(`CURSOR_HIDE` / `CURSOR_SHOW` / `CLEAR_DOWN` / `CSI_UP` are constants, not options), and the
-non-TTY fallback's numbered-list format (`  1) label` per choice, then the hint line it reads the
-answer on). Read those three as fixed rather than as extension points; a fully bespoke view is built
-from the exported reducers and view helpers instead.
+**Fixed, not seams.** A theme moves glyphs and styled fragments, and a `hint` moves hint text. The
+rest of a view is fixed by design: its layout (the single spaces between the header, the pointer and
+the value, the two-space gap before a choice's `description` on its row, the parentheses around the
+computed confirm group — a supplied `hint` replaces the group in full, parentheses included — and
+the `N selected` checkbox summary); its unstyled primary content (the typed value, mask characters,
+unfocused choice labels, committed editor lines, and fallback choice names); the server's cursor and
+clear mechanics (`CURSOR_HIDE` / `CURSOR_SHOW` / `CLEAR_DOWN` / `CSI_UP` are constants, not options);
+and the non-TTY fallback's numbered-list format (`  1) label` per choice, then the hint line it reads
+the answer on). Read these as fixed rather than as extension points; build a fully bespoke view from
+the exported reducers and view helpers instead.
 
 ## Patterns
 
@@ -711,6 +714,7 @@ import {
 	reconstructValidationRules,
 	resolveChoices,
 	resolveOption,
+	sanitizeDisplayText,
 	sanitizeChoiceLabels,
 	sanitizeThemeIcons,
 	serializeChoices,
@@ -742,13 +746,14 @@ isInsecureRemote('http://localhost:3000') // false — loopback is fine
 isInsecureRemote('https://example.com') // false — encrypted
 sanitizeChoiceLabels(['plain', { name: 'B', value: 'b', description: 'ok' }]) // control chars stripped
 
-// A wire-supplied theme is narrowed by a CLOSED guard, then its glyphs are control-stripped:
+// A wire-supplied theme is narrowed by a CLOSED guard, then its glyphs are display-sanitized:
+sanitizeDisplayText('Q\rOVERWRITE\nNEXT\tX') // 'QOVERWRITENEXTX'
 isStyle({ foreground: 'cyan', attributes: ['bold'] }) // true
 isStyle({ attributes: [], weight: 'heavy' }) // false — CLOSED, so an unknown key rejects
 isPromptThemeOptions({ roles: { message: { foreground: 'red', attributes: [] } } }) // true
 isPromptThemeOptions({ roles: { message: { attributes: ['plaid'] } } }) // false — theme dropped
 isPromptThemeOptions({ icons: { pointer: '=>' }, extra: 1 }) // false — an extra key drops it too
-sanitizeThemeIcons({ icons: { pointer: '=>' } }) // every supplied glyph control-stripped
+sanitizeThemeIcons({ icons: { pointer: '=>' } }) // every supplied glyph loses all C0 controls + DEL
 
 // `theme` and `hint` are plain data, so the broker keeps both for the wire (only the styler and
 // any function rule are dropped) and the client rebuilds the presentation from them:

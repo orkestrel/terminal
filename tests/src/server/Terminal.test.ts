@@ -1,9 +1,11 @@
 import type { FakeTTYInterface } from '../../setupServer.js'
+import type { PendingPrompt } from '@src/core'
 import type { InputStreamInterface, OutputStreamInterface, TerminalInterface } from '@src/server'
 import { describe, expect, it } from 'vitest'
 import { Readable, Writable } from 'node:stream'
-import { isTerminalError } from '@src/core'
+import { dispatchPendingPrompt, isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
+import { strip } from '@orkestrel/console'
 import { assertCleanExit, createFakeTTY, createStreamTarget, rawOutput } from '../../setupServer.js'
 
 // Behavioral coverage for the T-c interactive `Terminal` driver (AGENTS §16) — it DRIVES the pure
@@ -770,6 +772,26 @@ describe('Terminal — non-TTY fallback (node:readline)', () => {
 		expect(output).toContain(`${ESC}[3;35mPick${ESC}[0m`)
 	})
 
+	it('strips line controls from wire glyphs and hints before fallback rendering', async () => {
+		const injection = 'Q\rOVERWRITE\nNEXT\tX'
+		const pending: PendingPrompt = {
+			id: 'p1',
+			form: 'select',
+			message: 'Pick',
+			options: {
+				choices: ['red'],
+				hint: injection,
+				theme: { icons: { question: injection } },
+			},
+			status: 'pending',
+			time: 1,
+		}
+		const output = await captureFallback(['1\n'], (terminal) =>
+			dispatchPendingPrompt(terminal, pending),
+		)
+		expect(strip(output)).toBe('QOVERWRITENEXTX Pick\n  1) red\nQOVERWRITENEXTX: ')
+	})
+
 	it('uses custom hints across the fallback prompt forms that accept one', async () => {
 		const confirm = await captureFallback(['yes\n'], (terminal) =>
 			terminal.confirm({ message: 'Proceed?', hint: 'type yes or no' }),
@@ -791,6 +813,19 @@ describe('Terminal — non-TTY fallback (node:readline)', () => {
 		expect(checkbox).not.toContain('Enter numbers separated by commas')
 		expect(editor).toContain('(send EOF)')
 		expect(editor).not.toContain('(EOF to finish)')
+	})
+
+	it('a hint-only remap leaves fallback list indices at the muted default', async () => {
+		const output = await captureFallback(['1\n'], (terminal) =>
+			terminal.select({
+				message: 'Pick',
+				choices: ['red'],
+				hint: 'choose',
+				theme: { roles: { hint: { foreground: 'blue', attributes: [] } } },
+			}),
+		)
+		expect(output).toContain(`${ESC}[2m1)${ESC}[0m`)
+		expect(output).toContain(`${ESC}[34mchoose:${ESC}[0m`)
 	})
 
 	it('input reads a validated line', async () => {

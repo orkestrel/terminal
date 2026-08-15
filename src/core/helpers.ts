@@ -334,19 +334,34 @@ export function createPromptTheme(options?: PromptThemeOptions): PromptTheme {
 }
 
 /**
- * Control-strip every glyph a wire-supplied {@link PromptThemeOptions} carries — the theme twin of
- * {@link sanitizeChoiceLabels}. Only the icons need it: a role is guard-narrowed to a console
- * {@link Style}, whose colors and attributes are fixed name sets, so no role can carry a byte a
- * terminal would act on.
+ * Sanitize text for one single-line display slot. Composes console's {@link stripControls} pass
+ * with removal of tab, line feed, and carriage return, so no C0 control or DEL survives.
+ *
+ * @param text - The text to sanitize for a glyph or hint slot
+ * @returns The text with every C0 control character and DEL removed
+ *
+ * @example
+ * ```ts
+ * sanitizeDisplayText('Q\rOVERWRITE\nNEXT\tX') // 'QOVERWRITENEXTX'
+ * ```
+ */
+export function sanitizeDisplayText(text: string): string {
+	return stripControls(text).replaceAll('\t', '').replaceAll('\n', '').replaceAll('\r', '')
+}
+
+/**
+ * Sanitize every glyph a wire-supplied {@link PromptThemeOptions} carries for a single-line display
+ * slot. Only the icons need it: a role is guard-narrowed to a console {@link Style}, whose colors
+ * and attributes are fixed name sets, so no role can carry a byte a terminal would act on.
  *
  * @param theme - The narrowed theme options a remote prompt supplied
- * @returns The same theme with every supplied glyph control-stripped
+ * @returns The same theme with every supplied glyph sanitized for a single-line display slot
  */
 export function sanitizeThemeIcons(theme: PromptThemeOptions): PromptThemeOptions {
 	const icons = theme.icons
 	if (icons === undefined) return theme
 	const sanitized: Record<string, string> = {}
-	for (const [icon, glyph] of Object.entries(icons)) sanitized[icon] = stripControls(glyph)
+	for (const [icon, glyph] of Object.entries(icons)) sanitized[icon] = sanitizeDisplayText(glyph)
 	return { ...theme, icons: sanitized }
 }
 
@@ -357,7 +372,16 @@ export function promptHeader(styler: StylerInterface, theme: PromptTheme, messag
 	return `${styler.render(theme.roles.question, theme.icons.question)} ${styler.render(theme.roles.message, message)}`
 }
 
-/** The prompt header followed by a key hint painted with the `hint` role — the header itself when no hint is supplied. */
+/**
+ * Render a prompt header followed by a key hint painted with the `hint` role, or the header alone
+ * when no hint is supplied.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param message - The prompt's question text
+ * @param hint - The optional key hint to append
+ * @returns The rendered header with the optional hint
+ */
 export function hintedHeader(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -572,7 +596,7 @@ export function selectView(state: SelectState): string {
 			: ' '
 		const marker = active
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.selected)
-			: state.styler.render(state.theme.roles.hint, state.theme.icons.dot)
+			: state.styler.render(state.theme.roles.muted, state.theme.icons.dot)
 		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
 		const description =
 			choice.description === undefined
@@ -648,7 +672,7 @@ export function checkboxView(state: CheckboxState): string {
 			: ' '
 		const box = ticked
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.checked)
-			: state.styler.render(state.theme.roles.hint, state.theme.icons.unchecked)
+			: state.styler.render(state.theme.roles.muted, state.theme.icons.unchecked)
 		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
 		const description =
 			choice.description === undefined
@@ -1012,8 +1036,8 @@ export function sanitizeChoiceLabels<TChoice extends PromptChoice | CheckboxChoi
  * `theme` and `hint` are plain data, so they cross the wire with the rest of the options bag and
  * are reconstructed here for every form that accepts them: the theme is narrowed by
  * {@link import('./validators.js').isPromptThemeOptions} (an off-shape theme is dropped, leaving
- * the defaults) and its glyphs are control-stripped, and the hint is control-stripped — the same
- * boundary treatment {@link sanitizeChoiceLabels} gives a remote choice label.
+ * the defaults), then every glyph and hint is passed through {@link sanitizeDisplayText}. Choice
+ * labels use the stream-safe {@link sanitizeChoiceLabels} treatment instead.
  *
  * @param terminal - The local {@link PromptFormInterface} to drive
  * @param pending - The decoded pending prompt to dispatch
@@ -1029,7 +1053,7 @@ export function dispatchPendingPrompt(
 	const supplied = resolveOption(options, 'theme', isPromptThemeOptions)
 	const theme = supplied === undefined ? undefined : sanitizeThemeIcons(supplied)
 	const raw = resolveOption(options, 'hint', isString)
-	const hint = raw === undefined ? undefined : stripControls(raw)
+	const hint = raw === undefined ? undefined : sanitizeDisplayText(raw)
 	switch (pending.form) {
 		case 'input': {
 			const value = resolveOption(options, 'default', isString)

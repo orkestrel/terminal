@@ -146,14 +146,11 @@ export const RULE_MESSAGES = Object.freeze({
 	invalid: 'Invalid input',
 })
 
-// === Prompt-view icons (glyphs only — the styler colors them at render time)
+// === Prompt-view icons
 
 /**
- * The prompt-view icon glyphs the reducers render the prompt line and choice rows with. PLAIN
- * glyphs — color is applied by the {@link import('./types.js').PromptState}'s
- * {@link import('@orkestrel/console').StylerInterface} at render time, never baked into the
- * constant (AGENTS — styling orthogonal to data; the rework fixes the terminal's ANSI-in-the-icon).
- * Frozen.
+ * The six default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
+ * the default theme is assembled; a view reads its resolved theme and never this constant. Frozen.
  *
  * @remarks
  * - `question` — the leading mark on a prompt's message line.
@@ -175,7 +172,7 @@ export const PROMPT_ICONS = Object.freeze({
 /**
  * Every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
  * truth. {@link import('./helpers.js').createPromptTheme} walks it to merge a partial theme, and
- * a consumer building a complete role map reads it rather than retyping the nine names.
+ * a consumer building a complete role map reads it rather than retyping the ten names.
  */
 export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
 	'question',
@@ -186,6 +183,7 @@ export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
 	'selected',
 	'focus',
 	'hint',
+	'muted',
 	'description',
 ])
 
@@ -199,7 +197,8 @@ export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
  *
  * @remarks
  * The default roles reproduce the views' historical coloring exactly: `question` / `pointer` cyan,
- * `message` / `focus` bold, `success` / `selected` green, `error` red, `hint` / `description` dim.
+ * `message` / `focus` bold, `success` / `selected` green, `error` red, and `hint` / `muted` /
+ * `description` dim.
  * Two roles sharing a style today are still two roles — re-mapping one leaves the other alone.
  */
 export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
@@ -222,6 +221,7 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 		selected: freezeStyle({ foreground: 'green', attributes: [] }),
 		focus: freezeStyle({ attributes: ['bold'] }),
 		hint: freezeStyle({ attributes: ['dim'] }),
+		muted: freezeStyle({ attributes: ['dim'] }),
 		description: freezeStyle({ attributes: ['dim'] }),
 	}),
 })

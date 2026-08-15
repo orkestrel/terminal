@@ -340,7 +340,7 @@ export class Terminal implements TerminalInterface {
 	): Promise<T> {
 		let list = `${promptHeader(styler, theme, message)}\n`
 		choices.forEach((choice, index) => {
-			list += `  ${styler.render(theme.roles.hint, `${String(index + 1)})`)} ${choice.name}\n`
+			list += `  ${styler.render(theme.roles.muted, `${String(index + 1)})`)} ${choice.name}\n`
 		})
 		this.#output.write(list)
 		for (;;) {

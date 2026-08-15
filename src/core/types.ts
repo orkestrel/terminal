@@ -134,7 +134,7 @@ export type PromptIcon =
 /**
  * One styling slot a prompt view renders through — the SEMANTIC axis of a {@link PromptTheme}.
  * A role says what a fragment MEANS; the theme decides what that meaning looks like, so a
- * consumer re-maps the whole surface by naming roles rather than reimplementing a view.
+ * consumer re-maps the styled fragments by naming roles rather than reimplementing a view.
  *
  * @remarks
  * - `question` — the leading question mark on an active prompt's line.
@@ -144,7 +144,11 @@ export type PromptIcon =
  * - `selected` — a chosen value: the checked box, the focused select marker, the confirm default letter.
  * - `focus` — the label of the row the cursor is on.
  * - `hint` — dim supplementary text: a default value, a key hint, a selection count, a committed answer.
+ * - `muted` — a dim off-state mark: an unfocused select marker, an unchecked box, a fallback index.
  * - `description` — a choice's one-line description.
+ *
+ * Primary content is unstyled and is not a theme target: typed values, mask characters, unfocused
+ * choice labels, committed editor lines, and fallback choice names.
  */
 export type PromptRole =
 	| 'question'
@@ -155,6 +159,7 @@ export type PromptRole =
 	| 'selected'
 	| 'focus'
 	| 'hint'
+	| 'muted'
 	| 'description'
 
 /**
