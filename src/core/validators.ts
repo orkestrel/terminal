@@ -1,6 +1,7 @@
 import type {
 	PendingPrompt,
 	PendingPromptStatus,
+	PromptIcon,
 	PromptRole,
 	PromptThemeOptions,
 	PromptType,
@@ -88,9 +89,9 @@ export const isStyle: Guard<Style> = recordOf(
  * arbitrary text at this point — {@link import('./helpers.js').sanitizeThemeIcons} strips their
  * control bytes on dispatch.
  *
- * The roles shape is checked `satisfies Record<PromptRole, Guard<Style>>`, so a role added to the
- * union without an entry here is a COMPILE error rather than a role a wire theme is silently
- * refused for.
+ * The icons and roles shapes are checked against their complete union-keyed guard records. A slot
+ * added to either union without an entry here is a compile error rather than a wire theme that is
+ * silently refused.
  */
 export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 	{
@@ -104,7 +105,7 @@ export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 				unchecked: isString,
 				success: isString,
 				error: isString,
-			},
+			} satisfies Record<PromptIcon, Guard<string>>,
 			true,
 		),
 		roles: recordOf(

@@ -786,8 +786,8 @@ export function createEditorState(options: EditorOptions): EditorState {
 
 /**
  * Render an {@link EditorState} as a MULTI-LINE styled view — the header with its finish hint, the
- * committed lines painted by the `content` role, the in-progress line, and any error. A supplied
- * `hint` replaces `(Ctrl+D to finish)` in full; the finish key stays ctrl-d.
+ * committed and in-progress lines painted by the `content` role, and any error. A supplied `hint`
+ * replaces `(Ctrl+D to finish)` in full; the finish key stays ctrl-d.
  */
 export function editorView(state: EditorState): string {
 	const head = hintedHeader(

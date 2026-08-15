@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 // src/core/TerminalManager.ts — the multi-endpoint registry of `Prompt` brokers: idempotent
 // `add`, attributed `ask` with a transitive DEADLOCK check across all in-flight edges, `pending`
 // / `answer` routed by endpoint name, durable `open` / `save` over a `TerminalStoreInterface`,
-// and batch `remove` / `clear` / `destroy`.
+// and batch / single / all-registry `remove` plus `destroy`.
 
 describe('TerminalManager', () => {
 	it('add is idempotent — a re-add returns the SAME broker, a parked prompt survives', () => {
@@ -130,12 +130,12 @@ describe('TerminalManager', () => {
 		manager.destroy()
 	})
 
-	it('edge clears after clear() — a formerly-cyclic ask now succeeds', async () => {
+	it('edge clears after remove() — a formerly-cyclic ask now succeeds', async () => {
 		const manager = createTerminalManager()
 		manager.add('a')
 		manager.add('b')
 		const first = manager.ask('b', 'a', 'input', { message: 'x' })
-		manager.clear()
+		manager.remove()
 		await expect(first).rejects.toMatchObject({ code: 'EXPIRE' })
 		manager.add('a')
 		manager.add('b')
@@ -246,7 +246,7 @@ describe('TerminalManager', () => {
 		managerWithStore.destroy()
 	})
 
-	it('remove(array) vs remove(single) overload behavior — array is true when ANY was removed', () => {
+	it('remove(array), remove(single), and remove() apply to their declared registry scopes', () => {
 		const manager = createTerminalManager()
 		manager.add('a')
 		manager.add('b')
@@ -255,6 +255,10 @@ describe('TerminalManager', () => {
 		expect(manager.remove('b')).toBe(true)
 		expect(manager.remove('b')).toBe(false)
 		expect(manager.remove(['ghost1', 'ghost2'])).toBe(false)
+		manager.add('c')
+		manager.add('d')
+		manager.remove()
+		expect(manager.terminals()).toEqual([])
 		manager.destroy()
 	})
 
@@ -278,7 +282,7 @@ describe('TerminalManager', () => {
 // FIX 1 — settle events on teardown: `#removeOne` destroys the broker BEFORE unsubscribing the
 // manager's listeners, so the broker's own expire-on-destroy loop re-emits `expire` through the
 // still-attached listeners onto the manager emitter — a manager-level observer sees exactly one
-// `expire` per parked prompt on `remove` / `clear` / `destroy`, correctly attributed.
+// `expire` per parked prompt on `remove` / `destroy`, correctly attributed.
 describe('TerminalManager — settle events on teardown', () => {
 	it('remove(name) emits exactly one manager-level expire per parked prompt, correctly attributed', () => {
 		const manager = createTerminalManager()
@@ -309,7 +313,7 @@ describe('TerminalManager — settle events on teardown', () => {
 		manager.destroy()
 	})
 
-	it('clear() emits exactly one manager-level expire per parked prompt across every endpoint', () => {
+	it('remove() emits exactly one manager-level expire per parked prompt across every endpoint', () => {
 		const manager = createTerminalManager()
 		manager.add('a')
 		manager.add('b')
@@ -321,7 +325,7 @@ describe('TerminalManager — settle events on teardown', () => {
 		void askA.catch(() => undefined)
 		void askB.catch(() => undefined)
 
-		manager.clear()
+		manager.remove()
 
 		expect(expireEvents.count).toBe(2)
 		const attributedTo = expireEvents.calls.map(([to]) => to).sort()
@@ -331,7 +335,7 @@ describe('TerminalManager — settle events on teardown', () => {
 		manager.destroy()
 	})
 
-	it('destroy() emits exactly one manager-level expire per parked prompt (via clear -> removeOne)', async () => {
+	it('destroy() emits exactly one manager-level expire per parked prompt (via remove -> removeOne)', async () => {
 		const manager = createTerminalManager()
 		manager.add('a')
 		manager.add('b')
@@ -789,7 +793,7 @@ describe('TerminalManager — pressure: reentrancy storm', () => {
 		expect(() => manager.destroy()).not.toThrow()
 		expect(manager.count).toBe(0)
 
-		// destroy() -> clear() drops every terminal from the registry, so a post-destroy ask targets
+		// destroy() -> remove() drops every terminal from the registry, so a post-destroy ask targets
 		// an unmounted name and rejects TARGET (the actual observed behavior — pinned, not assumed).
 		await expect(manager.ask('user', 'n0', 'input', { message: 'x' })).rejects.toMatchObject({
 			code: 'TARGET',

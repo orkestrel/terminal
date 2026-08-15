@@ -47,9 +47,9 @@ import { isArray, isBoolean, isString } from '@orkestrel/contract'
  *   ({@link serializePromptOptions}) so a transport can forward them as-is.
  * - **Answer validates + type-checks.** {@link answer} runs the prompt's per-form gate: it
  *   type-checks `value` to the form (string / boolean / string[]) AND, for the text forms, runs
- *   the validator resolved from the original `validate` rules. A rejected answer returns `false`
- *   and the prompt stays `pending`; an accepted answer resolves the Promise, emits `answer`, and
- *   removes the prompt.
+ *   the validator resolved from the original `validate` rules. A rejected answer returns a failure
+ *   `Result` with error `'rejected'` and the prompt stays `pending`; an accepted answer resolves the
+ *   Promise, emits `answer`, and removes the prompt.
  * - **Timeout → expire → reject.** An unanswered prompt expires after `timeout` ms (via the
  *   INJECTED timer): `expire` fires and the parked Promise rejects with a {@link TerminalError}
  *   (`code: 'EXPIRE'`). {@link destroy} expires every still-pending prompt the same way.

@@ -11,7 +11,7 @@ import type {
 	PromptType,
 	PromptValue,
 	SelectOptions,
-	TerminalAnswerResult,
+	TerminalAnswerError,
 	TerminalManagerEventMap,
 	TerminalManagerInterface,
 	TerminalManagerOptions,
@@ -20,6 +20,7 @@ import type {
 	TerminalStoreInterface,
 	TimerHandler,
 } from './types.js'
+import type { Result } from '@orkestrel/contract'
 import type { EmitterInterface } from '@orkestrel/emitter'
 import { TerminalError } from './errors.js'
 import { createPrompt } from './factories.js'
@@ -45,9 +46,9 @@ import { isArray } from '@orkestrel/contract'
  * - **Durable open / save.** `open(name)` restores an EMPTY broker from the `store` (parked
  *   Promises are process-bound and never resurrected); `save(name)` persists the endpoint's
  *   configured `timeout`.
- * - **Removal.** `remove` drops one endpoint or a batch (§9.2, array overload FIRST), destroying
- *   each broker (which expires every prompt still parked on it). `clear` drops all; `destroy` is
- *   idempotent.
+ * - **Removal.** `remove` drops one endpoint, a batch (§9.2, array overload FIRST), or every
+ *   endpoint when called without an argument. It destroys each broker, which expires every prompt
+ *   still parked on it. `destroy` is idempotent.
  *
  * @example
  * ```ts
@@ -212,7 +213,7 @@ export class TerminalManager implements TerminalManagerInterface {
 
 	// === Answer
 
-	answer(to: string, id: string, value: unknown): TerminalAnswerResult {
+	answer(to: string, id: string, value: unknown): Result<unknown, TerminalAnswerError> {
 		const broker = this.#terminals.get(to)
 		if (broker === undefined) return { success: false, error: 'terminal' }
 		return broker.answer(id, value)
@@ -247,7 +248,12 @@ export class TerminalManager implements TerminalManagerInterface {
 
 	remove(names: readonly string[]): boolean
 	remove(name: string): boolean
-	remove(names: string | readonly string[]): boolean {
+	remove(): void
+	remove(names?: string | readonly string[]): boolean | void {
+		if (names === undefined) {
+			for (const name of [...this.#terminals.keys()]) this.#removeOne(name)
+			return
+		}
 		if (isArray(names)) {
 			let removed = false
 			for (const name of names) {
@@ -258,14 +264,10 @@ export class TerminalManager implements TerminalManagerInterface {
 		return this.#removeOne(names)
 	}
 
-	clear(): void {
-		for (const name of [...this.#terminals.keys()]) this.#removeOne(name)
-	}
-
 	destroy(): void {
 		if (this.#destroyed) return
 		this.#destroyed = true
-		this.clear()
+		this.remove()
 		this.#emitter.destroy()
 	}
 

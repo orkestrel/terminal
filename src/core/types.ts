@@ -142,8 +142,8 @@ export type PromptIcon =
  * - `pointer` — the cursor before the input / the focused choice row.
  * - `message` — the prompt's own question text.
  * - `content` — the prompt's primary content: the typed value, the mask run, an unfocused choice
- *   label, a committed editor line, a fallback choice name. Its default is the EMPTY style, so an
- *   unthemed prompt renders this content as bare text.
+ *   label, a committed editor line, an in-progress editor line, or a fallback choice name. Its
+ *   default is the EMPTY style, so an unthemed prompt renders this content as bare text.
  * - `success` / `error` — a resolved prompt's mark / a validation-error mark and its message.
  * - `selected` — a chosen value: the checked box, the focused select marker, the confirm default letter.
  * - `focus` — the label of the row the cursor is on.
@@ -836,11 +836,6 @@ export interface TerminalManagerOptions {
 /** The rejection reason a {@link TerminalManagerInterface.answer} call returns — an {@link AnswerError}, plus `'terminal'` (no such endpoint). */
 export type TerminalAnswerError = AnswerError | 'terminal'
 
-/** The outcome of a {@link TerminalManagerInterface.answer} call — the accepted `value` on success, else the {@link TerminalAnswerError}. */
-export type TerminalAnswerResult =
-	| { readonly success: true; readonly value: unknown }
-	| { readonly success: false; readonly error: TerminalAnswerError }
-
 /**
  * The multi-endpoint terminal MANAGER (§9.1/§9.2) — a registry of named {@link PromptInterface}
  * brokers (one per endpoint), so several parties (agents, tools, humans) can `ask` prompts of
@@ -859,9 +854,9 @@ export type TerminalAnswerResult =
  * - **`save`** persists an endpoint's config snapshot to the `store` (`false` when there is no
  *   store, or `name` is unknown).
  * - **Batch `remove` (§9.2).** The array overload is declared FIRST — `remove(names)` removes each
- *   listed endpoint (`true` when any of the named terminals was removed); `remove(name)` removes one.
- * - **`clear`** removes every endpoint without destroying the manager; **`destroy`** tears down
- *   every broker, then the manager's own emitter.
+ *   listed endpoint (`true` when any named terminal was removed); `remove(name)` removes one;
+ *   `remove()` removes every endpoint without destroying the manager.
+ * - **`destroy`** tears down every broker, then the manager's own emitter.
  */
 export interface TerminalManagerInterface {
 	readonly emitter: EmitterInterface<TerminalManagerEventMap>
@@ -885,12 +880,12 @@ export interface TerminalManagerInterface {
 	): Promise<readonly string[]>
 	pending(): readonly PendingPrompt[]
 	pending(to: string): readonly PendingPrompt[]
-	answer(to: string, id: string, value: unknown): TerminalAnswerResult
+	answer(to: string, id: string, value: unknown): Result<unknown, TerminalAnswerError>
 	open(name: string): Promise<PromptInterface | undefined>
 	save(name: string): Promise<boolean>
 	remove(names: readonly string[]): boolean
 	remove(name: string): boolean
-	clear(): void
+	remove(): void
 	destroy(): void
 }
 
