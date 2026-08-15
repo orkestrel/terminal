@@ -1,5 +1,5 @@
-import type { PromptRole, PromptTheme, PromptToken } from './types.js'
-import { STATUS_ICONS } from '@orkestrel/console'
+import type { PromptRole, PromptTheme } from './types.js'
+import { freezeStyle, STATUS_ICONS } from '@orkestrel/console'
 
 // The constant DATA the pure prompt core reads — the control-byte → key-name decode table
 // {@link parseKey} consults, the default mask, the validation regex patterns the rule engine
@@ -174,7 +174,7 @@ export const PROMPT_ICONS = Object.freeze({
 
 /**
  * Every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
- * truth. {@link import('./factories.js').createPromptTheme} walks it to merge a partial theme, and
+ * truth. {@link import('./helpers.js').createPromptTheme} walks it to merge a partial theme, and
  * a consumer building a complete role map reads it rather than retyping the nine names.
  */
 export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
@@ -192,14 +192,15 @@ export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
 /**
  * The {@link import('./types.js').PromptTheme} every prompt renders with unless its options supply
  * another — the glyph set assembled from {@link PROMPT_ICONS} plus the console
- * {@link import('@orkestrel/console').STATUS_ICONS} `success` / `error` marks, and the token list
- * each role is painted with. Deeply frozen; the baseline
- * {@link import('./factories.js').createPromptTheme} merges a partial theme over.
+ * {@link import('@orkestrel/console').STATUS_ICONS} `success` / `error` marks, and the console
+ * {@link import('@orkestrel/console').Style} each role is painted with. Deeply frozen through the
+ * console module's own {@link import('@orkestrel/console').freezeStyle}; the baseline
+ * {@link import('./helpers.js').createPromptTheme} merges a partial theme over.
  *
  * @remarks
  * The default roles reproduce the views' historical coloring exactly: `question` / `pointer` cyan,
  * `message` / `focus` bold, `success` / `selected` green, `error` red, `hint` / `description` dim.
- * Two roles sharing a token list today are still two roles — re-mapping one leaves the other alone.
+ * Two roles sharing a style today are still two roles — re-mapping one leaves the other alone.
  */
 export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 	icons: Object.freeze({
@@ -213,15 +214,15 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 		error: STATUS_ICONS.error,
 	}),
 	roles: Object.freeze({
-		question: Object.freeze<readonly PromptToken[]>(['cyan']),
-		pointer: Object.freeze<readonly PromptToken[]>(['cyan']),
-		message: Object.freeze<readonly PromptToken[]>(['bold']),
-		success: Object.freeze<readonly PromptToken[]>(['green']),
-		error: Object.freeze<readonly PromptToken[]>(['red']),
-		selected: Object.freeze<readonly PromptToken[]>(['green']),
-		focus: Object.freeze<readonly PromptToken[]>(['bold']),
-		hint: Object.freeze<readonly PromptToken[]>(['dim']),
-		description: Object.freeze<readonly PromptToken[]>(['dim']),
+		question: freezeStyle({ foreground: 'cyan', attributes: [] }),
+		pointer: freezeStyle({ foreground: 'cyan', attributes: [] }),
+		message: freezeStyle({ attributes: ['bold'] }),
+		success: freezeStyle({ foreground: 'green', attributes: [] }),
+		error: freezeStyle({ foreground: 'red', attributes: [] }),
+		selected: freezeStyle({ foreground: 'green', attributes: [] }),
+		focus: freezeStyle({ attributes: ['bold'] }),
+		hint: freezeStyle({ attributes: ['dim'] }),
+		description: freezeStyle({ attributes: ['dim'] }),
 	}),
 })
 

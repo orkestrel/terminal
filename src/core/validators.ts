@@ -2,11 +2,11 @@ import type {
 	PendingPrompt,
 	PendingPromptStatus,
 	PromptThemeOptions,
-	PromptToken,
 	PromptType,
 	TerminalSnapshot,
 } from './types.js'
 import type { Guard } from '@orkestrel/contract'
+import type { Style } from '@orkestrel/console'
 import {
 	arrayOf,
 	isNonEmptyString,
@@ -56,22 +56,36 @@ export const isPendingPrompt: Guard<PendingPrompt> = recordOf(
 )
 
 /**
- * Narrow an unknown value to a {@link PromptToken} — a styler accessor name, built from the
- * console module's own {@link import('@orkestrel/console').COLORS} +
- * {@link import('@orkestrel/console').ATTRIBUTES} so the token axis has ONE source.
+ * Narrow an unknown value to a console {@link Style} — the value every
+ * {@link import('./types.js').PromptRole} carries, built from the console module's own
+ * {@link import('@orkestrel/console').COLORS} + {@link import('@orkestrel/console').ATTRIBUTES} so
+ * the style vocabulary has ONE source.
+ *
+ * @remarks
+ * The record is CLOSED and matches the `Style` contract exactly: `foreground` and `background` are
+ * optional and each must name a color (`default` included, as the console `Color` union has it),
+ * `attributes` is REQUIRED and must be an array over the attribute set, and any other key rejects
+ * the whole value.
  */
-export const isPromptToken: Guard<PromptToken> = literalOf(...COLORS, ...ATTRIBUTES)
+export const isStyle: Guard<Style> = recordOf(
+	{
+		foreground: literalOf(...COLORS, 'default'),
+		background: literalOf(...COLORS, 'default'),
+		attributes: arrayOf(literalOf(...ATTRIBUTES)),
+	},
+	['foreground', 'background'],
+)
 
 /**
  * Narrow an unknown wire value to a {@link PromptThemeOptions} — the §14 guard a remote prompt's
  * `theme` option passes before it reaches a local prompt.
  *
  * @remarks
- * The shape is CLOSED at both levels: an unknown icon slot, an unknown role, a non-string glyph,
- * or a token outside the styler's accessor set rejects the whole theme, so a hostile payload
- * degrades to the default theme rather than partially applying. Glyphs still carry arbitrary text
- * at this point — {@link import('./helpers.js').sanitizeThemeIcons} strips their control bytes on
- * dispatch.
+ * The shape is CLOSED at every level: an unknown icon slot, an unknown role, a non-string glyph, or
+ * a role whose value is not a {@link isStyle}-shaped console style rejects the whole theme, so a
+ * hostile payload degrades to the default theme rather than partially applying. Glyphs still carry
+ * arbitrary text at this point — {@link import('./helpers.js').sanitizeThemeIcons} strips their
+ * control bytes on dispatch.
  */
 export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 	{
@@ -90,15 +104,15 @@ export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 		),
 		roles: recordOf(
 			{
-				question: arrayOf(isPromptToken),
-				pointer: arrayOf(isPromptToken),
-				message: arrayOf(isPromptToken),
-				success: arrayOf(isPromptToken),
-				error: arrayOf(isPromptToken),
-				selected: arrayOf(isPromptToken),
-				focus: arrayOf(isPromptToken),
-				hint: arrayOf(isPromptToken),
-				description: arrayOf(isPromptToken),
+				question: isStyle,
+				pointer: isStyle,
+				message: isStyle,
+				success: isStyle,
+				error: isStyle,
+				selected: isStyle,
+				focus: isStyle,
+				hint: isStyle,
+				description: isStyle,
 			},
 			true,
 		),

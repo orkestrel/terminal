@@ -20,7 +20,6 @@ import type {
 	PromptStep,
 	PromptTheme,
 	PromptThemeOptions,
-	PromptToken,
 	SelectOptions,
 	SelectState,
 	TimerCancel,
@@ -29,7 +28,7 @@ import type {
 	WireEvent,
 } from './types.js'
 import type { Guard } from '@orkestrel/contract'
-import type { StylerInterface } from '@orkestrel/console'
+import type { Style, StylerInterface } from '@orkestrel/console'
 import {
 	ALPHANUMERIC_PATTERN,
 	CONTROL_NAMES,
@@ -52,7 +51,7 @@ import {
 	isString,
 	recordOf,
 } from '@orkestrel/contract'
-import { createStyler, stripControls } from '@orkestrel/console'
+import { createStyler, freezeStyle, stripControls } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested (AGENTS §5):
 // the key decoder, the validation rule engine, the choice normalizers, the per-prompt view
@@ -307,9 +306,10 @@ export function normalizeCheckboxChoice(choice: string | CheckboxChoice): Checkb
 /**
  * Build a complete {@link PromptTheme} by merging a partial one over
  * {@link DEFAULT_PROMPT_THEME}, leaf by leaf — each supplied icon replaces that glyph, each
- * supplied role replaces that token list, and everything else keeps its default. The result is
- * deeply frozen and every supplied token list is COPIED, so a caller mutating its own array
- * afterwards cannot reach into a built theme.
+ * supplied role replaces that {@link Style}, and everything else keeps its default. Each supplied
+ * style is snapshotted through the console module's own
+ * {@link import('@orkestrel/console').freezeStyle}, so the result is deeply frozen and a caller
+ * mutating its own attribute list afterwards cannot reach into a built theme.
  *
  * @param options - The partial theme to merge, or `undefined` for the defaults
  * @returns The resolved, deeply frozen theme every prompt state carries
@@ -317,48 +317,27 @@ export function normalizeCheckboxChoice(choice: string | CheckboxChoice): Checkb
  * @example
  * ```ts
  * createPromptTheme() // the defaults
- * createPromptTheme({ icons: { pointer: '=>' }, roles: { message: ['magenta', 'bold'] } })
+ * createPromptTheme({
+ * 	icons: { pointer: '=>' },
+ * 	roles: { message: { foreground: 'magenta', attributes: ['bold'] } },
+ * })
  * ```
  */
 export function createPromptTheme(options?: PromptThemeOptions): PromptTheme {
 	const icons: Record<PromptIcon, string> = { ...DEFAULT_PROMPT_THEME.icons, ...options?.icons }
-	const roles: Record<PromptRole, readonly PromptToken[]> = { ...DEFAULT_PROMPT_THEME.roles }
+	const roles: Record<PromptRole, Style> = { ...DEFAULT_PROMPT_THEME.roles }
 	for (const role of PROMPT_ROLES) {
-		const tokens = options?.roles?.[role]
-		if (tokens !== undefined) roles[role] = Object.freeze([...tokens])
+		const style = options?.roles?.[role]
+		if (style !== undefined) roles[role] = freezeStyle(style)
 	}
 	return Object.freeze({ icons: Object.freeze(icons), roles: Object.freeze(roles) })
 }
 
 /**
- * Paint `text` with a role's {@link PromptToken} list — each token names a
- * {@link StylerInterface} accessor, so the tokens are chained in order and the accumulated style
- * is rendered once. The one place a theme's colors reach a view.
- *
- * @param styler - The styler to chain the tokens on
- * @param tokens - The role's tokens, applied left to right (a later color of the same channel wins)
- * @param text - The text to paint
- * @returns The painted text — unchanged for an empty token list, and unchanged for any list when
- *   the styler is disabled
- *
- * @example
- * ```ts
- * applyTokens(createStyler(), ['red', 'bold'], 'stop') // bold red 'stop'
- * applyTokens(createStyler(), [], 'plain') // 'plain'
- * ```
- */
-export function applyTokens(
-	styler: StylerInterface,
-	tokens: readonly PromptToken[],
-	text: string,
-): string {
-	return tokens.reduce<StylerInterface>((chained, token) => chained[token], styler)(text)
-}
-
-/**
  * Control-strip every glyph a wire-supplied {@link PromptThemeOptions} carries — the theme twin of
- * {@link sanitizeChoiceLabels}. Only the icons need it: a role's tokens are guard-narrowed to the
- * fixed {@link PromptToken} union, so no role can carry a byte a terminal would act on.
+ * {@link sanitizeChoiceLabels}. Only the icons need it: a role is guard-narrowed to a console
+ * {@link Style}, whose colors and attributes are fixed name sets, so no role can carry a byte a
+ * terminal would act on.
  *
  * @param theme - The narrowed theme options a remote prompt supplied
  * @returns The same theme with every supplied glyph control-stripped
@@ -375,7 +354,7 @@ export function sanitizeThemeIcons(theme: PromptThemeOptions): PromptThemeOption
 
 /** The styled prompt-message header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles. */
 export function promptHeader(styler: StylerInterface, theme: PromptTheme, message: string): string {
-	return `${applyTokens(styler, theme.roles.question, theme.icons.question)} ${applyTokens(styler, theme.roles.message, message)}`
+	return `${styler.render(theme.roles.question, theme.icons.question)} ${styler.render(theme.roles.message, message)}`
 }
 
 /** The prompt header followed by a key hint painted with the `hint` role — the header itself when no hint is supplied. */
@@ -386,17 +365,17 @@ export function hintedHeader(
 	hint?: string,
 ): string {
 	const head = promptHeader(styler, theme, message)
-	return hint === undefined ? head : `${head} ${applyTokens(styler, theme.roles.hint, hint)}`
+	return hint === undefined ? head : `${head} ${styler.render(theme.roles.hint, hint)}`
 }
 
 /** The styled submit line (`✔ message`) — the committed header an interactive prompt shows once resolved, themed by the `success` + `message` roles. */
 export function submitHeader(styler: StylerInterface, theme: PromptTheme, message: string): string {
-	return `${applyTokens(styler, theme.roles.success, theme.icons.success)} ${applyTokens(styler, theme.roles.message, message)}`
+	return `${styler.render(theme.roles.success, theme.icons.success)} ${styler.render(theme.roles.message, message)}`
 }
 
 /** The styled error line (`✖ message`) — appended beneath a prompt view when the last submit failed validation, themed by the `error` role. */
 export function errorLine(styler: StylerInterface, theme: PromptTheme, message: string): string {
-	return `${applyTokens(styler, theme.roles.error, theme.icons.error)} ${applyTokens(styler, theme.roles.error, message)}`
+	return `${styler.render(theme.roles.error, theme.icons.error)} ${styler.render(theme.roles.error, message)}`
 }
 
 // === Input prompt
@@ -418,8 +397,8 @@ export function inputView(state: InputState): string {
 	const shown =
 		state.value.length > 0
 			? state.value
-			: applyTokens(state.styler, state.theme.roles.hint, state.default)
-	const head = `${promptHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
+			: state.styler.render(state.theme.roles.hint, state.default)
+	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
 	return state.error === undefined
 		? head
 		: `${head}\n${errorLine(state.styler, state.theme, state.error)}`
@@ -445,7 +424,7 @@ export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string
 		const next: InputState = { ...clear, value: answer }
 		return {
 			state: next,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, answer)}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer)}`,
 			status: 'submit',
 			value: answer,
 		}
@@ -474,7 +453,7 @@ export function createPasswordState(options: PasswordOptions): PasswordState {
 /** Render a {@link PasswordState} as a styled view — the header, the value masked to `mask` repeated, and any error. */
 export function passwordView(state: PasswordState): string {
 	const masked = state.mask.repeat(state.value.length)
-	const head = `${promptHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
+	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
 	return state.error === undefined
 		? head
 		: `${head}\n${errorLine(state.styler, state.theme, state.error)}`
@@ -501,7 +480,7 @@ export function passwordReduce(
 		}
 		return {
 			state: clear,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, state.mask.repeat(state.value.length))}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, state.mask.repeat(state.value.length))}`,
 			status: 'submit',
 			value: state.value,
 		}
@@ -537,9 +516,9 @@ export function confirmView(state: ConfirmState): string {
 	}
 	const head = promptHeader(state.styler, state.theme, state.message)
 	const answer = state.default
-		? `${applyTokens(state.styler, state.theme.roles.selected, 'Y')}${applyTokens(state.styler, state.theme.roles.hint, '/n')}`
-		: `${applyTokens(state.styler, state.theme.roles.hint, 'y/')}${applyTokens(state.styler, state.theme.roles.selected, 'N')}`
-	return `${head} ${applyTokens(state.styler, state.theme.roles.hint, '(')}${answer}${applyTokens(state.styler, state.theme.roles.hint, ')')}`
+		? `${state.styler.render(state.theme.roles.selected, 'Y')}${state.styler.render(state.theme.roles.hint, '/n')}`
+		: `${state.styler.render(state.theme.roles.hint, 'y/')}${state.styler.render(state.theme.roles.selected, 'N')}`
+	return `${head} ${state.styler.render(state.theme.roles.hint, '(')}${answer}${state.styler.render(state.theme.roles.hint, ')')}`
 }
 
 /**
@@ -562,7 +541,7 @@ export function confirmReduce(
 	if (answer === undefined) return { state, view: confirmView(state), status: 'active' }
 	return {
 		state,
-		view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, answer ? 'yes' : 'no')}`,
+		view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer ? 'yes' : 'no')}`,
 		status: 'submit',
 		value: answer,
 	}
@@ -589,18 +568,16 @@ export function selectView(state: SelectState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const pointer = active
-			? applyTokens(state.styler, state.theme.roles.pointer, state.theme.icons.pointer)
+			? state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 			: ' '
 		const marker = active
-			? applyTokens(state.styler, state.theme.roles.selected, state.theme.icons.selected)
-			: applyTokens(state.styler, state.theme.roles.hint, state.theme.icons.dot)
-		const label = active
-			? applyTokens(state.styler, state.theme.roles.focus, choice.name)
-			: choice.name
+			? state.styler.render(state.theme.roles.selected, state.theme.icons.selected)
+			: state.styler.render(state.theme.roles.hint, state.theme.icons.dot)
+		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
 		const description =
 			choice.description === undefined
 				? ''
-				: `  ${applyTokens(state.styler, state.theme.roles.description, choice.description)}`
+				: `  ${state.styler.render(state.theme.roles.description, choice.description)}`
 		return `${pointer} ${marker} ${label}${description}`
 	})
 	return [hintedHeader(state.styler, state.theme, state.message, state.hint), ...lines].join('\n')
@@ -631,7 +608,7 @@ export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<stri
 		const value = choice?.value ?? ''
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, choice?.name ?? '')}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, choice?.name ?? '')}`,
 			status: 'submit',
 			value,
 		}
@@ -667,25 +644,19 @@ export function checkboxView(state: CheckboxState): string {
 		const active = index === state.focused
 		const ticked = state.checked.includes(index)
 		const pointer = active
-			? applyTokens(state.styler, state.theme.roles.pointer, state.theme.icons.pointer)
+			? state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 			: ' '
 		const box = ticked
-			? applyTokens(state.styler, state.theme.roles.selected, state.theme.icons.checked)
-			: applyTokens(state.styler, state.theme.roles.hint, state.theme.icons.unchecked)
-		const label = active
-			? applyTokens(state.styler, state.theme.roles.focus, choice.name)
-			: choice.name
+			? state.styler.render(state.theme.roles.selected, state.theme.icons.checked)
+			: state.styler.render(state.theme.roles.hint, state.theme.icons.unchecked)
+		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
 		const description =
 			choice.description === undefined
 				? ''
-				: `  ${applyTokens(state.styler, state.theme.roles.description, choice.description)}`
+				: `  ${state.styler.render(state.theme.roles.description, choice.description)}`
 		return `${pointer} ${box} ${label}${description}`
 	})
-	const summary = applyTokens(
-		state.styler,
-		state.theme.roles.hint,
-		`${state.checked.length} selected`,
-	)
+	const summary = state.styler.render(state.theme.roles.hint, `${state.checked.length} selected`)
 	const body = [
 		hintedHeader(state.styler, state.theme, state.message, state.hint),
 		...lines,
@@ -744,7 +715,7 @@ export function checkboxReduce(
 			.join(', ')
 		return {
 			state: clear,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, summary)}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, summary)}`,
 			status: 'submit',
 			value: values,
 		}
@@ -794,7 +765,7 @@ export function editorView(state: EditorState): string {
 		state.message,
 		state.hint ?? '(Ctrl+D to finish)',
 	)
-	const pointer = applyTokens(state.styler, state.theme.roles.pointer, state.theme.icons.pointer)
+	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 	const body = [...state.lines, `${pointer} ${state.current}`]
 	const view = [head, ...body].join('\n')
 	return state.error === undefined
@@ -824,7 +795,7 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 		}
 		return {
 			state: clear,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${applyTokens(state.styler, state.theme.roles.hint, `${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, `${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
 			status: 'submit',
 			value: answer,
 		}

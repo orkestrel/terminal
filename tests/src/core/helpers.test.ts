@@ -3,13 +3,12 @@ import type {
 	PendingPrompt,
 	PromptStep,
 	PromptThemeOptions,
-	PromptToken,
 	ValidationRules,
 	Validator,
 } from '@src/core'
+import type { Attribute } from '@orkestrel/console'
 import {
 	appendRule,
-	applyTokens,
 	buildRuleValidator,
 	checkboxReduce,
 	checkboxView,
@@ -41,8 +40,8 @@ import {
 	isPrintable,
 	isPromptChoice,
 	isPromptThemeOptions,
-	isPromptToken,
 	isPromptType,
+	isStyle,
 	isTerminalSnapshot,
 	normalizeCheckboxChoice,
 	normalizeChoice,
@@ -1873,42 +1872,66 @@ describe('createPromptTheme', () => {
 	it('replaces only the supplied leaves', () => {
 		const theme = createPromptTheme({
 			icons: { pointer: '=>' },
-			roles: { message: ['magenta', 'bold'] },
+			roles: { message: { foreground: 'magenta', attributes: ['bold'] } },
 		})
 		expect(theme.icons.pointer).toBe('=>')
 		expect(theme.icons.question).toBe(DEFAULT_PROMPT_THEME.icons.question)
 		expect(theme.icons.success).toBe(DEFAULT_PROMPT_THEME.icons.success)
-		expect(theme.roles.message).toEqual(['magenta', 'bold'])
+		expect(theme.roles.message).toEqual({ foreground: 'magenta', attributes: ['bold'] })
 		expect(theme.roles.hint).toEqual(DEFAULT_PROMPT_THEME.roles.hint)
 	})
 
-	it('freezes the result and copies every supplied token list', () => {
-		const supplied: PromptToken[] = ['red']
-		const theme = createPromptTheme({ roles: { error: supplied } })
+	it('freezes the result and snapshots every supplied style', () => {
+		const attributes: Attribute[] = ['bold']
+		const theme = createPromptTheme({ roles: { error: { foreground: 'red', attributes } } })
 		expect(Object.isFrozen(theme)).toBe(true)
 		expect(Object.isFrozen(theme.icons)).toBe(true)
 		expect(Object.isFrozen(theme.roles)).toBe(true)
 		expect(Object.isFrozen(theme.roles.error)).toBe(true)
+		expect(Object.isFrozen(theme.roles.error.attributes)).toBe(true)
 		expect(Object.isFrozen(theme.roles.hint)).toBe(true) // an untouched default is frozen too
-		supplied.push('bold') // the caller's own array is not the theme's
-		expect(theme.roles.error).toEqual(['red'])
+		attributes.push('dim') // the caller's own array is not the theme's
+		expect(theme.roles.error).toEqual({ foreground: 'red', attributes: ['bold'] })
 	})
 })
 
-describe('applyTokens', () => {
-	const styled = createStyler()
-
-	it('chains every token in order and renders once', () => {
-		expect(applyTokens(styled, ['cyan'], 'x')).toBe('\x1b[36mx\x1b[0m')
-		expect(applyTokens(styled, ['blue', 'underline'], 'x')).toBe('\x1b[4;34mx\x1b[0m')
+describe('a role style reaches its render site whole', () => {
+	it('renders a color and an attribute together', () => {
+		const state = createInputState({
+			message: 'Name',
+			default: 'Ada',
+			theme: { roles: { hint: { foreground: 'blue', attributes: ['underline'] } } },
+		})
+		expect(inputView(state)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[4;34mAda\x1b[0m',
+		)
 	})
 
-	it('returns the text unchanged for an empty token list', () => {
-		expect(applyTokens(styled, [], 'plain')).toBe('plain')
+	it('renders a background color, which a styler accessor cannot name', () => {
+		const state = createInputState({
+			message: 'Name',
+			default: 'Ada',
+			theme: { roles: { hint: { background: 'red', attributes: [] } } },
+		})
+		expect(inputView(state)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[41mAda\x1b[0m',
+		)
 	})
 
-	it('returns the text verbatim for any token list when the styler is disabled', () => {
-		expect(applyTokens(plain, ['red', 'bold'], 'plain')).toBe('plain')
+	it('renders an empty style as bare text, and any style verbatim when the styler is disabled', () => {
+		const bare = createInputState({
+			message: 'Name',
+			default: 'Ada',
+			theme: { roles: { hint: { attributes: [] } } },
+		})
+		expect(inputView(bare)).toBe('\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m Ada')
+		const off = createInputState({
+			message: 'Name',
+			default: 'Ada',
+			styler: plain,
+			theme: { roles: { hint: { foreground: 'red', attributes: ['bold'] } } },
+		})
+		expect(inputView(off)).toBe('? Name › Ada')
 	})
 })
 
@@ -2013,13 +2036,13 @@ describe('a custom theme moves every role site', () => {
 	const theme: PromptThemeOptions = {
 		icons: { pointer: '=>', selected: '*', dot: '-', checked: '[x]', unchecked: '[ ]' },
 		roles: {
-			question: ['magenta'],
-			pointer: ['yellow'],
-			message: ['blue', 'underline'],
-			selected: ['brightGreen'],
-			focus: ['inverse'],
-			hint: ['italic'],
-			description: ['strikethrough'],
+			question: { foreground: 'magenta', attributes: [] },
+			pointer: { foreground: 'yellow', attributes: [] },
+			message: { foreground: 'blue', attributes: ['underline'] },
+			selected: { foreground: 'brightGreen', attributes: [] },
+			focus: { attributes: ['inverse'] },
+			hint: { attributes: ['italic'] },
+			description: { attributes: ['strikethrough'] },
 		},
 	}
 
@@ -2112,26 +2135,33 @@ describe('a custom hint replaces the computed default', () => {
 	})
 })
 
-describe('isPromptToken / isPromptThemeOptions', () => {
-	it('accepts every styler accessor name and rejects anything else', () => {
-		expect(isPromptToken('cyan')).toBe(true)
-		expect(isPromptToken('brightWhite')).toBe(true)
-		expect(isPromptToken('strikethrough')).toBe(true)
-		expect(isPromptToken('default')).toBe(false) // a Color, but not a styler accessor
-		expect(isPromptToken('bgRed')).toBe(false) // no background accessor exists to name
-		expect(isPromptToken(1)).toBe(false)
-		expect(isPromptToken(null)).toBe(false)
+describe('isStyle / isPromptThemeOptions', () => {
+	it('accepts every console style shape and rejects anything else', () => {
+		expect(isStyle({ attributes: [] })).toBe(true)
+		expect(isStyle({ foreground: 'cyan', attributes: ['bold', 'dim'] })).toBe(true)
+		expect(isStyle({ background: 'brightWhite', attributes: [] })).toBe(true)
+		expect(isStyle({ foreground: 'default', attributes: [] })).toBe(true) // 'default' is a Color
+		expect(isStyle({ foreground: 'cyan' })).toBe(false) // attributes is required
+		expect(isStyle({ foreground: 'plaid', attributes: [] })).toBe(false)
+		expect(isStyle({ attributes: ['plaid'] })).toBe(false)
+		expect(isStyle({ attributes: 'bold' })).toBe(false) // an attribute list, not one name
+		expect(isStyle({ attributes: [], weight: 'heavy' })).toBe(false) // closed — an extra key rejects
+		expect(isStyle('cyan')).toBe(false)
+		expect(isStyle(null)).toBe(false)
 	})
 
 	it('accepts a partial theme and rejects an off-shape one', () => {
 		expect(isPromptThemeOptions({})).toBe(true)
 		expect(isPromptThemeOptions({ icons: { pointer: '=>' } })).toBe(true)
-		expect(isPromptThemeOptions({ roles: { message: ['red', 'bold'] } })).toBe(true)
-		expect(isPromptThemeOptions({ roles: { message: [] } })).toBe(true)
+		expect(
+			isPromptThemeOptions({ roles: { message: { foreground: 'red', attributes: ['bold'] } } }),
+		).toBe(true)
+		expect(isPromptThemeOptions({ roles: { message: { attributes: [] } } })).toBe(true)
 		expect(isPromptThemeOptions({ icons: { pointer: 7 } })).toBe(false)
 		expect(isPromptThemeOptions({ icons: { bogus: 'x' } })).toBe(false)
-		expect(isPromptThemeOptions({ roles: { message: ['plaid'] } })).toBe(false)
-		expect(isPromptThemeOptions({ roles: { bogus: ['red'] } })).toBe(false)
+		expect(isPromptThemeOptions({ roles: { message: { attributes: ['plaid'] } } })).toBe(false)
+		expect(isPromptThemeOptions({ roles: { message: ['red'] } })).toBe(false) // the old token list
+		expect(isPromptThemeOptions({ roles: { bogus: { attributes: [] } } })).toBe(false)
 		expect(isPromptThemeOptions({ theme: {} })).toBe(false)
 		expect(isPromptThemeOptions('cyan')).toBe(false)
 		expect(isPromptThemeOptions(null)).toBe(false)
@@ -2142,24 +2172,27 @@ describe('sanitizeThemeIcons', () => {
 	it('strips control bytes from every supplied glyph and leaves the roles alone', () => {
 		const sanitized = sanitizeThemeIcons({
 			icons: { pointer: '=>\x07', question: 'q\x1b]52;c;AA==\x07' },
-			roles: { message: ['red'] },
+			roles: { message: { foreground: 'red', attributes: [] } },
 		})
 		// stripControls removes the control BYTES, so a bare BEL leaves the glyph alone and an
 		// OSC-52 sequence loses the bytes a terminal would act on.
 		expect(sanitized.icons?.pointer).toBe('=>')
 		expect(sanitized.icons?.question).not.toContain('\x1b')
 		expect(sanitized.icons?.question).not.toContain('\x07')
-		expect(sanitized.roles?.message).toEqual(['red'])
+		expect(sanitized.roles?.message).toEqual({ foreground: 'red', attributes: [] })
 	})
 
 	it('returns a theme with no icons unchanged', () => {
-		const theme: PromptThemeOptions = { roles: { message: ['red'] } }
+		const theme: PromptThemeOptions = { roles: { message: { foreground: 'red', attributes: [] } } }
 		expect(sanitizeThemeIcons(theme)).toEqual(theme)
 	})
 })
 
 describe('wire — theme and hint cross as data', () => {
-	const themeOption = { icons: { pointer: '=>' }, roles: { message: ['magenta'] } }
+	const themeOption = {
+		icons: { pointer: '=>' },
+		roles: { message: { foreground: 'magenta', attributes: [] } },
+	}
 
 	it('serializePromptOptions keeps both and JSON round-trips them', () => {
 		const wire = serializePromptOptions({
@@ -2181,7 +2214,10 @@ describe('wire — theme and hint cross as data', () => {
 			options: {
 				choices: ['alpha'],
 				hint: 'arrows\x07 move',
-				theme: { icons: { pointer: '=>\x1b[31m' }, roles: { message: ['magenta'] } },
+				theme: {
+					icons: { pointer: '=>\x1b[31m' },
+					roles: { message: { foreground: 'magenta', attributes: [] } },
+				},
 			},
 			status: 'pending',
 			time: 1,
@@ -2190,24 +2226,35 @@ describe('wire — theme and hint cross as data', () => {
 		const seen = calls.select.calls[0]?.[0]
 		expect(seen?.hint).toBe('arrows move')
 		expect(seen?.theme?.icons?.pointer).not.toContain('\x1b')
-		expect(seen?.theme?.roles?.message).toEqual(['magenta'])
+		expect(seen?.theme?.roles?.message).toEqual({ foreground: 'magenta', attributes: [] })
 	})
 
-	it('drops an off-shape wire theme and a non-string hint, leaving the defaults', async () => {
-		const { terminal, calls } = createRecordingTerminal({ answers: { confirm: true } })
-		const pending: PendingPrompt = {
-			id: 'p2',
-			form: 'confirm',
-			message: 'Continue?',
-			options: { theme: { roles: { message: ['plaid'] } }, hint: 42 },
-			status: 'pending',
-			time: 1,
-		}
-		await dispatchPendingPrompt(terminal, pending)
-		expect(calls.confirm.calls[0]?.[0]).toEqual({ message: 'Continue?' })
-		// The prompt the dropped theme would have decorated still renders the defaults.
-		expect(createConfirmState({ message: 'Continue?' }).theme).toEqual(DEFAULT_PROMPT_THEME)
-	})
+	const hostile: ReadonlyArray<{ readonly label: string; readonly roles: unknown }> = [
+		{ label: 'an unknown attribute', roles: { message: { attributes: ['plaid'] } } },
+		{ label: 'an unknown key on the style', roles: { message: { attributes: [], weight: 1 } } },
+		{ label: 'a style with no attributes', roles: { message: { foreground: 'red' } } },
+		{ label: 'a bare token list', roles: { message: ['magenta'] } },
+		{ label: 'an unknown role', roles: { bogus: { attributes: [] } } },
+	]
+
+	for (const { label, roles } of hostile) {
+		it(`drops a whole wire theme carrying ${label}, leaving the defaults`, async () => {
+			const { terminal, calls } = createRecordingTerminal({ answers: { confirm: true } })
+			const pending: PendingPrompt = {
+				id: 'p2',
+				form: 'confirm',
+				message: 'Continue?',
+				options: { theme: { roles }, hint: 42 },
+				status: 'pending',
+				time: 1,
+			}
+			await dispatchPendingPrompt(terminal, pending)
+			// The non-string hint is dropped with it, so only the message survives.
+			expect(calls.confirm.calls[0]?.[0]).toEqual({ message: 'Continue?' })
+			// The prompt the dropped theme would have decorated still renders the defaults.
+			expect(createConfirmState({ message: 'Continue?' }).theme).toEqual(DEFAULT_PROMPT_THEME)
+		})
+	}
 
 	it('every form carries a resolved theme on its state', () => {
 		expect(createInputState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)

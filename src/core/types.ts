@@ -1,5 +1,5 @@
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
-import type { Attribute, Color, StylerInterface } from '@orkestrel/console'
+import type { Style, StylerInterface } from '@orkestrel/console'
 
 // The PURE, UNIVERSAL prompt core — a key decoder, a declarative validation engine, and
 // the six interactive prompts modelled as EVENT-FREE pure state machines. No `node:*`, no
@@ -158,38 +158,32 @@ export type PromptRole =
 	| 'description'
 
 /**
- * One styling token a {@link PromptRole} is painted with — every named console
- * {@link Color} except `default`, plus every {@link Attribute}. Each token IS the name of a
- * {@link StylerInterface} accessor, so {@link import('./helpers.js').applyTokens} paints a role by
- * chaining its tokens in order.
+ * A prompt's resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console
+ * {@link Style} for every {@link PromptRole}. Plain JSON data (no functions), so it crosses the wire
+ * with the prompt it decorates. Built by {@link import('./helpers.js').createPromptTheme}; carried
+ * resolved on every prompt state, so a view never reads a hardcoded glyph or color.
  *
  * @remarks
- * The union is exactly the styler's accessor set, which is why a background color is absent: the
- * styler exposes no background accessor, so a token list cannot express one. A role's tokens
- * compose — `['red', 'bold']` is bold red — and a later color of the same channel wins.
- */
-export type PromptToken = Exclude<Color, 'default'> | Attribute
-
-/**
- * A prompt's resolved PRESENTATION — the glyph for every {@link PromptIcon} and the token list for
- * every {@link PromptRole}. Plain JSON data (no functions), so it crosses the wire with the prompt
- * it decorates. Built by {@link import('./factories.js').createPromptTheme}; carried resolved on
- * every prompt state, so a view never reads a hardcoded glyph or color.
+ * A role's value is the console module's own {@link Style} — the one style model the whole console
+ * / terminal system shares — so a view paints a role through
+ * {@link StylerInterface.render} and this package holds no second style vocabulary. A `Style`
+ * carries a `foreground`, a `background`, and an attribute list, so a role can express a background
+ * color, which the styler's accessor chain cannot name.
  */
 export interface PromptTheme {
 	readonly icons: Readonly<Record<PromptIcon, string>>
-	readonly roles: Readonly<Record<PromptRole, readonly PromptToken[]>>
+	readonly roles: Readonly<Record<PromptRole, Style>>
 }
 
 /**
  * The PARTIAL {@link PromptTheme} a prompt option bag carries — every icon and every role is
- * optional, and {@link import('./factories.js').createPromptTheme} merges what is supplied over
+ * optional, and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
  * {@link import('./constants.js').DEFAULT_PROMPT_THEME} leaf by leaf. Supplying one icon or one
  * role leaves every other slot at its default.
  */
 export interface PromptThemeOptions {
 	readonly icons?: Readonly<Partial<Record<PromptIcon, string>>>
-	readonly roles?: Readonly<Partial<Record<PromptRole, readonly PromptToken[]>>>
+	readonly roles?: Readonly<Partial<Record<PromptRole, Style>>>
 }
 
 // === Prompt step (the reducer output)
