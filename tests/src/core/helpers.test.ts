@@ -2288,6 +2288,23 @@ describe('wire — theme and hint cross as data', () => {
 		})
 	}
 
+	it('accepts a wire theme naming every published role, muted included', async () => {
+		const { terminal, calls } = createRecordingTerminal({ answers: { confirm: true } })
+		const pending: PendingPrompt = {
+			id: 'p3',
+			form: 'confirm',
+			message: 'Continue?',
+			options: { theme: { roles: { muted: { foreground: 'yellow', attributes: ['dim'] } } } },
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		expect(calls.confirm.calls[0]?.[0]).toEqual({
+			theme: { roles: { muted: { foreground: 'yellow', attributes: ['dim'] } } },
+			message: 'Continue?',
+		})
+	})
+
 	it('every form carries a resolved theme on its state', () => {
 		expect(createInputState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)
 		expect(createPasswordState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)

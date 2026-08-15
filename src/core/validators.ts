@@ -113,6 +113,7 @@ export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 				focus: isStyle,
 				hint: isStyle,
 				description: isStyle,
+				muted: isStyle,
 			},
 			true,
 		),
