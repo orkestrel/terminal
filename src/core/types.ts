@@ -197,7 +197,9 @@ export type TerminalErrorCode =
  * @remarks
  * `ask` drives the form the caller passes: it walks the schema's fields in order, binds each
  * keystroke through the form's own `fill`, submits, and returns the settled values. The returned
- * promise is the form's `answer`, so a caller holding the form can await either one.
+ * promise is the form's `answer`, so a caller holding the form can await either one. Ctrl-c at an
+ * interactive driver is the one exception: it rejects THIS promise with a `TerminalError` coded
+ * `CANCEL` and leaves the form `editing`, so the form's own `answer` stays pending for its owner.
  *
  * A driver never owns the form's lifetime. To interrupt an active walk, destroy the form: it
  * abandons, `answer` rejects, and the driver stops rendering on the form's `abandon` event. That

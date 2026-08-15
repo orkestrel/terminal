@@ -21,8 +21,12 @@ import { readFileSync } from 'node:fs'
 import { requireValue } from '@orkestrel/test'
 import { readInventory } from '@orkestrel/test/server'
 
-/** Every fence language this package's guides are allowed to use. */
-const FENCE_LANGUAGES = Object.freeze(['ts'])
+/**
+ * Every fence language this package's guides are allowed to use. `text` quotes a tool's
+ * verbatim output — the `scaffold audit` refusal the vendored form pin produces — which is
+ * evidence rather than an example, so it stays out of {@link EXAMPLE_LANGUAGE}.
+ */
+const FENCE_LANGUAGES = Object.freeze(['text', 'ts'])
 /** The fence language whose blocks count as worked examples. */
 const EXAMPLE_LANGUAGE = 'ts'
 /** Each import specifier this package's own guides may resolve against. */

@@ -1,21 +1,26 @@
 # @orkestrel/terminal
 
-An interactive terminal-prompt toolkit for the `@orkestrel` line — six
-prompt forms (`input`, `password`, `confirm`, `select`, `checkbox`,
-`editor`) modelled as pure, event-free state machines, driven across three
-symmetric surfaces: a headless `Prompt` broker that parks each call and
-resolves it when answered, an SSE `PromptClient` bridge that dispatches a
-remote prompt to a local terminal, and a raw-mode `Terminal` driver
-(`node:readline` fallback when piped) that answers each prompt at this
-machine's keyboard. Built to sit beside `@orkestrel/console` (the shared
-style engine), `@orkestrel/contract`, `@orkestrel/emitter`, and
-`@orkestrel/sse`, reusing all four as it takes shape.
+The terminal side of a form, for the `@orkestrel` line. `@orkestrel/form` owns
+the document — the schema, the twelve controls, the rules, the values, and the
+settle-once `answer` promise. This package owns what form has no opinion about:
+a key decoder, a theme, pure per-field reducers, and three surfaces one form
+can be answered on. The server `Terminal` implements the one driving contract
+against a real TTY (raw-mode stdin, live in-place re-render, a `node:readline`
+fallback when piped). The headless `Prompt` broker PARKS a live form until
+somebody elsewhere answers it. The `PromptClient` bridge carries a form parked
+elsewhere to this machine's keyboard over SSE. Built beside
+`@orkestrel/console` (the shared style engine), `@orkestrel/contract`,
+`@orkestrel/emitter`, `@orkestrel/database`, and `@orkestrel/sse`.
 
 ## Install
 
 ```sh
 npm install @orkestrel/terminal
 ```
+
+`@orkestrel/form` is pinned to a committed tarball until it is published, so
+this package is not publishable yet. The pin, its standing conditions, and the
+re-pin recipe are recorded in [guides/terminal.md](./guides/terminal.md).
 
 ## Requirements
 
@@ -24,53 +29,66 @@ npm install @orkestrel/terminal
 
 ## Usage
 
-Park a prompt headlessly and answer it from elsewhere (an SSE transport, a
-remote terminal):
+Ask one whole form at this machine's keyboard:
 
 ```ts
-import { createPrompt } from '@orkestrel/terminal'
-
-const prompt = createPrompt()
-prompt.emitter.on('pending', (pending) => send(pending)) // forward to a remote client
-const name = await prompt.input({ message: 'Your name', validate: { required: true } })
-```
-
-Drive the same six prompt forms locally at this machine's keyboard:
-
-```ts
+import { createForm } from '@orkestrel/form'
 import { createTerminal } from '@orkestrel/terminal/server'
 
 const terminal = createTerminal()
-const name = await terminal.input({ message: 'Your name' })
-const proceed = await terminal.confirm({ message: 'Continue?', default: true })
+const values = await terminal.ask(
+	createForm({
+		fields: [
+			{ control: 'text', name: 'name', label: 'Your name', rule: { required: true } },
+			{ control: 'confirm', name: 'terms', label: 'Accept the terms', rule: { required: true } },
+		],
+	}),
+)
 ```
 
-Bridge a remote broker's prompts to a local terminal over SSE:
+A bare return binds ABSENCE, not the empty string, so `required` refuses it and
+the walk asks again.
+
+Park a live form and answer it from anywhere else:
+
+```ts
+import { createForm } from '@orkestrel/form'
+import { createPrompt } from '@orkestrel/terminal'
+
+const prompt = createPrompt()
+prompt.emitter.on('pending', (form) => send(form)) // the wire-safe record
+
+const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+const id = prompt.park(form) // the id; you await the form's own `answer`
+prompt.answer(id, { name: 'Ada' }) // fills and submits the AUTHORITATIVE form
+const values = await form.answer // { name: 'Ada' }
+```
+
+Bridge a form parked elsewhere to a local terminal over SSE:
 
 ```ts
 import { createPromptClient } from '@orkestrel/terminal'
 import { createTerminal } from '@orkestrel/terminal/server'
 
 const client = createPromptClient({
-	url: 'http://localhost:3000/prompts',
+	url: 'http://localhost:3000/forms',
 	terminal: createTerminal(),
 })
-await client.connect()
+await client.connect() // renders each parked form here, POSTs { id, values } back
 ```
 
 ## Guide
 
-See [guides/src/terminal.md](./guides/src/terminal.md) for the full
-documented surface — the six prompt forms, the headless broker, the SSE
-bridge, and the raw-mode terminal driver.
+See [guides/terminal.md](./guides/terminal.md) for the documented surface — the
+driving contract, the pure reducers, the broker, the wire seam, the SSE bridge,
+the multi-endpoint manager, the stores, and the TTY driver.
 
 ## Package
 
-Published as two entry points per the `exports` field in `package.json`:
-`.` (the environment-agnostic core — the pure prompt reducers, the
-`Prompt` broker, and the `PromptClient` bridge) and `./server` (the
-Node-only `Terminal` driver). Core is ESM-only; `./server` ships dual
-ESM+CJS builds.
+Two entry points, per the `exports` field in `package.json`: `.` (the
+host-independent core — the reducers, the broker, the bridge, the manager, and
+the stores) and `./server` (the Node-only `Terminal` driver). Core is ESM-only;
+`./server` ships dual ESM+CJS builds.
 
 ## License
 

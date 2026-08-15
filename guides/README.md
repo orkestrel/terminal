@@ -9,6 +9,12 @@ directory (AGENTS §22).
 | -------- | ---------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Terminal | [`terminal.md`](terminal.md) | [`src/core`](../src/core), [`src/server`](../src/server) | [`tests/src/core`](../tests/src/core), [`tests/src/server`](../tests/src/server) |
 
+One concept covers both source trees: [`src/core`](../src/core) declares the
+`TerminalInterface` contract, the broker, the bridge, the manager, and every
+pure leaf, and [`src/server`](../src/server) implements that one contract
+against a real TTY. The end-to-end proof that they compose lives in
+[`tests/integration.test.ts`](../tests/integration.test.ts).
+
 ## By directory
 
 | Directory    | Guide                        |
@@ -18,14 +24,25 @@ directory (AGENTS §22).
 
 ## Dependency reference
 
+`@orkestrel/form` owns the form itself — the schema, the twelve controls, the
+rules, the values, and the settle-once `answer` promise — and terminal
+declares none of it a second time. Its guide is not mirrored here: form is
+not published yet, so this repository pins it as a committed tarball
+(`file:vendor/orkestrel-form-0.0.1.tgz`) and there is no released guide to
+mirror. Read the installed package's own guide at
+[github.com/orkestrel/form](https://github.com/orkestrel/form) for form's
+laws, and read [`terminal.md`](terminal.md) for what terminal adds around
+them. The pin, its two standing conditions, and the five-step re-pin recipe
+are recorded in [`terminal.md`](terminal.md).
+
 [`console.md`](console.md) is a byte-identical mirror of the guide for
-`@orkestrel/console` — a runtime dependency, the `StylerInterface` the pure
-prompt core renders its `view` through (one style engine). It documents
-**that package's** surface, not anything sourced in this repo; it is kept
-here so a reader of this package can see the primitive it is built from
-without leaving this guide set. It mirrors console's published release
-(`0.0.7`), which carries the `StylerInterface.render` / `freezeStyle` surface
-this package builds against.
+`@orkestrel/console` — a runtime dependency, the `StylerInterface` every
+rendered view is painted through (one style engine). It documents **that
+package's** surface, not anything sourced in this repo; it is kept here so a
+reader of this package can see the primitive it is built from without leaving
+this guide set. It mirrors console's published release (`0.0.7`), which
+carries the `StylerInterface.render` / `freezeStyle` surface this package
+builds against.
 
 [`contract.md`](contract.md) is a byte-identical mirror of the guide
 for `@orkestrel/contract` — a runtime dependency, the `Guard<T>` vocabulary
