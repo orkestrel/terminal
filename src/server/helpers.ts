@@ -1,12 +1,25 @@
-// Pure helpers for the T-c server-terminals branch (AGENTS §5 — every function here is exported and
-// unit-tested). Total utilities: the two stream-boundary guards (narrow `process.stdin` /
-// `process.stdout` / any injected stream without `as`, §14), the raw-mode capability probe, and the
-// pure cursor-math the interactive `Terminal` driver uses to redraw a prompt view IN PLACE (count a
-// view's lines, build the cursor-up sequence, and assemble the whole reposition-and-clear prefix) —
-// so the impure driver only feeds bytes into the reducers and writes the strings these helpers build.
+// Pure helpers for the server terminal driver — every function here is exported and unit-tested.
+// Three families, all total: the stream-boundary guards that narrow `process.stdin` /
+// `process.stdout` / any injected stream without an assertion; the cursor math the driver uses to
+// redraw a field view IN PLACE (count a view's lines, build the cursor-up sequence, assemble the
+// reposition-and-clear prefix); and the projections and line renderers the whole-form walk needs
+// that no reducer owns — a control read as text, a value shown read-only, the choices a field
+// actually offers, and the group, locked, suggestion, unavailable, and numbered-list lines. The
+// impure driver only feeds bytes into the reducers and writes the strings these helpers build.
 
+import type { FieldChoice, FieldValue, FormField, TextField } from '@orkestrel/form'
+import type { PromptTheme } from '@src/core'
+import type { StylerInterface } from '@orkestrel/console'
 import type { InputStreamInterface, OutputStreamInterface } from './types.js'
-import { CARRIAGE_RETURN, CLEAR_DOWN, CSI_UP } from './constants.js'
+import {
+	CARRIAGE_RETURN,
+	CLEAR_DOWN,
+	CONTROL_HINTS,
+	CSI_UP,
+	LOCKED_MARK,
+	SUGGESTION_LEAD,
+	UNAVAILABLE_LEAD,
+} from './constants.js'
 
 /**
  * Whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` / `off`
@@ -158,4 +171,143 @@ export function moveUp(count: number): string {
  */
 export function redrawPrefix(previousLines: number): string {
 	return `${moveUp(previousLines - 1)}${CARRIAGE_RETURN}${CLEAR_DOWN}`
+}
+
+/**
+ * Project any field the walk reads as a LINE OF TEXT into the {@link TextField} the text reducer
+ * takes — `text` itself, and the six controls a terminal has no widget for: `number`, `date`,
+ * `time`, `datetime`, `color`, and one `file` entry. The label carries that control's format cue
+ * from {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
+ * projection carries no rule, because the AUTHORITATIVE form still evaluates the answer this line
+ * binds; it exists only so one reducer can render seven controls.
+ *
+ * @param field - The field being read
+ * @returns The text field the reducer renders for it
+ *
+ * @example
+ * ```ts
+ * fieldToText({ control: 'date', name: 'born', label: 'Birthday' })
+ * // { control: 'text', name: 'born', label: 'Birthday (YYYY-MM-DD)' }
+ * ```
+ */
+export function fieldToText(field: FormField): TextField {
+	const label = field.label ?? field.name
+	const hint = CONTROL_HINTS[field.control]
+	const seed = 'default' in field ? field.default : undefined
+	const text = typeof seed === 'number' ? String(seed) : seed
+	return {
+		control: 'text',
+		name: field.name,
+		label: hint === undefined ? label : `${label} ${hint}`,
+		...(typeof text === 'string' ? { default: text } : {}),
+	}
+}
+
+/**
+ * Project one held answer into the text a read-only line shows — a scalar as itself, a boolean as
+ * `yes` / `no` (the word the confirm reducer commits), and a list joined by commas. Absence renders
+ * as nothing, because a locked field nobody has answered has nothing to show.
+ *
+ * @param value - The answer the form holds for a field, or absence
+ * @returns The text to render for it
+ */
+export function valueToText(value: FieldValue | undefined): string {
+	if (value === undefined) return ''
+	if (typeof value === 'string') return value
+	if (typeof value === 'number') return String(value)
+	if (typeof value === 'boolean') return value ? 'yes' : 'no'
+	return value.join(', ')
+}
+
+/**
+ * The choices a `select` or `checkbox` field actually OFFERS — the form refuses a disabled choice's
+ * value at every door, including a fill, so the walk never puts one in front of the cursor. Pair
+ * with {@link disabledChoices} to tell the reader what was withheld.
+ *
+ * @param choices - The field's declared choices
+ * @returns The choices the walk offers, in declared order
+ */
+export function enabledChoices(choices: readonly FieldChoice[]): readonly FieldChoice[] {
+	return choices.filter((choice) => choice.disabled !== true)
+}
+
+/**
+ * The choices a `select` or `checkbox` field SHOWS but refuses — the complement of
+ * {@link enabledChoices}, rendered by {@link unavailableLine} above the list so a reader sees why a
+ * declared choice is missing from it.
+ *
+ * @param choices - The field's declared choices
+ * @returns The refused choices, in declared order
+ */
+export function disabledChoices(choices: readonly FieldChoice[]): readonly FieldChoice[] {
+	return choices.filter((choice) => choice.disabled === true)
+}
+
+/** The section header the walk writes when it enters a new field group, painted by the `message` role. */
+export function groupHeader(styler: StylerInterface, theme: PromptTheme, label: string): string {
+	return styler.render(theme.roles.message, label)
+}
+
+/**
+ * The read-only line a LOCKED field renders — its label, the {@link LOCKED_MARK}, and the answer the
+ * form already holds. The walk writes this instead of a prompt, because the field is still
+ * validated and still submitted but must not be edited here.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param label - The field's label
+ * @param value - The held answer, from {@link valueToText}
+ * @returns The rendered line, with no trailing space when there is nothing to show
+ */
+export function lockedLine(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	label: string,
+	value: string,
+): string {
+	const head = `${styler.render(theme.roles.muted, theme.icons.dot)} ${styler.render(theme.roles.message, label)} ${styler.render(theme.roles.hint, LOCKED_MARK)}`
+	return value.length === 0 ? head : `${head} ${styler.render(theme.roles.content, value)}`
+}
+
+/** The line listing an OPEN select's offered values above its text prompt — a suggestion list, because an open select admits an answer the list does not offer. */
+export function suggestionLine(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	choices: readonly FieldChoice[],
+): string {
+	const values = choices.map((choice) => choice.value).join(', ')
+	return styler.render(theme.roles.hint, `${SUGGESTION_LEAD}: ${values}`)
+}
+
+/** The line naming the choices a field shows but refuses, written above the list the walk drives. */
+export function unavailableLine(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	choices: readonly FieldChoice[],
+): string {
+	const labels = choices.map((choice) => choice.label).join(', ')
+	return styler.render(theme.roles.muted, `${UNAVAILABLE_LEAD}: ${labels}`)
+}
+
+/**
+ * The numbered choice list the non-TTY fallback prints — a piped stream cannot navigate with arrow
+ * keys, so each offered choice is printed with the number the reader types back. One line per
+ * choice, with no trailing newline.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param choices - The choices the walk offers, from {@link enabledChoices}
+ * @returns The rendered list
+ */
+export function numberedList(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	choices: readonly FieldChoice[],
+): string {
+	return choices
+		.map(
+			(choice, index) =>
+				`  ${styler.render(theme.roles.muted, `${String(index + 1)})`)} ${styler.render(theme.roles.content, choice.label)}`,
+		)
+		.join('\n')
 }

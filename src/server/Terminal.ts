@@ -1,190 +1,361 @@
 import type {
-	CheckboxOptions,
-	ConfirmOptions,
-	EditorOptions,
-	EditorState,
-	InputOptions,
-	KeyEvent,
-	PasswordOptions,
-	PromptStep,
-	PromptTheme,
-	SelectOptions,
-} from '@src/core'
-import type { StylerInterface } from '@orkestrel/console'
+	FieldChoice,
+	FieldError,
+	FieldValue,
+	FormField,
+	FormInterface,
+	FormValues,
+} from '@orkestrel/form'
 import type {
-	InputStreamInterface,
-	OutputStreamInterface,
-	TerminalInterface,
-	TerminalOptions,
-} from './types.js'
+	CheckboxField,
+	ConfirmField,
+	EditorField,
+	FileField,
+	PasswordField,
+	SelectField,
+} from '@orkestrel/form'
+import type { KeyEvent, PromptStep, PromptTheme, TerminalInterface } from '@src/core'
+import type { StylerInterface } from '@orkestrel/console'
+import type { Interface } from 'node:readline'
+import type { InputStreamInterface, OutputStreamInterface, TerminalOptions } from './types.js'
 import {
+	checkboxReduce,
+	confirmReduce,
 	createCheckboxState,
 	createConfirmState,
 	createEditorState,
 	createInputState,
 	createPasswordState,
+	createPromptTheme,
 	createSelectState,
-	checkboxReduce,
-	confirmReduce,
 	editorReduce,
+	errorLine,
 	hintedHeader,
 	inputReduce,
 	parseKey,
 	passwordReduce,
 	promptHeader,
-	resolveValidation,
 	selectReduce,
 	TerminalError,
 } from '@src/core'
+import { matchesAnswer, parseValue } from '@orkestrel/form'
+import { createStyler } from '@orkestrel/console'
 import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 import {
 	CURSOR_HIDE,
 	CURSOR_SHOW,
 	FALLBACK_CHECKBOX_HINT,
+	FALLBACK_CONFIRM_HINT,
+	FALLBACK_EDITOR_HINT,
 	FALLBACK_SELECT_HINT,
+	FILE_HINT,
 	LINE_FEED,
+	REFUSAL_MESSAGE,
 } from './constants.js'
 import {
+	disabledChoices,
+	enabledChoices,
+	fieldToText,
+	groupHeader,
 	isInputStream,
 	isOutputStream,
 	isReadable,
-	isWritable,
 	lineCount,
+	lockedLine,
+	numberedList,
 	rawCapable,
 	redrawPrefix,
+	suggestionLine,
+	unavailableLine,
+	valueToText,
 } from './helpers.js'
 
 /**
- * The interactive terminal prompt driver (T-c) — the third {@link TerminalInterface} surface (beside
- * the core headless `Prompt` broker and the SSE `PromptClient` bridge), and the ONLY impure part of
- * the prompt stack. It reads the TTY and DRIVES the pure core `*Reduce` reducers: it feeds raw-mode
- * stdin bytes through `parseKey` into the matching reducer, renders the returned `view` in place, and
- * resolves on a `submit` step / rejects with a {@link TerminalError} (`CANCEL`) on ctrl-c. It owns no
- * prompt logic of its own — state, view, validation, and the cancel signal all come from the pure
- * core; this class owns ONLY the cursor + raw-mode + in-place re-render mechanics.
+ * The interactive terminal form DRIVER — the {@link TerminalInterface} implementation for a human at
+ * this machine's keyboard, and the only impure part of the terminal stack. {@link ask} walks one
+ * form's fields in schema order, feeds raw-mode stdin bytes through `parseKey` into the matching
+ * pure reducer, renders each returned view in place, and binds every answer through the form's own
+ * `fill`. It owns no form logic: the schema, the rules, the values, and the settlement all belong to
+ * the form it is given, and this class owns only raw mode, the cursor, and the re-render.
  *
  * @remarks
- * See {@link TerminalInterface} for the behavioral contract (raw-mode leak-freedom, the in-place
- * re-render, the non-TTY readline fallback, event-free).
+ * See {@link TerminalInterface} for the driving contract. The walk itself:
+ *
+ * - **Twelve controls, seven reducers.** `text`, `number`, `date`, `time`, `datetime`, `color`, and
+ *   each `file` entry are read as one line of text through {@link fieldToText}, which appends that
+ *   control's format cue to the label. `password`, `confirm`, `editor`, `select`, and `checkbox`
+ *   each drive their own reducer. An open `select` is a suggestion list plus a typed line, because
+ *   `open` means the answer need not come from the list.
+ * - **The binding projects through `matchesAnswer`.** Every answer is filled as
+ *   `fill(name, matchesAnswer(value) ? value : undefined)` after `parseValue` has coerced it to the
+ *   control's own shape, so a bare return on a field with no default binds as ABSENCE and the
+ *   form's `required` rule refuses it. A typed answer the control cannot hold binds as absence and
+ *   invalidates the field, so the walk asks again with the reason on screen.
+ * - **Visibility is honored.** A `hidden` field and a field currently in `form.disabled` are
+ *   skipped; a `locked` field renders read-only; entering a new group writes its label as a section
+ *   header.
+ * - **Refusal re-asks.** After the walk the form is submitted. A refusal re-walks only the erroring
+ *   fields the walk can edit and submits again. When every erroring field is one the walk cannot
+ *   edit — hidden, locked, or disabled — the form is abandoned instead, because asking again could
+ *   not change the answer.
+ * - **Raw-mode leak-free.** Raw mode is entered once per field and always cleaned up: on submit, on
+ *   cancel, on a throw, and when the form is abandoned under an active read.
+ * - **Non-TTY fallback.** When `input` is not a TTY, the same walk runs over `node:readline` line
+ *   input: `select` and `checkbox` print a numbered list, and `editor` reads to end of input.
  */
 export class Terminal implements TerminalInterface {
 	readonly #input: InputStreamInterface
 	readonly #output: OutputStreamInterface
+	readonly #styler: StylerInterface
+	readonly #theme: PromptTheme
 	readonly #handlers = new Map<object, (chunk: string | Uint8Array) => void>()
+	readonly #queue: string[] = []
+	#interface: Interface | undefined
+	#taker: ((line: string | undefined) => void) | undefined
+	#ended = false
 
 	constructor(options?: TerminalOptions) {
-		// Resolve each stream through its guard (§14): a present, well-shaped injected stream is used as
-		// is; otherwise the real process stream — no `as`, and an `undefined` option falls through.
+		// Resolve each stream through its guard: a present, well-shaped injected stream is used as is;
+		// otherwise the real process stream — no assertion, and an absent option falls through.
 		this.#input = isInputStream(options?.input) ? options.input : stdin
 		this.#output = isOutputStream(options?.output) ? options.output : stdout
+		this.#styler = createStyler()
+		this.#theme = createPromptTheme(options?.theme)
 	}
 
-	// === Prompt forms (PromptFormInterface)
+	// === The contract
 
-	input(options: InputOptions): Promise<string> {
-		const state = createInputState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, inputReduce)
-		return this.#lineFallback(
-			options.message,
-			state.styler,
-			state.theme,
-			undefined,
-			(answer) => {
-				const value = answer.length > 0 ? answer : (options.default ?? '')
-				return resolveValidation(options.validate)(value) === true ? { value } : undefined
-			},
-			// EOF: settle the entered line or the default — a piped stream can't be re-prompted.
-			(answer) => (answer.length > 0 ? answer : (options.default ?? '')),
+	async ask(form: FormInterface): Promise<FormValues> {
+		try {
+			await this.#walk(form, form.schema.fields)
+			for (;;) {
+				if (form.status !== 'editing') return await form.answer
+				const result = form.submit()
+				if (result.success) return await form.answer
+				this.#report(form, result.error)
+				const again = this.#editable(form, result.error)
+				// Nothing the walk can edit, or an input stream that has already ended: asking again would
+				// render the same fields and read the same answers forever, so abandon the form instead.
+				// The failures are on screen either way, so the reader sees what could not be answered.
+				if (again.length === 0 || this.#ended) {
+					form.destroy()
+					return await form.answer
+				}
+				await this.#walk(form, again)
+			}
+		} finally {
+			this.#close()
+		}
+	}
+
+	// === The walk
+
+	/**
+	 * Ask `fields` in the order given, skipping what the walk must not touch and rendering what it
+	 * must not edit. Returns early the moment the form stops being editable, so an abandoned form
+	 * ends the walk between fields as well as under an active read.
+	 */
+	async #walk(form: FormInterface, fields: readonly FormField[]): Promise<void> {
+		let group: string | undefined
+		for (const field of fields) {
+			if (form.status !== 'editing') return
+			if (field.hidden === true) continue
+			if (form.disabled.has(field.name)) continue
+			if (field.group !== group) {
+				group = field.group
+				if (group !== undefined) this.#group(form, group)
+			}
+			if (field.locked === true) {
+				this.#locked(form, field)
+				continue
+			}
+			const raw = await this.#read(form, field)
+			if (form.status !== 'editing') return
+			this.#bind(form, field, raw)
+		}
+	}
+
+	/** Write a group's label as a section header, resolving the schema's declared label and falling back to the group's own name. */
+	#group(form: FormInterface, name: string): void {
+		const label = form.schema.groups?.find((group) => group.name === name)?.label ?? name
+		this.#output.write(`${LINE_FEED}${groupHeader(this.#styler, this.#theme, label)}${LINE_FEED}`)
+	}
+
+	/** Render a locked field read-only — its label, its mark, and the answer the form already holds. */
+	#locked(form: FormInterface, field: FormField): void {
+		const line = lockedLine(
+			this.#styler,
+			this.#theme,
+			field.label ?? field.name,
+			valueToText(form.values[field.name]),
 		)
+		this.#output.write(`${line}${LINE_FEED}`)
 	}
 
-	password(options: PasswordOptions): Promise<string> {
-		const state = createPasswordState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, passwordReduce)
-		return this.#lineFallback(
-			options.message,
-			state.styler,
-			state.theme,
-			undefined,
-			(answer) =>
-				resolveValidation(options.validate)(answer) === true ? { value: answer } : undefined,
-			// EOF: settle the entered secret (or '') — a piped stream can't be re-prompted.
-			(answer) => answer,
-			// A degraded TTY (isTTY but no setRawMode) must never echo the secret being typed.
-			true,
-		)
+	/** Read one field through the reducer its control names, resolving the raw answer the binding projects. */
+	#read(form: FormInterface, field: FormField): Promise<FieldValue | undefined> {
+		if (field.control === 'password') return this.#password(form, field)
+		if (field.control === 'confirm') return this.#confirm(form, field)
+		if (field.control === 'editor') return this.#editor(form, field)
+		if (field.control === 'select') return this.#select(form, field)
+		if (field.control === 'checkbox') return this.#checkbox(form, field)
+		if (field.control === 'file') return this.#file(form, field)
+		return this.#text(form, field)
 	}
 
-	confirm(options: ConfirmOptions): Promise<boolean> {
-		const state = createConfirmState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, confirmReduce)
-		return this.#lineFallback(
-			options.message,
-			state.styler,
-			state.theme,
-			state.hint,
-			(answer) => {
-				const normalized = answer.trim().toLowerCase()
-				if (normalized.length === 0) return { value: options.default ?? false }
-				if (normalized === 'y' || normalized === 'yes') return { value: true }
-				if (normalized === 'n' || normalized === 'no') return { value: false }
-				return undefined
-			},
-			// EOF: settle the default — a piped stream can't be re-prompted for a y/n.
-			() => options.default ?? false,
-		)
+	/**
+	 * Bind one raw answer to the form — the single binding, and the only place this driver writes a
+	 * value. `parseValue` coerces the raw answer to the control's own shape and `matchesAnswer`
+	 * projects a blank one to absence, which is what keeps `required` refusing a bare return. A raw
+	 * answer the control cannot hold binds as absence and invalidates the field, so the field comes
+	 * back on the next pass carrying the reason rather than vanishing silently.
+	 */
+	#bind(form: FormInterface, field: FormField, raw: FieldValue | undefined): void {
+		form.touch(field.name)
+		const value = raw === undefined ? undefined : parseValue(field, raw)
+		form.fill(field.name, matchesAnswer(value) ? value : undefined)
+		if (value === undefined && matchesAnswer(raw)) form.invalidate(field.name, REFUSAL_MESSAGE)
 	}
 
-	select(options: SelectOptions): Promise<string> {
-		const state = createSelectState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, selectReduce)
-		return this.#listFallback(
-			options.message,
-			state.styler,
-			state.theme,
-			state.choices,
-			state.hint ?? FALLBACK_SELECT_HINT,
-			(line) => {
-				const index = Number.parseInt(line.trim(), 10) - 1
-				const choice = state.choices[index]
-				return choice === undefined ? undefined : { value: choice.value }
-			},
-			// EOF: no choice was picked — settle the empty string (a piped stream can't be re-prompted).
-			'',
-		)
+	/** The erroring fields the walk can ask again — every field the walk skips or renders read-only is excluded, because a second pass could not change its answer. */
+	#editable(form: FormInterface, errors: readonly FieldError[]): readonly FormField[] {
+		const fields: FormField[] = []
+		for (const error of errors) {
+			const field = form.field(error.field)
+			if (field === undefined) continue
+			if (field.hidden === true || field.locked === true) continue
+			if (form.disabled.has(field.name)) continue
+			if (fields.some((held) => held.name === field.name)) continue
+			fields.push(field)
+		}
+		return fields
 	}
 
-	checkbox(options: CheckboxOptions): Promise<readonly string[]> {
-		const state = createCheckboxState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, checkboxReduce)
-		return this.#listFallback(
-			options.message,
-			state.styler,
-			state.theme,
-			state.choices,
-			state.hint ?? FALLBACK_CHECKBOX_HINT,
-			(line) => {
-				const indices = line
-					.split(',')
-					.map((part) => Number.parseInt(part.trim(), 10) - 1)
-					.filter((index) => index >= 0 && index < state.choices.length)
-				if (options.min !== undefined && indices.length < options.min) return undefined
-				if (options.max !== undefined && indices.length > options.max) return undefined
-				const values = indices
-					.map((index) => state.choices[index]?.value)
-					.filter((value): value is string => value !== undefined)
-				return { value: values }
-			},
-			// EOF: nothing selected — settle the empty list (a piped stream can't be re-prompted).
-			[],
-		)
+	/** Write every failure the submit reported, each against its field's label, before the walk asks again. */
+	#report(form: FormInterface, errors: readonly FieldError[]): void {
+		for (const error of errors) {
+			const label = form.field(error.field)?.label ?? error.field
+			const line = errorLine(this.#styler, this.#theme, `${label}: ${error.message}`)
+			this.#output.write(`${line}${LINE_FEED}`)
+		}
 	}
 
-	editor(options: EditorOptions): Promise<string> {
-		const state = createEditorState(options)
-		if (rawCapable(this.#input)) return this.#drive(state, editorReduce)
-		return this.#editorFallback(state)
+	// === The controls
+
+	/** Read a field as one line of text — `text` itself and the six controls a terminal has no widget for. */
+	#text(form: FormInterface, field: FormField): Promise<string> {
+		const state = createInputState(fieldToText(field), this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, inputReduce)
+		return this.#line(form, state.message, state.default)
+	}
+
+	/** Read a secret — masked live in raw mode, and read without echo through readline on a stream that cannot enter it. */
+	#password(form: FormInterface, field: PasswordField): Promise<string> {
+		const state = createPasswordState(field, this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, passwordReduce)
+		return this.#prompt(form, promptHeader(this.#styler, this.#theme, state.message))
+	}
+
+	/**
+	 * Read a yes or no. The fallback accepts `y` / `yes` / `n` / `no` in any case and takes the
+	 * field's default for a bare line; anything else is returned as typed, so the binding refuses it
+	 * and the walk asks again rather than silently reading it as no.
+	 */
+	async #confirm(form: FormInterface, field: ConfirmField): Promise<FieldValue> {
+		const state = createConfirmState(field, this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, confirmReduce)
+		const header = hintedHeader(this.#styler, this.#theme, state.message, FALLBACK_CONFIRM_HINT)
+		const line = await this.#prompt(form, header)
+		const answer = line.trim().toLowerCase()
+		if (answer.length === 0) return state.default
+		if (answer === 'y' || answer === 'yes') return true
+		if (answer === 'n' || answer === 'no') return false
+		return line.trim()
+	}
+
+	/** Read text over many lines — ctrl-d finishes in raw mode, and end of input finishes on a piped stream. */
+	#editor(form: FormInterface, field: EditorField): Promise<string> {
+		const state = createEditorState(field, this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, editorReduce)
+		return this.#block(form, state.message, state.default)
+	}
+
+	/**
+	 * Read one choice. A disabled choice is named above the list and never offered, because the form
+	 * refuses its value at every door. An open select is a suggestion list plus a typed line, since
+	 * `open` admits an answer the list does not offer; a closed select with nothing left to offer
+	 * resolves absence and lets the form's own rules report it.
+	 */
+	async #select(form: FormInterface, field: SelectField): Promise<FieldValue | undefined> {
+		const choices = enabledChoices(field.choices)
+		this.#unavailable(field.choices)
+		if (field.open === true) {
+			if (choices.length > 0) {
+				this.#output.write(`${suggestionLine(this.#styler, this.#theme, choices)}${LINE_FEED}`)
+			}
+			return this.#text(form, field)
+		}
+		if (choices.length === 0) return undefined
+		const state = createSelectState({ ...field, choices }, this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, selectReduce)
+		this.#list(state.message, choices)
+		const line = await this.#prompt(form, this.#hint(`${FALLBACK_SELECT_HINT}:`))
+		return choices[Number.parseInt(line.trim(), 10) - 1]?.value
+	}
+
+	/**
+	 * Read any number of choices. Disabled choices are named above the list and never offered, so a
+	 * box the form would refuse can never be ticked. An empty answer is an answered "none of them",
+	 * which is what `matchesAnswer` says an empty list means.
+	 */
+	async #checkbox(form: FormInterface, field: CheckboxField): Promise<FieldValue> {
+		const choices = enabledChoices(field.choices)
+		this.#unavailable(field.choices)
+		const state = createCheckboxState({ ...field, choices }, this.#styler, this.#theme)
+		if (rawCapable(this.#input)) return this.#drive(form, state, checkboxReduce)
+		this.#list(state.message, choices)
+		const line = await this.#prompt(form, this.#hint(`${FALLBACK_CHECKBOX_HINT}:`))
+		return line
+			.split(',')
+			.map((part) => choices[Number.parseInt(part.trim(), 10) - 1]?.value)
+			.filter((value): value is string => value !== undefined)
+	}
+
+	/**
+	 * Read file paths — names only, because bytes never enter a form. A `multiple` field collects one
+	 * path per line until a blank one, and a single field takes one. No path at all is absence rather
+	 * than an empty list, because the reader answered a blank line.
+	 */
+	async #file(form: FormInterface, field: FileField): Promise<FieldValue | undefined> {
+		if (field.multiple === true) this.#output.write(`${this.#hint(FILE_HINT)}${LINE_FEED}`)
+		const paths: string[] = []
+		for (;;) {
+			const entry = await this.#text(form, field)
+			if (entry.length === 0) break
+			paths.push(entry)
+			if (field.multiple !== true || this.#ended) break
+		}
+		return paths.length > 0 ? paths : undefined
+	}
+
+	/** Name the choices a field shows but refuses, above the list the walk drives. */
+	#unavailable(choices: readonly FieldChoice[]): void {
+		const refused = disabledChoices(choices)
+		if (refused.length === 0) return
+		this.#output.write(`${unavailableLine(this.#styler, this.#theme, refused)}${LINE_FEED}`)
+	}
+
+	/** Write a field's header above its numbered choice list — the non-TTY presentation of a choice field. */
+	#list(message: string, choices: readonly FieldChoice[]): void {
+		const header = promptHeader(this.#styler, this.#theme, message)
+		const list = numberedList(this.#styler, this.#theme, choices)
+		this.#output.write(`${header}${LINE_FEED}${list}${LINE_FEED}`)
+	}
+
+	/** Paint one line of supplementary instruction through the `hint` role. */
+	#hint(text: string): string {
+		return this.#styler.render(this.#theme.roles.hint, text)
 	}
 
 	// === The raw-mode kernel
@@ -193,7 +364,7 @@ export class Terminal implements TerminalInterface {
 	 * The irreducible Node raw-mode primitive — the ONLY place raw mode is touched. Switches the input
 	 * into raw mode (each keypress delivered immediately, no echo), resumes its flow, and subscribes
 	 * `handler` to `'data'`. The paired {@link #leaveRaw} operation unsubscribes the exact handler,
-	 * leaves raw mode, and pauses the stream on submit, cancel, or throw.
+	 * leaves raw mode, and pauses the stream on submit, cancel, abandon, or throw.
 	 */
 	#enterRaw(token: object, handler: (chunk: string | Uint8Array) => void): void {
 		this.#handlers.set(token, handler)
@@ -212,22 +383,25 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Drive ONE interactive prompt over raw-mode stdin — the generic engine all six TTY prompts share.
-	 * Renders the reducer's initial `view`, enters raw mode once, and on each keypress runs `parseKey`
-	 * → `reduce` → an in-place re-render; on `submit` it cleans up + resolves the reducer's `value`, on
-	 * `cancel` (ctrl-c) it cleans up + rejects a {@link TerminalError} (`CANCEL`). Raw mode is entered
-	 * exactly once and cleaned up on every exit path (submit / cancel / a throw inside a step), so no
-	 * raw mode and no `'data'` listener ever leak. The cursor is hidden for the duration and restored
-	 * on exit.
+	 * Drive ONE field over raw-mode stdin — the generic engine every interactive control shares.
+	 * Renders the reducer's initial view, enters raw mode once, and on each keypress runs `parseKey` →
+	 * `reduce` → an in-place re-render; on `submit` it cleans up and resolves the reducer's value, on
+	 * `cancel` (ctrl-c) it cleans up and rejects a {@link TerminalError} coded `CANCEL`. Abandoning
+	 * the form ends the read too, through the rejection of its own `answer`. Raw mode is entered
+	 * exactly once and cleaned up on every exit path, so no raw mode and no `'data'` listener ever
+	 * leaks. The cursor is hidden for the duration and restored on exit.
 	 */
-	#drive<T, S>(initial: S, reduce: (state: S, key: KeyEvent) => PromptStep<T, S>): Promise<T> {
+	#drive<T, S>(
+		form: FormInterface,
+		initial: S,
+		reduce: (state: S, key: KeyEvent) => PromptStep<T, S>,
+	): Promise<T> {
 		return new Promise<T>((resolve, reject) => {
-			const state = initial
 			// Render the first view, tracking how many lines it spans so the next redraw climbs over them.
 			this.#output.write(CURSOR_HIDE)
 			let firstView: string
 			try {
-				firstView = reduce(state, parseKey('')).view
+				firstView = reduce(initial, parseKey('')).view
 				this.#output.write(firstView)
 			} catch (error) {
 				// Raw mode was never entered yet, but the cursor was hidden — restore it before rejecting.
@@ -238,13 +412,16 @@ export class Terminal implements TerminalInterface {
 			const token = {}
 			const handler = this.#createHandler(
 				token,
-				state,
+				initial,
 				lineCount(firstView),
 				reduce,
 				resolve,
 				reject,
 			)
 			this.#enterRaw(token, handler)
+			// An abandoned form ends the read: its own `answer` rejects, so release the terminal and fail
+			// this field with the form's error. A read that already finished holds no token and is a no-op.
+			void form.answer.catch((error: unknown) => this.#interrupt(token, reject, error))
 		})
 	}
 
@@ -275,8 +452,8 @@ export class Terminal implements TerminalInterface {
 				else if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
 				else reject(new TerminalError('DRIVER', 'submit produced no value'))
 			} catch (error) {
-				// A throw inside the reducer/validator/styler: tear down raw mode + the listener,
-				// restore the cursor exactly as the normal exit path does, then reject.
+				// A throw inside the reducer/styler: tear down raw mode + the listener, restore the cursor
+				// exactly as the normal exit path does, then reject.
 				this.#leaveRaw(token)
 				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
 				reject(error)
@@ -284,172 +461,134 @@ export class Terminal implements TerminalInterface {
 		}
 	}
 
-	/** Redraw a prompt view in place — climb over the previous view's `previousLines`, clear, and write the new view (the pure cursor-math is {@link redrawPrefix}). */
+	/** End an active read that the form outlived — release raw mode exactly as a submit does, then fail the read with the form's own error. */
+	#interrupt(token: object, reject: (reason?: unknown) => void, error: unknown): void {
+		if (!this.#handlers.has(token)) return
+		this.#leaveRaw(token)
+		this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+		reject(error)
+	}
+
+	/** Redraw a field view in place — climb over the previous view's `previousLines`, clear, and write the new view (the pure cursor-math is {@link redrawPrefix}). */
 	#render(view: string, previousLines: number): void {
 		this.#output.write(`${redrawPrefix(previousLines)}${view}`)
 	}
 
 	// === Non-TTY fallbacks (node:readline line input)
 
-	/**
-	 * Read a single line via `node:readline` and accept it through `take` — the non-TTY line-input
-	 * fallback shared by `input` / `password` / `confirm`. Re-prompts until `take` returns a value (so
-	 * validation still gates), writing the prompt header each round. A piped stream cannot enter raw
-	 * mode, so there is no masking / live edit — just a validated line read.
-	 *
-	 * @remarks
-	 * The re-prompt loop is bounded by end-of-input: once the stream reaches EOF (a piped stream that
-	 * ran out, or one with no trailing newline) it can never deliver another line, so re-prompting
-	 * would SPIN. On EOF the loop accepts the final line through `take` if it passes, else returns the
-	 * caller's `eof` fallback (the default / empty value) — the prompt always settles, never spins.
-	 */
-	async #lineFallback<T>(
-		message: string,
-		styler: StylerInterface,
-		theme: PromptTheme,
-		hint: string | undefined,
-		take: (answer: string) => { readonly value: T } | undefined,
-		eof: (answer: string) => T,
-		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
-		masked = false,
-	): Promise<T> {
-		for (;;) {
-			const { answer, ended } = await this.#question(
-				`${hintedHeader(styler, theme, message, hint)} `,
-				masked,
-			)
-			const accepted = take(answer)
-			if (accepted !== undefined) return accepted.value
-			if (ended) return eof(answer)
-		}
+	/** Read one line for a text-shaped field, taking the field's default when the line is bare. */
+	async #line(form: FormInterface, message: string, seed: string): Promise<string> {
+		const answer = await this.#prompt(form, promptHeader(this.#styler, this.#theme, message))
+		return answer.length > 0 ? answer : seed
 	}
 
 	/**
-	 * Print a numbered choice list, then read one readline line and accept it through `take` — the
-	 * non-TTY fallback for `select` / `checkbox`. The list is rendered once; the user types the
-	 * number(s); `take` parses + gates the line, re-prompting until it returns a value. Each index is
-	 * painted by the `muted` role and each choice name by the `content` role.
+	 * Read a whole block for an `editor` field — a piped stream has no ctrl-d keypress, so end of
+	 * input is the terminator. It drains every remaining line, which is why nothing after an `editor`
+	 * field can be asked on the same stream.
 	 */
-	async #listFallback<T>(
-		message: string,
-		styler: StylerInterface,
-		theme: PromptTheme,
-		choices: ReadonlyArray<{ readonly name: string }>,
-		hint: string,
-		take: (line: string) => { readonly value: T } | undefined,
-		eof: T,
-	): Promise<T> {
-		let list = `${promptHeader(styler, theme, message)}\n`
-		choices.forEach((choice, index) => {
-			list += `  ${styler.render(theme.roles.muted, `${String(index + 1)})`)} ${styler.render(theme.roles.content, choice.name)}\n`
-		})
-		this.#output.write(list)
-		for (;;) {
-			const { answer, ended } = await this.#question(
-				`${styler.render(theme.roles.hint, `${hint}:`)} `,
-			)
-			const accepted = take(answer)
-			if (accepted !== undefined) return accepted.value
-			// EOF on a piped stream — no further line can arrive, so settle the empty fallback rather
-			// than spin re-prompting an exhausted stream (a select with no answer ⇒ '', checkbox ⇒ []).
-			if (ended) return eof
-		}
-	}
-
-	/**
-	 * The non-TTY `editor` fallback — read lines until EOF (the readline `close`), join them, and fall
-	 * back to the default when empty. A piped stream has no ctrl-d keypress, so end-of-input is the
-	 * natural terminator.
-	 *
-	 * @remarks
-	 * Single-pass by necessity: `#lines` drains the whole stream to EOF in one read, so there is no
-	 * second block to re-prompt for (re-reading an exhausted stream returns nothing forever). Validation
-	 * is still applied; on a validation FAILURE the best-effort block is returned rather than spinning
-	 * on the consumed stream — the EOF analogue of the raw-mode editor's re-edit, which a piped stream
-	 * cannot offer.
-	 */
-	async #editorFallback(state: EditorState): Promise<string> {
-		this.#output.write(
-			`${hintedHeader(state.styler, state.theme, state.message, state.hint ?? '(EOF to finish)')}\n`,
-		)
-		const text = await this.#lines()
-		return text.length > 0 ? text : state.default
-	}
-
-	/**
-	 * Ask one readline question on the resolved streams and resolve the typed (un-trimmed) line plus
-	 * whether the stream ENDED. EOF (the readline `close`) before `rl.question`'s callback fires
-	 * resolves instead of hanging — a piped stream commonly ends WITHOUT a trailing newline (or is
-	 * empty), and the `question` callback only fires on a NEWLINE-terminated line, so without this the
-	 * prompt would wait forever. The trailing unterminated line is still recovered: readline emits it
-	 * as a `'line'` event just before `'close'`, so the last seen line (or `''` for a truly empty
-	 * stream) is returned with `ended: true`. The `ended` flag lets the fallback loops settle rather
-	 * than re-prompt an exhausted stream (which would SPIN). Settling is one-shot (a `close` after a
-	 * delivered line is ignored, so a normal newline-terminated line reports `ended: false`).
-	 */
-	#question(
-		prompt: string,
-		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
-		masked = false,
-	): Promise<{ readonly answer: string; readonly ended: boolean }> {
-		const rl = createInterface(this.#readline(masked))
-		return new Promise<{ readonly answer: string; readonly ended: boolean }>((resolve) => {
-			let last = ''
-			const settle = this.#createQuestionSettler(rl, resolve)
-			// Track the most recent line so an EOF-on-`close` can recover an unterminated final line.
-			rl.on('line', (line) => {
-				last = line
-			})
-			rl.question(prompt, (answer) => settle(answer, false))
-			// EOF before a completed question: settle the recovered partial line (or '') as ended.
-			rl.on('close', () => settle(last, true))
-		})
-	}
-
-	#createQuestionSettler(
-		rl: ReturnType<typeof createInterface>,
-		resolve: (value: { readonly answer: string; readonly ended: boolean }) => void,
-	): (answer: string, ended: boolean) => void {
-		let settled = false
-		return (answer, ended) => {
-			if (settled) return
-			settled = true
-			rl.close()
-			resolve({ answer, ended })
-		}
-	}
-
-	/** Read every line from the input until EOF and resolve them joined by newlines (the editor fallback's reader). */
-	#lines(): Promise<string> {
-		const rl = createInterface(this.#readline())
+	async #block(form: FormInterface, message: string, seed: string): Promise<string> {
+		const header = hintedHeader(this.#styler, this.#theme, message, FALLBACK_EDITOR_HINT)
+		this.#output.write(`${header}${LINE_FEED}`)
 		const collected: string[] = []
-		return new Promise<string>((resolve) => {
-			rl.on('line', (line) => collected.push(line))
-			rl.on('close', () => resolve(collected.join('\n')))
+		for (;;) {
+			const line = await this.#next(form)
+			if (line === undefined) break
+			collected.push(line)
+		}
+		const text = collected.join('\n')
+		return text.length > 0 ? text : seed
+	}
+
+	/** Write one field's header and read back the line the reader answers it with, or `''` once the stream has ended. */
+	async #prompt(form: FormInterface, header: string): Promise<string> {
+		this.#output.write(`${header} `)
+		const line = await this.#next(form)
+		return line ?? ''
+	}
+
+	/**
+	 * Take the next line the input carries — from the buffer when the reader has already read ahead,
+	 * and otherwise by waiting for one. It resolves ABSENCE once the stream has ended, so a walk over
+	 * an exhausted stream settles instead of waiting forever, and it rejects when the form is
+	 * abandoned, so an unanswerable read ends with the form rather than outliving it.
+	 */
+	#next(form: FormInterface): Promise<string | undefined> {
+		const buffered = this.#queue.shift()
+		if (buffered !== undefined) return Promise.resolve(buffered)
+		if (this.#ended) return Promise.resolve(undefined)
+		this.#reader()
+		return new Promise<string | undefined>((resolve, reject) => {
+			this.#taker = resolve
+			void form.answer.catch((error: unknown) => {
+				if (this.#taker !== resolve) return
+				this.#taker = undefined
+				reject(error)
+			})
 		})
 	}
 
 	/**
-	 * Narrow the resolved streams to the `node:readline` `createInterface` boundary (§14, never an
-	 * `as`). The non-TTY fallback only runs on a real piped `process.stdin` (or a `PassThrough` a test
-	 * injects), both genuine readables; a minimal non-readable fake reaching here means the fallback
-	 * was driven with a stream it cannot use, which fails loudly rather than silently.
+	 * Open the walk's ONE readline interface, or keep the open one. A whole form is many questions
+	 * over one stream, and an interface reads ahead: a fresh interface per question would swallow
+	 * every line it read past the one it was asked for, so the walk holds a single reader and buffers
+	 * what arrives early. It is closed when the walk ends, so the process is free to exit.
 	 */
-	#readline(
-		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
-		masked = false,
-	): { input: NodeJS.ReadableStream; output?: NodeJS.WritableStream; terminal?: boolean } {
-		// Bind to locals first — a guard narrows a local, not a `#private` field access.
+	#reader(): void {
+		if (this.#interface !== undefined) return
+		const rl = createInterface(this.#readline())
+		rl.on('line', (line) => this.#accept(line))
+		rl.on('close', () => this.#finish())
+		this.#interface = rl
+	}
+
+	/** Hand a line to whoever is waiting for it, or buffer it for the next question. */
+	#accept(line: string): void {
+		const taker = this.#taker
+		if (taker === undefined) {
+			this.#queue.push(line)
+			return
+		}
+		this.#taker = undefined
+		taker(line)
+	}
+
+	/** Record that no further line can arrive and release whoever was waiting for one. */
+	#finish(): void {
+		this.#ended = true
+		const taker = this.#taker
+		if (taker === undefined) return
+		this.#taker = undefined
+		taker(undefined)
+	}
+
+	/** Close the walk's reader and release a waiting question — the walk is over, so the stream must stop holding the process open. */
+	#close(): void {
+		const taker = this.#taker
+		this.#taker = undefined
+		if (taker !== undefined) taker(undefined)
+		const rl = this.#interface
+		if (rl === undefined) return
+		this.#interface = undefined
+		// Drop the close listener first: this close is the walk ending, not the stream ending, and
+		// recording it as end of input would refuse the next walk its input.
+		rl.removeAllListeners('close')
+		rl.close()
+	}
+
+	/**
+	 * Narrow the resolved input to the `node:readline` `createInterface` boundary, never an assertion.
+	 * The fallback only runs on a real piped `process.stdin` (or a `PassThrough` a test injects), both
+	 * genuine readables; a minimal non-readable fake reaching here means the walk was driven with a
+	 * stream it cannot use, which fails loudly rather than silently. `terminal: false` leaves readline
+	 * as a line decoder and nothing else: the walk writes every prompt itself, through the same output
+	 * every other line goes to, so nothing is written twice and a secret is never echoed.
+	 */
+	#readline(): { input: NodeJS.ReadableStream; terminal: boolean } {
+		// Bind to a local first — a guard narrows a local, not a `#private` field access.
 		const input = this.#input
-		const output = this.#output
 		if (!isReadable(input))
 			throw new TerminalError('DRIVER', 'Terminal fallback requires a readable input stream')
-		// `terminal: false` disables readline's own echo/line-editing, so a masked (password) answer is
-		// never rendered on a TTY that lacks `setRawMode` (the raw-mode `#drive` path already masks it).
-		return {
-			input,
-			...(isWritable(output) ? { output } : {}),
-			...(masked ? { terminal: false } : {}),
-		}
+		return { input, terminal: false }
 	}
 }
