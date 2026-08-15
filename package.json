@@ -81,6 +81,7 @@
 		"@orkestrel/contract": "^0.0.11",
 		"@orkestrel/database": "^0.0.9",
 		"@orkestrel/emitter": "^0.0.6",
+		"@orkestrel/form": "file:vendor/orkestrel-form-0.0.1.tgz",
 		"@orkestrel/sse": "^0.0.5"
 	},
 	"devDependencies": {
