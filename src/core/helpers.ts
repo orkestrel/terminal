@@ -416,11 +416,11 @@ export function createInputState(options: InputOptions): InputState {
 	}
 }
 
-/** Render an {@link InputState} as a styled view — the header, the typed value (or the default painted as a hint), and any error. */
+/** Render an {@link InputState} as a styled view — the header, the typed value painted by the `content` role (or the default painted as a hint), and any error. */
 export function inputView(state: InputState): string {
 	const shown =
 		state.value.length > 0
-			? state.value
+			? state.styler.render(state.theme.roles.content, state.value)
 			: state.styler.render(state.theme.roles.hint, state.default)
 	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
 	return state.error === undefined
@@ -474,9 +474,12 @@ export function createPasswordState(options: PasswordOptions): PasswordState {
 	}
 }
 
-/** Render a {@link PasswordState} as a styled view — the header, the value masked to `mask` repeated, and any error. */
+/** Render a {@link PasswordState} as a styled view — the header, the value masked to `mask` repeated and painted by the `content` role, and any error. */
 export function passwordView(state: PasswordState): string {
-	const masked = state.mask.repeat(state.value.length)
+	const masked = state.styler.render(
+		state.theme.roles.content,
+		state.mask.repeat(state.value.length),
+	)
 	const head = `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
 	return state.error === undefined
 		? head
@@ -597,7 +600,9 @@ export function selectView(state: SelectState): string {
 		const marker = active
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.selected)
 			: state.styler.render(state.theme.roles.muted, state.theme.icons.dot)
-		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
+		const label = active
+			? state.styler.render(state.theme.roles.focus, choice.name)
+			: state.styler.render(state.theme.roles.content, choice.name)
 		const description =
 			choice.description === undefined
 				? ''
@@ -673,7 +678,9 @@ export function checkboxView(state: CheckboxState): string {
 		const box = ticked
 			? state.styler.render(state.theme.roles.selected, state.theme.icons.checked)
 			: state.styler.render(state.theme.roles.muted, state.theme.icons.unchecked)
-		const label = active ? state.styler.render(state.theme.roles.focus, choice.name) : choice.name
+		const label = active
+			? state.styler.render(state.theme.roles.focus, choice.name)
+			: state.styler.render(state.theme.roles.content, choice.name)
 		const description =
 			choice.description === undefined
 				? ''
@@ -779,8 +786,8 @@ export function createEditorState(options: EditorOptions): EditorState {
 
 /**
  * Render an {@link EditorState} as a MULTI-LINE styled view — the header with its finish hint, the
- * committed lines, the in-progress line, and any error. A supplied `hint` replaces
- * `(Ctrl+D to finish)` in full; the finish key stays ctrl-d.
+ * committed lines painted by the `content` role, the in-progress line, and any error. A supplied
+ * `hint` replaces `(Ctrl+D to finish)` in full; the finish key stays ctrl-d.
  */
 export function editorView(state: EditorState): string {
 	const head = hintedHeader(
@@ -790,7 +797,8 @@ export function editorView(state: EditorState): string {
 		state.hint ?? '(Ctrl+D to finish)',
 	)
 	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
-	const body = [...state.lines, `${pointer} ${state.current}`]
+	const committed = state.lines.map((line) => state.styler.render(state.theme.roles.content, line))
+	const body = [...committed, `${pointer} ${state.styler.render(state.theme.roles.content, state.current)}`]
 	const view = [head, ...body].join('\n')
 	return state.error === undefined
 		? view

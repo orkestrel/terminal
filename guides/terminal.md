@@ -58,7 +58,7 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `normalizeChoice`            | function  | Normalize a select choice input into a full `PromptChoice` (a bare string becomes both `name` and `value`).                                                                |
 | `normalizeCheckboxChoice`    | function  | Normalize a checkbox choice input into a full `CheckboxChoice` (a bare string becomes both `name` and `value`).                                                            |
 | `PromptIcon`                 | type      | One glyph slot a view draws — `question` / `pointer` / `dot` / `selected` / `checked` / `unchecked` / `success` / `error`.                                                 |
-| `PromptRole`                 | type      | One semantic styling slot — `question` / `pointer` / `message` / `success` / `error` / `selected` / `focus` / `hint` / `muted` / `description`.                            |
+| `PromptRole`                 | type      | One semantic styling slot — `question` / `pointer` / `message` / `content` / `success` / `error` / `selected` / `focus` / `hint` / `muted` / `description`.                |
 | `PromptTheme`                | interface | A prompt's resolved presentation — a glyph per `PromptIcon` and a console `Style` per `PromptRole` (data-only, deeply frozen, wire-safe).                                  |
 | `PromptThemeOptions`         | interface | The PARTIAL theme an option bag carries — every icon and role optional, each role a console `Style`, merged leaf by leaf over the default (data-only).                     |
 | `createPromptTheme`          | function  | Merge a partial theme over `DEFAULT_PROMPT_THEME` — supplied leaves replace, the rest default; each supplied role is snapshotted through console's `freezeStyle`.          |
@@ -405,12 +405,11 @@ only.
 rest of a view is fixed by design: its layout (the single spaces between the header, the pointer and
 the value, the two-space gap before a choice's `description` on its row, the parentheses around the
 computed confirm group — a supplied `hint` replaces the group in full, parentheses included — and
-the `N selected` checkbox summary); its unstyled primary content (the typed value, mask characters,
-unfocused choice labels, committed editor lines, and fallback choice names); the server's cursor and
-clear mechanics (`CURSOR_HIDE` / `CURSOR_SHOW` / `CLEAR_DOWN` / `CSI_UP` are constants, not options);
-and the non-TTY fallback's numbered-list format (`  1) label` per choice, then the hint line it reads
-the answer on). Read these as fixed rather than as extension points; build a fully bespoke view from
-the exported reducers and view helpers instead.
+the `N selected` checkbox summary); the server's cursor and clear mechanics (`CURSOR_HIDE` /
+`CURSOR_SHOW` / `CLEAR_DOWN` / `CSI_UP` are constants, not options); and the non-TTY fallback's
+numbered-list format (`  1) label` per choice, then the hint line it reads the answer on). Read
+these as fixed rather than as extension points; build a fully bespoke view from the exported
+reducers and view helpers instead.
 
 ## Patterns
 
@@ -630,7 +629,12 @@ editLine('hi', parseKey('!')) // 'hi!' — undefined when the key doesn't edit
 ### Re-theming a prompt (glyphs and role colors)
 
 ```ts
-import { createPromptTheme, createSelectState, selectView } from '@orkestrel/terminal'
+import {
+	createPromptTheme,
+	createSelectState,
+	DEFAULT_PROMPT_THEME,
+	selectView,
+} from '@orkestrel/terminal'
 
 // A theme is DATA: a glyph per icon slot, a console `Style` per semantic role. Every slot not
 // named keeps its default, and the result is deeply frozen through console's `freezeStyle`.
@@ -656,6 +660,13 @@ selectView(select) // the yellow '=>' cursor, everything else at its default
 
 // A role is a whole Style, so it can carry a background — which a styler accessor cannot name.
 createPromptTheme({ roles: { error: { foreground: 'white', background: 'red', attributes: [] } } })
+
+// `content` is the primary-content role: the typed value, the mask run, an unfocused choice label,
+// a committed editor line, and the fallback's choice names. Its default is the EMPTY style, so an
+// unthemed prompt renders that content as bare text and naming the role is what moves it.
+DEFAULT_PROMPT_THEME.roles.content // { attributes: [] } — bare text
+createPromptTheme({ roles: { content: { attributes: ['underline'] } } }).roles.content
+// { attributes: ['underline'] } — every typed value and unfocused label now underlined
 ```
 
 ### Replacing a prompt's hint (the words, not the keys)

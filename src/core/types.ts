@@ -141,20 +141,21 @@ export type PromptIcon =
  * - `question` — the leading question mark on an active prompt's line.
  * - `pointer` — the cursor before the input / the focused choice row.
  * - `message` — the prompt's own question text.
+ * - `content` — the prompt's primary content: the typed value, the mask run, an unfocused choice
+ *   label, a committed editor line, a fallback choice name. Its default is the EMPTY style, so an
+ *   unthemed prompt renders this content as bare text.
  * - `success` / `error` — a resolved prompt's mark / a validation-error mark and its message.
  * - `selected` — a chosen value: the checked box, the focused select marker, the confirm default letter.
  * - `focus` — the label of the row the cursor is on.
  * - `hint` — dim supplementary text: a default value, a key hint, a selection count, a committed answer.
  * - `muted` — a dim off-state mark: an unfocused select marker, an unchecked box, a fallback index.
  * - `description` — a choice's one-line description.
- *
- * Primary content is unstyled and is not a theme target: typed values, mask characters, unfocused
- * choice labels, committed editor lines, and fallback choice names.
  */
 export type PromptRole =
 	| 'question'
 	| 'pointer'
 	| 'message'
+	| 'content'
 	| 'success'
 	| 'error'
 	| 'selected'

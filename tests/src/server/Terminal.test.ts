@@ -815,6 +815,18 @@ describe('Terminal — non-TTY fallback (node:readline)', () => {
 		expect(editor).not.toContain('(EOF to finish)')
 	})
 
+	it('paints the fallback choice names with the content role', async () => {
+		const output = await captureFallback(['1\n'], (terminal) =>
+			terminal.select({
+				message: 'Pick',
+				choices: ['red', 'green'],
+				theme: { roles: { content: { foreground: 'blue', attributes: ['underline'] } } },
+			}),
+		)
+		expect(output).toContain(`  ${ESC}[2m1)${ESC}[0m ${ESC}[4;34mred${ESC}[0m\n`)
+		expect(output).toContain(`  ${ESC}[2m2)${ESC}[0m ${ESC}[4;34mgreen${ESC}[0m\n`)
+	})
+
 	it('a hint-only remap leaves fallback list indices at the muted default', async () => {
 		const output = await captureFallback(['1\n'], (terminal) =>
 			terminal.select({

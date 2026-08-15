@@ -172,12 +172,13 @@ export const PROMPT_ICONS = Object.freeze({
 /**
  * Every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
  * truth. {@link import('./helpers.js').createPromptTheme} walks it to merge a partial theme, and
- * a consumer building a complete role map reads it rather than retyping the ten names.
+ * a consumer building a complete role map reads it rather than retyping every name.
  */
 export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
 	'question',
 	'pointer',
 	'message',
+	'content',
 	'success',
 	'error',
 	'selected',
@@ -197,8 +198,9 @@ export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
  *
  * @remarks
  * The default roles reproduce the views' historical coloring exactly: `question` / `pointer` cyan,
- * `message` / `focus` bold, `success` / `selected` green, `error` red, and `hint` / `muted` /
- * `description` dim.
+ * `message` / `focus` bold, `success` / `selected` green, `error` red, `hint` / `muted` /
+ * `description` dim, and `content` the EMPTY style — an empty style renders bare text, so primary
+ * content keeps the bytes it had before it became themeable.
  * Two roles sharing a style today are still two roles — re-mapping one leaves the other alone.
  */
 export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
@@ -216,6 +218,7 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 		question: freezeStyle({ foreground: 'cyan', attributes: [] }),
 		pointer: freezeStyle({ foreground: 'cyan', attributes: [] }),
 		message: freezeStyle({ attributes: ['bold'] }),
+		content: freezeStyle({ attributes: [] }),
 		success: freezeStyle({ foreground: 'green', attributes: [] }),
 		error: freezeStyle({ foreground: 'red', attributes: [] }),
 		selected: freezeStyle({ foreground: 'green', attributes: [] }),

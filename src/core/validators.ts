@@ -1,6 +1,7 @@
 import type {
 	PendingPrompt,
 	PendingPromptStatus,
+	PromptRole,
 	PromptThemeOptions,
 	PromptType,
 	TerminalSnapshot,
@@ -86,6 +87,10 @@ export const isStyle: Guard<Style> = recordOf(
  * hostile payload degrades to the default theme rather than partially applying. Glyphs still carry
  * arbitrary text at this point — {@link import('./helpers.js').sanitizeThemeIcons} strips their
  * control bytes on dispatch.
+ *
+ * The roles shape is checked `satisfies Record<PromptRole, Guard<Style>>`, so a role added to the
+ * union without an entry here is a COMPILE error rather than a role a wire theme is silently
+ * refused for.
  */
 export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 	{
@@ -107,6 +112,7 @@ export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 				question: isStyle,
 				pointer: isStyle,
 				message: isStyle,
+				content: isStyle,
 				success: isStyle,
 				error: isStyle,
 				selected: isStyle,
@@ -114,7 +120,7 @@ export const isPromptThemeOptions: Guard<PromptThemeOptions> = recordOf(
 				hint: isStyle,
 				description: isStyle,
 				muted: isStyle,
-			},
+			} satisfies Record<PromptRole, Guard<Style>>,
 			true,
 		),
 	},

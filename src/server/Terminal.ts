@@ -327,7 +327,8 @@ export class Terminal implements TerminalInterface {
 	/**
 	 * Print a numbered choice list, then read one readline line and accept it through `take` — the
 	 * non-TTY fallback for `select` / `checkbox`. The list is rendered once; the user types the
-	 * number(s); `take` parses + gates the line, re-prompting until it returns a value.
+	 * number(s); `take` parses + gates the line, re-prompting until it returns a value. Each index is
+	 * painted by the `muted` role and each choice name by the `content` role.
 	 */
 	async #listFallback<T>(
 		message: string,
@@ -340,7 +341,7 @@ export class Terminal implements TerminalInterface {
 	): Promise<T> {
 		let list = `${promptHeader(styler, theme, message)}\n`
 		choices.forEach((choice, index) => {
-			list += `  ${styler.render(theme.roles.muted, `${String(index + 1)})`)} ${choice.name}\n`
+			list += `  ${styler.render(theme.roles.muted, `${String(index + 1)})`)} ${styler.render(theme.roles.content, choice.name)}\n`
 		})
 		this.#output.write(list)
 		for (;;) {

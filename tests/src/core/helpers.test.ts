@@ -49,6 +49,7 @@ import {
 	passing,
 	passwordReduce,
 	passwordView,
+	PROMPT_ROLES,
 	promptHeader,
 	reconstructValidationRules,
 	resolveChoices,
@@ -1864,6 +1865,14 @@ describe('isTerminalSnapshot', () => {
 // ============================================================================
 
 describe('createPromptTheme', () => {
+	// The walk list and the default theme are the two halves of the role axis: `createPromptTheme`
+	// merges a partial theme by walking PROMPT_ROLES, so a role the theme carries but the list omits
+	// is a role no consumer can override. The compiler binds the theme and the wire guard to
+	// `PromptRole`; nothing but this binds the list.
+	it('walks exactly the roles the default theme carries', () => {
+		expect(new Set(PROMPT_ROLES)).toEqual(new Set(Object.keys(DEFAULT_PROMPT_THEME.roles)))
+	})
+
 	it('resolves to the default theme when nothing is supplied', () => {
 		expect(createPromptTheme()).toEqual(DEFAULT_PROMPT_THEME)
 		expect(createPromptTheme({})).toEqual(DEFAULT_PROMPT_THEME)
@@ -2116,6 +2125,61 @@ describe('the muted role owns dim off-state glyphs', () => {
 	})
 })
 
+describe('the content role paints primary content', () => {
+	// The content default is the EMPTY style, so the default-byte pins above already prove this role
+	// renders bare. These pin the other half: a supplied style reaches every content site.
+	const theme: PromptThemeOptions = {
+		roles: { content: { foreground: 'blue', attributes: ['underline'] } },
+	}
+
+	it('input — the typed value takes the content style, the default still takes the hint role', () => {
+		const state = createInputState({ message: 'Name', default: 'Ada', theme })
+		expect(inputView({ ...state, value: 'Grace' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[4;34mGrace\x1b[0m',
+		)
+		expect(inputView(state)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[2mAda\x1b[0m',
+		)
+	})
+
+	it('password — the mask run takes the content style, and an empty run stays empty', () => {
+		const state = createPasswordState({ message: 'Secret', theme })
+		expect(passwordView({ ...state, value: 'abc' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mSecret\x1b[0m \x1b[36m›\x1b[0m \x1b[4;34m***\x1b[0m',
+		)
+		expect(passwordView(state)).toBe('\x1b[36m?\x1b[0m \x1b[1mSecret\x1b[0m \x1b[36m›\x1b[0m ')
+	})
+
+	it('select and checkbox — an unfocused choice label takes the content style, the focused one stays focus', () => {
+		expect(
+			selectView(createSelectState({ message: 'Pick', choices: ['alpha', 'beta'], theme })),
+		).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m\n\x1b[36m›\x1b[0m \x1b[32m●\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[2m○\x1b[0m \x1b[4;34mbeta\x1b[0m',
+		)
+		expect(
+			checkboxView(createCheckboxState({ message: 'Pick', choices: ['alpha', 'beta'], theme })),
+		).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m\n\x1b[36m›\x1b[0m \x1b[2m☐\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[2m☐\x1b[0m \x1b[4;34mbeta\x1b[0m\n\x1b[2m0 selected\x1b[0m',
+		)
+	})
+
+	it('editor — a committed line takes the content style', () => {
+		const state = createEditorState({ message: 'Notes', theme })
+		const typed = editorReduce(editorReduce(state, parseKey('h')).state, parseKey('\r')).state
+		expect(editorView(typed)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(Ctrl+D to finish)\x1b[0m\n\x1b[4;34mh\x1b[0m\n\x1b[36m›\x1b[0m ',
+		)
+	})
+
+	it('editor — the in-progress line takes the content style the moment it is typed', () => {
+		const state = createEditorState({ message: 'Notes', theme })
+		const typing = editorReduce(state, parseKey('x')).state
+		expect(editorView(typing)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(Ctrl+D to finish)\x1b[0m\n\x1b[36m›\x1b[0m \x1b[4;34mx\x1b[0m',
+		)
+	})
+})
+
 describe('a custom hint replaces the computed default', () => {
 	it('confirm — the whole (Y/n) group gives way, painted by the hint role', () => {
 		const state = createConfirmState({ message: 'Continue?', default: true, hint: '[press y]' })
@@ -2177,6 +2241,7 @@ describe('isStyle / isPromptThemeOptions', () => {
 			isPromptThemeOptions({ roles: { message: { foreground: 'red', attributes: ['bold'] } } }),
 		).toBe(true)
 		expect(isPromptThemeOptions({ roles: { message: { attributes: [] } } })).toBe(true)
+		expect(isPromptThemeOptions({ roles: { content: { attributes: ['underline'] } } })).toBe(true)
 		expect(isPromptThemeOptions({ icons: { pointer: 7 } })).toBe(false)
 		expect(isPromptThemeOptions({ icons: { bogus: 'x' } })).toBe(false)
 		expect(isPromptThemeOptions({ roles: { message: { attributes: ['plaid'] } } })).toBe(false)
@@ -2302,6 +2367,30 @@ describe('wire — theme and hint cross as data', () => {
 			theme: { roles: { muted: { foreground: 'yellow', attributes: ['dim'] } } },
 			message: 'Continue?',
 		})
+	})
+
+	it('accepts a wire theme naming content and paints the dispatched prompt with it', async () => {
+		const { terminal, calls } = createRecordingTerminal({ answers: { select: 'a' } })
+		const pending: PendingPrompt = {
+			id: 'p4',
+			form: 'select',
+			message: 'Pick',
+			options: {
+				choices: ['alpha', 'beta'],
+				theme: { roles: { content: { foreground: 'blue', attributes: ['underline'] } } },
+			},
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		const seen = calls.select.calls[0]?.[0]
+		expect(seen?.theme?.roles?.content).toEqual({ foreground: 'blue', attributes: ['underline'] })
+		if (seen === undefined) throw new Error('select options were not recorded')
+		// End to end: the wire theme survives the guard, reaches the local prompt's resolved theme,
+		// and the unfocused label renders with the escape bytes the remote asked for.
+		expect(selectView(createSelectState(seen))).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m\n\x1b[36m›\x1b[0m \x1b[32m●\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[2m○\x1b[0m \x1b[4;34mbeta\x1b[0m',
+		)
 	})
 
 	it('every form carries a resolved theme on its state', () => {
