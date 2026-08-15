@@ -52,40 +52,48 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `CheckboxChoice`             | interface | A checkbox choice — a `PromptChoice` plus an optional initial `checked` (data-only).                                                                                       |
 | `normalizeChoice`            | function  | Normalize a select choice input into a full `PromptChoice` (a bare string becomes both `name` and `value`).                                                                |
 | `normalizeCheckboxChoice`    | function  | Normalize a checkbox choice input into a full `CheckboxChoice` (a bare string becomes both `name` and `value`).                                                            |
-| `promptHeader`               | function  | The styled prompt-message header (`? message`) — the leading line every active prompt view shares.                                                                         |
-| `submitHeader`               | function  | The styled submit line (`✔ message`) — the committed header shown once a prompt resolves.                                                                                  |
-| `errorLine`                  | function  | The styled error line (`✖ message`) — appended beneath a view when the last submit failed validation.                                                                      |
+| `PromptIcon`                 | type      | One glyph slot a view draws — `question` / `pointer` / `dot` / `selected` / `checked` / `unchecked` / `success` / `error`.                                                 |
+| `PromptRole`                 | type      | One semantic styling slot — `question` / `pointer` / `message` / `success` / `error` / `selected` / `focus` / `hint` / `description`.                                      |
+| `PromptToken`                | type      | One styling token a role is painted with — every console `Color` except `default`, plus every `Attribute`; each names a `StylerInterface` accessor.                        |
+| `PromptTheme`                | interface | A prompt's resolved presentation — a glyph per `PromptIcon` and a token list per `PromptRole` (data-only, deeply frozen, wire-safe).                                       |
+| `PromptThemeOptions`         | interface | The PARTIAL theme an option bag carries — every icon and role optional, merged leaf by leaf over the default (data-only).                                                  |
+| `createPromptTheme`          | function  | Merge a partial theme over `DEFAULT_PROMPT_THEME` — supplied leaves replace, the rest default; the result is deeply frozen and copies every supplied token list.           |
+| `applyTokens`                | function  | Paint text with a role's tokens — each token names a styler accessor, chained in order; an empty list and a disabled styler both return the text unchanged.                |
+| `promptHeader`               | function  | The styled prompt-message header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles.                             |
+| `hintedHeader`               | function  | The prompt header plus a key hint painted with the `hint` role — the header alone when no hint is supplied.                                                                |
+| `submitHeader`               | function  | The styled submit line (`✔ message`) — the committed header shown once a prompt resolves, themed by the `success` + `message` roles.                                       |
+| `errorLine`                  | function  | The styled error line (`✖ message`) — appended beneath a view when the last submit failed validation, themed by the `error` role.                                          |
 | `PromptStatus`               | type      | A `PromptStep`'s discriminant — `active` / `submit` / `cancel` (names the prompt's progression, not `kind`).                                                               |
 | `PromptStep`                 | interface | One reducer step's output — the next `state`, the rendered `view`, the `status`, and (on submit) the `value` (data-only).                                                  |
-| `InputOptions`               | interface | A single-line text `inputReduce` prompt's options — `message` / `default?` / `validate?` / `styler?` (data-only).                                                          |
-| `InputState`                 | interface | A text input prompt's immutable state — options + resolved validator/styler + accumulated `value` + current `error` (data-only).                                           |
+| `InputOptions`               | interface | A single-line text `inputReduce` prompt's options — `message` / `default?` / `validate?` / `styler?` / `theme?` (data-only).                                               |
+| `InputState`                 | interface | A text input prompt's immutable state — options + resolved validator/styler/theme + accumulated `value` + current `error` (data-only).                                     |
 | `createInputState`           | function  | Build the initial `InputState` from `InputOptions` — resolving the validator + styler, seeding an empty value.                                                             |
 | `inputView`                  | function  | Render an `InputState` as a styled view — header, typed value (or dimmed default hint), and any error.                                                                     |
 | `inputReduce`                | function  | The pure input reducer `(state, key) → PromptStep<string>` — printable extends, backspace shrinks, ctrl-u clears, return submits.                                          |
-| `PasswordOptions`            | interface | A masked-password `passwordReduce` prompt's options — `message` / `mask?` / `validate?` / `styler?` (data-only).                                                           |
+| `PasswordOptions`            | interface | A masked-password `passwordReduce` prompt's options — `message` / `mask?` / `validate?` / `styler?` / `theme?` (data-only).                                                |
 | `PasswordState`              | interface | A password prompt's immutable state — like `InputState` but with a `mask` the view renders per character (data-only).                                                      |
 | `createPasswordState`        | function  | Build the initial `PasswordState` from `PasswordOptions` — resolving the validator + styler + mask, seeding an empty value.                                                |
 | `passwordView`               | function  | Render a `PasswordState` as a styled view — header, value masked to `mask` repeated, and any error.                                                                        |
 | `passwordReduce`             | function  | The pure password reducer `(state, key) → PromptStep<string>` — identical line-editing to input, but the view masks the value.                                             |
-| `ConfirmOptions`             | interface | A yes/no `confirmReduce` prompt's options — `message` / `default?` / `styler?` (data-only).                                                                                |
-| `ConfirmState`               | interface | A confirm prompt's immutable state — `message` / `default` / `styler` (data-only).                                                                                         |
+| `ConfirmOptions`             | interface | A yes/no `confirmReduce` prompt's options — `message` / `default?` / `hint?` / `styler?` / `theme?`; `hint` replaces the whole `(Y/n)` group (data-only).                  |
+| `ConfirmState`               | interface | A confirm prompt's immutable state — `message` / `default` / `hint?` / `styler` / `theme` (data-only).                                                                     |
 | `createConfirmState`         | function  | Build the initial `ConfirmState` from `ConfirmOptions` — defaulting the answer to `false`.                                                                                 |
 | `confirmView`                | function  | Render a `ConfirmState` as a styled view — header plus a `(Y/n)` hint with the default letter emphasized.                                                                  |
 | `confirmReduce`              | function  | The pure confirm reducer `(state, key) → PromptStep<boolean>` — `y`/`n` submit, return takes the default, ctrl-c cancels.                                                  |
-| `SelectOptions`              | interface | A single-selection `selectReduce` prompt's options — `message` / `choices` / `default?` / `styler?` (data-only).                                                           |
-| `SelectState`                | interface | A select prompt's immutable state — normalized choices, styler, and the `focused` index (data-only).                                                                       |
+| `SelectOptions`              | interface | A single-selection `selectReduce` prompt's options — `message` / `choices` / `default?` / `hint?` / `styler?` / `theme?` (data-only).                                      |
+| `SelectState`                | interface | A select prompt's immutable state — normalized choices, optional hint, styler, theme, and the `focused` index (data-only).                                                 |
 | `createSelectState`          | function  | Build the initial `SelectState` from `SelectOptions` — normalizing choices and pre-focusing the default.                                                                   |
 | `selectView`                 | function  | Render a `SelectState` as a MULTI-LINE styled view — header then one row per choice, the focused row marked.                                                               |
 | `selectReduce`               | function  | The pure select reducer `(state, key) → PromptStep<string>` — up/down move the focus (wrapping), return submits the focused value.                                         |
-| `CheckboxOptions`            | interface | A multi-selection `checkboxReduce` prompt's options — `message` / `choices` / `min?` / `max?` / `styler?` (data-only).                                                     |
-| `CheckboxState`              | interface | A checkbox prompt's immutable state — choices, styler, `focused`, the `checked` index list, `min` / `max`, and `error` (data-only).                                        |
+| `CheckboxOptions`            | interface | A multi-selection `checkboxReduce` prompt's options — `message` / `choices` / `min?` / `max?` / `hint?` / `styler?` / `theme?` (data-only).                                |
+| `CheckboxState`              | interface | A checkbox prompt's immutable state — choices, optional hint, styler, theme, `focused`, the `checked` index list, `min` / `max`, and `error` (data-only).                  |
 | `createCheckboxState`        | function  | Build the initial `CheckboxState` from `CheckboxOptions` — normalizing choices, seeding the checked set, carrying min/max.                                                 |
 | `checkboxView`               | function  | Render a `CheckboxState` as a MULTI-LINE styled view — header, one box per choice (focused + checked marked), a count, and any error.                                      |
 | `checkboxReduce`             | function  | The pure checkbox reducer `(state, key) → PromptStep<readonly string[]>` — space toggles, return submits in choice order gated by min/max.                                 |
 | `toggleIndex`                | function  | Toggle an index in a readonly index list — copy-on-write, returning the new list (the checkbox check-set primitive).                                                       |
 | `gateSelection`              | function  | The min/max gate for a checkbox submit — the rejection message when the count is out of range, else `undefined`.                                                           |
-| `EditorOptions`              | interface | A multi-line `editorReduce` prompt's options (terminated by ctrl-d) — `message` / `default?` / `validate?` / `styler?` (data-only).                                        |
-| `EditorState`                | interface | An editor prompt's immutable state — committed `lines`, in-progress `current`, resolved validator/styler, default, and `error` (data-only).                                |
+| `EditorOptions`              | interface | A multi-line `editorReduce` prompt's options (terminated by ctrl-d) — `message` / `default?` / `hint?` / `validate?` / `styler?` / `theme?` (data-only).                   |
+| `EditorState`                | interface | An editor prompt's immutable state — committed `lines`, in-progress `current`, resolved validator/styler/theme, default, optional hint, and `error` (data-only).           |
 | `createEditorState`          | function  | Build the initial `EditorState` from `EditorOptions` — resolving the validator + styler, seeding empty lines.                                                              |
 | `editorView`                 | function  | Render an `EditorState` as a MULTI-LINE styled view — header (with a Ctrl+D hint), committed lines, the in-progress line, and any error.                                   |
 | `editorReduce`               | function  | The pure editor reducer `(state, key) → PromptStep<string>` — printable extends, return commits a line, ctrl-d finishes through the validator.                             |
@@ -109,43 +117,48 @@ The universal logic — the key decoder, the six event-free reducers + their sta
 | `parseWireJSON`              | function  | Parse a JSON wire string TOTAL — a malformed / empty payload yields `undefined` (never a throw); the client decodes SSE data through it.                                   |
 | `isInsecureRemote`           | function  | Whether a URL is a non-loopback `http://` endpoint — the `PromptClient` warns once when a `token` is sent over it in cleartext.                                            |
 | `sanitizeChoiceLabels`       | function  | Control-strip every choice's `name` / `description` (bare strings too) — the `dispatchPendingPrompt` select/checkbox path runs remote choices through it before rendering. |
+| `sanitizeThemeIcons`         | function  | Control-strip every glyph a wire-supplied theme carries — the theme twin of `sanitizeChoiceLabels` (a role's tokens are already guard-narrowed).                           |
+| `isPromptToken`              | const     | Narrow an unknown value to a `PromptToken` — built from the console module's own `COLORS` + `ATTRIBUTES`, so the token axis has one source.                                |
+| `isPromptThemeOptions`       | const     | Narrow an unknown wire value to a `PromptThemeOptions` — CLOSED at both levels, so an unknown slot or a bogus token drops the whole theme (§14, total).                    |
 
 ### The pure-core constants
 
 The decode tables, default mask, validation patterns, prompt-view glyphs, rule messages, and broker / SSE-bridge defaults the core reads ([`src/core`](../src/core)). UPPER_SNAKE, `Object.freeze`d data; control bytes built via `String.fromCharCode` so no raw control character appears in source.
 
-| API                          | Kind  | Summary                                                                                                                               |
-| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `RETURN`                     | const | Carriage return (`\r`, U+000D) — Enter on most terminals.                                                                             |
-| `NEWLINE`                    | const | Line feed (`\n`, U+000A) — Enter on some terminals / pasted input.                                                                    |
-| `TAB`                        | const | Tab (`\t`, U+0009).                                                                                                                   |
-| `ESCAPE`                     | const | Escape (ESC, U+001B) — the lone byte, and the lead byte of every CSI / SS3 / cursor sequence (in BOTH modules).                       |
-| `BACKSPACE`                  | const | Backspace (BS, U+0008) — Ctrl+H / some terminals' Backspace.                                                                          |
-| `DELETE`                     | const | Delete (DEL, U+007F) — the usual Backspace byte on a Unix TTY.                                                                        |
-| `SPACE`                      | const | Space (U+0020).                                                                                                                       |
-| `CTRL_C`                     | const | Ctrl+C (ETX, U+0003) — interrupt / cancel.                                                                                            |
-| `CTRL_D`                     | const | Ctrl+D (EOT, U+0004) — end-of-transmission / finish (the editor's commit key).                                                        |
-| `CTRL_U`                     | const | Ctrl+U (NAK, U+0015) — clear the current line.                                                                                        |
-| `CTRL_A`                     | const | Ctrl+A (SOH, U+0001) — move to start of line.                                                                                         |
-| `CTRL_E`                     | const | Ctrl+E (ENQ, U+0005) — move to end of line.                                                                                           |
-| `KEY_CSI`                    | const | The Control Sequence Introducer lead (`ESC[`) for the navigation keys — named `KEY_CSI` so it never collides with console's `CSI`.    |
-| `KEY_SS3`                    | const | The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`).                                |
-| `SEQUENCE_NAMES`             | const | The escape-SEQUENCE → key-NAME table `parseKey` consults — both the CSI and SS3 forms of the arrows + home/end/delete.                |
-| `CONTROL_NAMES`              | const | The control-BYTE → key-descriptor table `parseKey` consults — each entry's canonical `name` + whether it is a `ctrl` combo.           |
-| `DEFAULT_MASK`               | const | The default mask glyph a `PasswordState` renders each input character as — `*`.                                                       |
-| `EMAIL_PATTERN`              | const | Matches an email address (`local@domain.tld`) — the `email` rule tests against this.                                                  |
-| `URL_PATTERN`                | const | Matches an HTTP(S) URL — the `url` rule tests against this.                                                                           |
-| `NUMERIC_PATTERN`            | const | Matches a numeric value (integer or decimal, optional sign) — the `numeric` rule tests against this.                                  |
-| `INTEGER_PATTERN`            | const | Matches an integer (optional sign) — the `integer` rule tests against this.                                                           |
-| `ALPHANUMERIC_PATTERN`       | const | Matches an alphanumeric string (letters and digits only) — the `alphanumeric` rule tests against this.                                |
-| `RULE_MESSAGES`              | const | Each built-in rule's default error message — what the composed `Validator` returns when that rule fails (min/max interpolated).       |
-| `PROMPT_ICONS`               | const | The prompt-view icon glyphs the reducers render with — PLAIN glyphs, colored by the styler at render time (not baked in).             |
-| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | How long (ms) the broker parks an unanswered prompt before it expires — 5 minutes.                                                    |
-| `DEFAULT_RECONNECT_DELAY_MS` | const | How long (ms) the `PromptClient` waits before each reconnect attempt — 2 seconds.                                                     |
-| `SSE_EVENTS`                 | const | The SSE `event:` names the broker emits and the client dispatches on — `pending` / `expire` / `shutdown`.                             |
-| `HEADER_TOKEN`               | const | The auth-token request header the `PromptClient` sends when a `token` is configured.                                                  |
-| `ACCEPT_EVENT_STREAM`        | const | The `Accept` header value that opens the broker's SSE stream (`text/event-stream`).                                                   |
-| `SSE_BUFFER_LIMIT`           | const | The max characters the `PromptClient`'s SSE parser buffers before treating the stream as hostile — 1 MiB (a memory-exhaustion guard). |
+| API                          | Kind  | Summary                                                                                                                                                |
+| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RETURN`                     | const | Carriage return (`\r`, U+000D) — Enter on most terminals.                                                                                              |
+| `NEWLINE`                    | const | Line feed (`\n`, U+000A) — Enter on some terminals / pasted input.                                                                                     |
+| `TAB`                        | const | Tab (`\t`, U+0009).                                                                                                                                    |
+| `ESCAPE`                     | const | Escape (ESC, U+001B) — the lone byte, and the lead byte of every CSI / SS3 / cursor sequence (in BOTH modules).                                        |
+| `BACKSPACE`                  | const | Backspace (BS, U+0008) — Ctrl+H / some terminals' Backspace.                                                                                           |
+| `DELETE`                     | const | Delete (DEL, U+007F) — the usual Backspace byte on a Unix TTY.                                                                                         |
+| `SPACE`                      | const | Space (U+0020).                                                                                                                                        |
+| `CTRL_C`                     | const | Ctrl+C (ETX, U+0003) — interrupt / cancel.                                                                                                             |
+| `CTRL_D`                     | const | Ctrl+D (EOT, U+0004) — end-of-transmission / finish (the editor's commit key).                                                                         |
+| `CTRL_U`                     | const | Ctrl+U (NAK, U+0015) — clear the current line.                                                                                                         |
+| `CTRL_A`                     | const | Ctrl+A (SOH, U+0001) — move to start of line.                                                                                                          |
+| `CTRL_E`                     | const | Ctrl+E (ENQ, U+0005) — move to end of line.                                                                                                            |
+| `KEY_CSI`                    | const | The Control Sequence Introducer lead (`ESC[`) for the navigation keys — named `KEY_CSI` so it never collides with console's `CSI`.                     |
+| `KEY_SS3`                    | const | The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`).                                                 |
+| `SEQUENCE_NAMES`             | const | The escape-SEQUENCE → key-NAME table `parseKey` consults — both the CSI and SS3 forms of the arrows + home/end/delete.                                 |
+| `CONTROL_NAMES`              | const | The control-BYTE → key-descriptor table `parseKey` consults — each entry's canonical `name` + whether it is a `ctrl` combo.                            |
+| `DEFAULT_MASK`               | const | The default mask glyph a `PasswordState` renders each input character as — `*`.                                                                        |
+| `EMAIL_PATTERN`              | const | Matches an email address (`local@domain.tld`) — the `email` rule tests against this.                                                                   |
+| `URL_PATTERN`                | const | Matches an HTTP(S) URL — the `url` rule tests against this.                                                                                            |
+| `NUMERIC_PATTERN`            | const | Matches a numeric value (integer or decimal, optional sign) — the `numeric` rule tests against this.                                                   |
+| `INTEGER_PATTERN`            | const | Matches an integer (optional sign) — the `integer` rule tests against this.                                                                            |
+| `ALPHANUMERIC_PATTERN`       | const | Matches an alphanumeric string (letters and digits only) — the `alphanumeric` rule tests against this.                                                 |
+| `RULE_MESSAGES`              | const | Each built-in rule's default error message — what the composed `Validator` returns when that rule fails (min/max interpolated).                        |
+| `PROMPT_ICONS`               | const | The prompt-view icon glyphs the reducers render with — PLAIN glyphs, colored by the styler at render time (not baked in).                              |
+| `PROMPT_ROLES`               | const | Every `PromptRole` in one frozen list — the role axis's source of truth, walked by `createPromptTheme` when it merges a partial theme.                 |
+| `DEFAULT_PROMPT_THEME`       | const | The theme every prompt renders with unless its options supply another — `PROMPT_ICONS` + the console success/error marks, and the token list per role. |
+| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | How long (ms) the broker parks an unanswered prompt before it expires — 5 minutes.                                                                     |
+| `DEFAULT_RECONNECT_DELAY_MS` | const | How long (ms) the `PromptClient` waits before each reconnect attempt — 2 seconds.                                                                      |
+| `SSE_EVENTS`                 | const | The SSE `event:` names the broker emits and the client dispatches on — `pending` / `expire` / `shutdown`.                                              |
+| `HEADER_TOKEN`               | const | The auth-token request header the `PromptClient` sends when a `token` is configured.                                                                   |
+| `ACCEPT_EVENT_STREAM`        | const | The `Accept` header value that opens the broker's SSE stream (`text/event-stream`).                                                                    |
+| `SSE_BUFFER_LIMIT`           | const | The max characters the `PromptClient`'s SSE parser buffers before treating the stream as hostile — 1 MiB (a memory-exhaustion guard).                  |
 
 ### The terminal error
 
@@ -533,6 +546,7 @@ import {
 	passing,
 	passwordReduce,
 	passwordView,
+	hintedHeader,
 	promptHeader,
 	selectReduce,
 	selectView,
@@ -569,12 +583,50 @@ let editor = createEditorState({ message: 'Notes' })
 editor = editorReduce(editor, parseKey('h')).state
 editorView(editor) // the committed lines + the in-progress line
 
-// The shared header/error line renderers + the line-editing primitive:
-promptHeader(select.styler, 'Pick') // '? Pick'
-submitHeader(select.styler, 'Pick') // '✔ Pick'
-errorLine(select.styler, 'bad input') // '✖ bad input'
-inputView({ message: 'x', default: '', validator: passing, styler: select.styler, value: 'hi' })
+// The shared header/error line renderers + the line-editing primitive. Each renders through the
+// state's resolved theme, so a re-themed prompt re-themes these too:
+promptHeader(select.styler, select.theme, 'Pick') // '? Pick'
+hintedHeader(select.styler, select.theme, 'Pick', 'arrows move') // '? Pick arrows move'
+submitHeader(select.styler, select.theme, 'Pick') // '✔ Pick'
+errorLine(select.styler, select.theme, 'bad input') // '✖ bad input'
+inputView({
+	message: 'x',
+	default: '',
+	validator: passing,
+	styler: select.styler,
+	theme: select.theme,
+	value: 'hi',
+})
 editLine('hi', parseKey('!')) // 'hi!' — undefined when the key doesn't edit
+```
+
+### Re-theming a prompt (glyphs and role colors)
+
+```ts
+import { applyTokens, createPromptTheme, createSelectState, selectView } from '@orkestrel/terminal'
+import { createStyler } from '@orkestrel/console'
+
+// A theme is DATA: a glyph per icon slot, a token list per semantic role. Every slot not named
+// keeps its default, and the result is deeply frozen.
+const theme = createPromptTheme({
+	icons: { pointer: '=>', selected: '*' },
+	roles: { message: ['magenta', 'bold'], hint: ['italic'] },
+})
+theme.icons.question // '?' — untouched
+theme.roles.message // ['magenta', 'bold']
+
+// Pass the partial bag to any prompt; the state carries the resolved theme.
+const select = createSelectState({
+	message: 'Pick',
+	choices: ['alpha', 'beta'],
+	hint: 'arrows move',
+	theme: { icons: { pointer: '=>' }, roles: { pointer: ['yellow'] } },
+})
+selectView(select) // the yellow '=>' cursor, everything else at its default
+
+// The one painter a view uses — each token names a StylerInterface accessor, chained in order.
+applyTokens(createStyler(), ['red', 'bold'], 'stop') // bold red
+applyTokens(createStyler(), [], 'stop') // 'stop' — an empty list paints nothing
 ```
 
 ### The wire serialize / reconstruct round-trip (T-b)
@@ -590,12 +642,15 @@ import {
 	isPendingPrompt,
 	isPendingPromptStatus,
 	isPromptChoice,
+	isPromptThemeOptions,
+	isPromptToken,
 	isPromptType,
 	parseWireJSON,
 	reconstructValidationRules,
 	resolveChoices,
 	resolveOption,
 	sanitizeChoiceLabels,
+	sanitizeThemeIcons,
 	serializeChoices,
 	serializePromptOptions,
 	serializeValidationRules,
@@ -623,6 +678,13 @@ isInsecureRemote('http://example.com') // true — non-loopback http
 isInsecureRemote('http://localhost:3000') // false — loopback is fine
 isInsecureRemote('https://example.com') // false — encrypted
 sanitizeChoiceLabels(['plain', { name: 'B', value: 'b', description: 'ok' }]) // control chars stripped
+
+// A wire-supplied theme is narrowed by a CLOSED guard, then its glyphs are control-stripped:
+isPromptToken('cyan') // true — every styler accessor name is a token
+isPromptToken('default') // false — a Color, but no accessor names it
+isPromptThemeOptions({ icons: { pointer: '=>' }, roles: { message: ['red'] } }) // true
+isPromptThemeOptions({ roles: { message: ['plaid'] } }) // false — the whole theme is dropped
+sanitizeThemeIcons({ icons: { pointer: '=>' } }) // every supplied glyph control-stripped
 
 // The bridge dispatch step + its wiring seams:
 import { createTerminal } from '@orkestrel/terminal/server'

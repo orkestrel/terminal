@@ -1,8 +1,12 @@
+import type { PromptRole, PromptTheme, PromptToken } from './types.js'
+import { STATUS_ICONS } from '@orkestrel/console'
+
 // The constant DATA the pure prompt core reads — the control-byte → key-name decode table
 // {@link parseKey} consults, the default mask, the validation regex patterns the rule engine
-// tests against, the prompt-view icon glyphs, and the default rule error messages. UPPER_SNAKE,
-// `Object.freeze`d, every member exported (AGENTS §5). Control bytes are built with
-// `String.fromCharCode` so no raw control character appears in source (the console-module idiom).
+// tests against, the prompt-view icon glyphs, the default theme, and the default rule error
+// messages. UPPER_SNAKE, `Object.freeze`d, every member exported (AGENTS §5). Control bytes are
+// built with `String.fromCharCode` so no raw control character appears in source (the
+// console-module idiom).
 
 // === Control bytes (named, no raw control characters in source)
 
@@ -164,6 +168,61 @@ export const PROMPT_ICONS = Object.freeze({
 	selected: '●',
 	checked: '☑',
 	unchecked: '☐',
+})
+
+// === The default prompt theme
+
+/**
+ * Every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
+ * truth. {@link import('./factories.js').createPromptTheme} walks it to merge a partial theme, and
+ * a consumer building a complete role map reads it rather than retyping the nine names.
+ */
+export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
+	'question',
+	'pointer',
+	'message',
+	'success',
+	'error',
+	'selected',
+	'focus',
+	'hint',
+	'description',
+])
+
+/**
+ * The {@link import('./types.js').PromptTheme} every prompt renders with unless its options supply
+ * another — the glyph set assembled from {@link PROMPT_ICONS} plus the console
+ * {@link import('@orkestrel/console').STATUS_ICONS} `success` / `error` marks, and the token list
+ * each role is painted with. Deeply frozen; the baseline
+ * {@link import('./factories.js').createPromptTheme} merges a partial theme over.
+ *
+ * @remarks
+ * The default roles reproduce the views' historical coloring exactly: `question` / `pointer` cyan,
+ * `message` / `focus` bold, `success` / `selected` green, `error` red, `hint` / `description` dim.
+ * Two roles sharing a token list today are still two roles — re-mapping one leaves the other alone.
+ */
+export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
+	icons: Object.freeze({
+		question: PROMPT_ICONS.question,
+		pointer: PROMPT_ICONS.pointer,
+		dot: PROMPT_ICONS.dot,
+		selected: PROMPT_ICONS.selected,
+		checked: PROMPT_ICONS.checked,
+		unchecked: PROMPT_ICONS.unchecked,
+		success: STATUS_ICONS.success,
+		error: STATUS_ICONS.error,
+	}),
+	roles: Object.freeze({
+		question: Object.freeze<readonly PromptToken[]>(['cyan']),
+		pointer: Object.freeze<readonly PromptToken[]>(['cyan']),
+		message: Object.freeze<readonly PromptToken[]>(['bold']),
+		success: Object.freeze<readonly PromptToken[]>(['green']),
+		error: Object.freeze<readonly PromptToken[]>(['red']),
+		selected: Object.freeze<readonly PromptToken[]>(['green']),
+		focus: Object.freeze<readonly PromptToken[]>(['bold']),
+		hint: Object.freeze<readonly PromptToken[]>(['dim']),
+		description: Object.freeze<readonly PromptToken[]>(['dim']),
+	}),
 })
 
 // === Broker + SSE-bridge defaults (T-b)

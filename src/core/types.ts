@@ -1,5 +1,5 @@
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
-import type { StylerInterface } from '@orkestrel/console'
+import type { Attribute, Color, StylerInterface } from '@orkestrel/console'
 
 // The PURE, UNIVERSAL prompt core — a key decoder, a declarative validation engine, and
 // the six interactive prompts modelled as EVENT-FREE pure state machines. No `node:*`, no
@@ -108,6 +108,90 @@ export interface CheckboxChoice {
 	readonly checked?: boolean
 }
 
+// === Prompt theme (the presentation vocabulary)
+
+/**
+ * One glyph slot a prompt view renders — the icon axis of a {@link PromptTheme}. A named value
+ * set (which marks a view can draw), not a toggle, so it stays a union.
+ *
+ * @remarks
+ * - `question` — the leading mark on a prompt's message line.
+ * - `pointer` — the cursor before the input / the focused choice row.
+ * - `dot` / `selected` — an unfocused / focused row marker in a select list.
+ * - `checked` / `unchecked` — a checked / unchecked box in a checkbox list.
+ * - `success` / `error` — the mark on a resolved prompt's submit line / its validation error line.
+ */
+export type PromptIcon =
+	| 'question'
+	| 'pointer'
+	| 'dot'
+	| 'selected'
+	| 'checked'
+	| 'unchecked'
+	| 'success'
+	| 'error'
+
+/**
+ * One styling slot a prompt view renders through — the SEMANTIC axis of a {@link PromptTheme}.
+ * A role says what a fragment MEANS; the theme decides what that meaning looks like, so a
+ * consumer re-maps the whole surface by naming roles rather than reimplementing a view.
+ *
+ * @remarks
+ * - `question` — the leading question mark on an active prompt's line.
+ * - `pointer` — the cursor before the input / the focused choice row.
+ * - `message` — the prompt's own question text.
+ * - `success` / `error` — a resolved prompt's mark / a validation-error mark and its message.
+ * - `selected` — a chosen value: the checked box, the focused select marker, the confirm default letter.
+ * - `focus` — the label of the row the cursor is on.
+ * - `hint` — dim supplementary text: a default value, a key hint, a selection count, a committed answer.
+ * - `description` — a choice's one-line description.
+ */
+export type PromptRole =
+	| 'question'
+	| 'pointer'
+	| 'message'
+	| 'success'
+	| 'error'
+	| 'selected'
+	| 'focus'
+	| 'hint'
+	| 'description'
+
+/**
+ * One styling token a {@link PromptRole} is painted with — every named console
+ * {@link Color} except `default`, plus every {@link Attribute}. Each token IS the name of a
+ * {@link StylerInterface} accessor, so {@link import('./helpers.js').applyTokens} paints a role by
+ * chaining its tokens in order.
+ *
+ * @remarks
+ * The union is exactly the styler's accessor set, which is why a background color is absent: the
+ * styler exposes no background accessor, so a token list cannot express one. A role's tokens
+ * compose — `['red', 'bold']` is bold red — and a later color of the same channel wins.
+ */
+export type PromptToken = Exclude<Color, 'default'> | Attribute
+
+/**
+ * A prompt's resolved PRESENTATION — the glyph for every {@link PromptIcon} and the token list for
+ * every {@link PromptRole}. Plain JSON data (no functions), so it crosses the wire with the prompt
+ * it decorates. Built by {@link import('./factories.js').createPromptTheme}; carried resolved on
+ * every prompt state, so a view never reads a hardcoded glyph or color.
+ */
+export interface PromptTheme {
+	readonly icons: Readonly<Record<PromptIcon, string>>
+	readonly roles: Readonly<Record<PromptRole, readonly PromptToken[]>>
+}
+
+/**
+ * The PARTIAL {@link PromptTheme} a prompt option bag carries — every icon and every role is
+ * optional, and {@link import('./factories.js').createPromptTheme} merges what is supplied over
+ * {@link import('./constants.js').DEFAULT_PROMPT_THEME} leaf by leaf. Supplying one icon or one
+ * role leaves every other slot at its default.
+ */
+export interface PromptThemeOptions {
+	readonly icons?: Readonly<Partial<Record<PromptIcon, string>>>
+	readonly roles?: Readonly<Partial<Record<PromptRole, readonly PromptToken[]>>>
+}
+
 // === Prompt step (the reducer output)
 
 /**
@@ -154,11 +238,12 @@ export interface InputOptions {
 	readonly default?: string
 	readonly validate?: Validator | ValidationRules
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
- * The immutable state of a text input prompt — its options, the resolved validator + styler,
- * the accumulated `value`, and the current `error` (when the last submit failed validation).
+ * The immutable state of a text input prompt — its options, the resolved validator + styler +
+ * theme, the accumulated `value`, and the current `error` (when the last submit failed validation).
  *
  * @remarks
  * Built by {@link import('./helpers.js').createInputState}; advanced by
@@ -171,6 +256,7 @@ export interface InputState {
 	readonly default: string
 	readonly validator: Validator
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 	readonly value: string
 	readonly error?: string
 }
@@ -183,6 +269,7 @@ export interface PasswordOptions {
 	readonly mask?: string
 	readonly validate?: Validator | ValidationRules
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
@@ -199,32 +286,45 @@ export interface PasswordState {
 	readonly mask: string
 	readonly validator: Validator
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 	readonly value: string
 	readonly error?: string
 }
 
 // === Confirm prompt
 
-/** Options for a yes/no {@link import('./helpers.js').confirmReduce} confirmation prompt. */
+/**
+ * Options for a yes/no {@link import('./helpers.js').confirmReduce} confirmation prompt.
+ *
+ * @remarks
+ * `hint` replaces the computed `(Y/n)` group in full, parentheses included, and is painted with
+ * the theme's `hint` role. The accepted KEYS stay `y` / `n` / `enter` whatever the hint says, so a
+ * hint that advertises other keys is the consumer's own contradiction.
+ */
 export interface ConfirmOptions {
 	readonly message: string
 	readonly default?: boolean
+	readonly hint?: string
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
- * The immutable state of a confirm prompt — its message, the default answer, and the styler.
+ * The immutable state of a confirm prompt — its message, the default answer, the optional hint
+ * override, and the resolved styler + theme.
  *
  * @remarks
  * Built by {@link import('./helpers.js').createConfirmState}; advanced by
  * {@link import('./helpers.js').confirmReduce}. `y` / `Y` submits `true`, `n` / `N` submits
- * `false`, and `enter` takes the `default` (rendered with the active letter capitalized in the
- * `(Y/n)` hint).
+ * `false`, and `enter` takes the `default` (rendered with the active letter emphasized in the
+ * `(Y/n)` hint, unless `hint` replaces that group).
  */
 export interface ConfirmState {
 	readonly message: string
 	readonly default: boolean
+	readonly hint?: string
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 }
 
 // === Select prompt
@@ -235,18 +335,22 @@ export interface ConfirmState {
  * @remarks
  * `choices` accepts bare strings (used as both `name` and `value`) or full {@link PromptChoice}
  * objects; {@link import('./helpers.js').createSelectState} normalizes them. `default` pre-focuses
- * the choice whose `value` matches it.
+ * the choice whose `value` matches it. `hint` adds a key hint after the message — the list is
+ * self-explanatory at a TTY, so there is no computed default; the server driver shows it on the
+ * numbered fallback too.
  */
 export interface SelectOptions {
 	readonly message: string
 	readonly choices: ReadonlyArray<string | PromptChoice>
 	readonly default?: string
+	readonly hint?: string
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
- * The immutable state of a select prompt — the normalized choices, the styler, and the
- * `focused` index (the highlighted row).
+ * The immutable state of a select prompt — the normalized choices, the optional hint, the
+ * resolved styler + theme, and the `focused` index (the highlighted row).
  *
  * @remarks
  * Built by {@link import('./helpers.js').createSelectState}; advanced by
@@ -256,7 +360,9 @@ export interface SelectOptions {
 export interface SelectState {
 	readonly message: string
 	readonly choices: readonly PromptChoice[]
+	readonly hint?: string
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 	readonly focused: number
 }
 
@@ -269,19 +375,23 @@ export interface SelectState {
  * `choices` accepts bare strings or full {@link CheckboxChoice} objects (with an optional
  * initial `checked`); {@link import('./helpers.js').createCheckboxState} normalizes them.
  * `min` / `max` gate submission — a submit with fewer than `min` or more than `max` selected
- * is rejected (the prompt stays active with the reason in the view).
+ * is rejected (the prompt stays active with the reason in the view). `hint` adds a key hint after
+ * the message (no computed default) and reaches the server driver's numbered fallback too.
  */
 export interface CheckboxOptions {
 	readonly message: string
 	readonly choices: ReadonlyArray<string | CheckboxChoice>
 	readonly min?: number
 	readonly max?: number
+	readonly hint?: string
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
- * The immutable state of a checkbox prompt — the normalized choices, the styler, the `focused`
- * index, the set of `checked` indices, the optional `min` / `max` gate, and the current `error`.
+ * The immutable state of a checkbox prompt — the normalized choices, the optional hint, the
+ * resolved styler + theme, the `focused` index, the set of `checked` indices, the optional
+ * `min` / `max` gate, and the current `error`.
  *
  * @remarks
  * Built by {@link import('./helpers.js').createCheckboxState}; advanced by
@@ -293,7 +403,9 @@ export interface CheckboxOptions {
 export interface CheckboxState {
 	readonly message: string
 	readonly choices: readonly CheckboxChoice[]
+	readonly hint?: string
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 	readonly focused: number
 	readonly checked: readonly number[]
 	readonly min?: number
@@ -303,17 +415,27 @@ export interface CheckboxState {
 
 // === Editor prompt
 
-/** Options for a multi-line {@link import('./helpers.js').editorReduce} editor prompt (terminated by ctrl-d). */
+/**
+ * Options for a multi-line {@link import('./helpers.js').editorReduce} editor prompt (terminated
+ * by ctrl-d).
+ *
+ * @remarks
+ * `hint` replaces the computed `(Ctrl+D to finish)` group in full, parentheses included. The
+ * finish KEY stays ctrl-d whatever the hint says.
+ */
 export interface EditorOptions {
 	readonly message: string
 	readonly default?: string
+	readonly hint?: string
 	readonly validate?: Validator | ValidationRules
 	readonly styler?: StylerInterface
+	readonly theme?: PromptThemeOptions
 }
 
 /**
  * The immutable state of an editor prompt — the committed `lines`, the in-progress `current`
- * line, plus the resolved validator + styler, the default, and the current `error`.
+ * line, plus the resolved validator + styler + theme, the default, the optional hint override,
+ * and the current `error`.
  *
  * @remarks
  * Built by {@link import('./helpers.js').createEditorState}; advanced by
@@ -325,8 +447,10 @@ export interface EditorOptions {
 export interface EditorState {
 	readonly message: string
 	readonly default: string
+	readonly hint?: string
 	readonly validator: Validator
 	readonly styler: StylerInterface
+	readonly theme: PromptTheme
 	readonly lines: readonly string[]
 	readonly current: string
 	readonly error?: string
@@ -415,7 +539,7 @@ export type PendingPromptStatus = 'pending' | 'answered' | 'expired'
  *   dispatches on (named for its axis — the prompt form — never `kind` / `type`).
  * - `message` — the prompt's question (lifted out of `options` for direct display).
  * - `options` — the WIRE-SAFE options (a `validate` FUNCTION dropped; the declarative
- *   {@link ValidationRules} data + `choices` / `default` / `mask` kept — see
+ *   {@link ValidationRules} data + `choices` / `default` / `mask` / `hint` / `theme` kept — see
  *   {@link import('./helpers.js').serializePromptOptions}). A client reconstructs the validator
  *   from the rules via {@link resolveValidation}.
  * - `status` — the current {@link PendingPromptStatus}.

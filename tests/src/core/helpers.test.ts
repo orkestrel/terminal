@@ -2,11 +2,14 @@ import type {
 	PasswordState,
 	PendingPrompt,
 	PromptStep,
+	PromptThemeOptions,
+	PromptToken,
 	ValidationRules,
 	Validator,
 } from '@src/core'
 import {
 	appendRule,
+	applyTokens,
 	buildRuleValidator,
 	checkboxReduce,
 	checkboxView,
@@ -18,12 +21,16 @@ import {
 	createEditorState,
 	createInputState,
 	createPasswordState,
+	createPromptTheme,
 	createSelectState,
+	DEFAULT_PROMPT_THEME,
 	dispatchPendingPrompt,
 	editLine,
 	editorReduce,
+	editorView,
 	evaluateRule,
 	gateSelection,
+	hintedHeader,
 	inputReduce,
 	inputView,
 	isAnswerPayload,
@@ -33,17 +40,23 @@ import {
 	isPendingPromptStatus,
 	isPrintable,
 	isPromptChoice,
+	isPromptThemeOptions,
+	isPromptToken,
 	isPromptType,
 	isTerminalSnapshot,
 	normalizeCheckboxChoice,
 	normalizeChoice,
 	parseKey,
+	parseWireJSON,
 	passing,
 	passwordReduce,
+	passwordView,
+	promptHeader,
 	reconstructValidationRules,
 	resolveChoices,
 	resolveOption,
 	resolveValidation,
+	sanitizeThemeIcons,
 	selectReduce,
 	selectView,
 	serializeChoices,
@@ -1838,5 +1851,372 @@ describe('isTerminalSnapshot', () => {
 		expect(isTerminalSnapshot({ timeout: 5000 })).toBe(false) // missing id
 		expect(isTerminalSnapshot(null)).toBe(false)
 		expect(isTerminalSnapshot([])).toBe(false)
+	})
+})
+
+// ============================================================================
+// THEME + HINT — the prompt presentation contract: a resolved theme on every state,
+// a token list per role, and the wire's treatment of both. The default-theme byte
+// assertions below are the pre-theme implementation's own output, captured before the
+// theme landed, so they fail for any drift the refactor could have introduced.
+// SGR codes are read from the ANSI table, not from this package: 1 bold, 2 dim, 3
+// italic, 4 underline, 7 inverse, 9 strikethrough, 31 red, 32 green, 33 yellow, 34
+// blue, 35 magenta, 36 cyan, 92 bright green; 0 resets.
+// ============================================================================
+
+describe('createPromptTheme', () => {
+	it('resolves to the default theme when nothing is supplied', () => {
+		expect(createPromptTheme()).toEqual(DEFAULT_PROMPT_THEME)
+		expect(createPromptTheme({})).toEqual(DEFAULT_PROMPT_THEME)
+	})
+
+	it('replaces only the supplied leaves', () => {
+		const theme = createPromptTheme({
+			icons: { pointer: '=>' },
+			roles: { message: ['magenta', 'bold'] },
+		})
+		expect(theme.icons.pointer).toBe('=>')
+		expect(theme.icons.question).toBe(DEFAULT_PROMPT_THEME.icons.question)
+		expect(theme.icons.success).toBe(DEFAULT_PROMPT_THEME.icons.success)
+		expect(theme.roles.message).toEqual(['magenta', 'bold'])
+		expect(theme.roles.hint).toEqual(DEFAULT_PROMPT_THEME.roles.hint)
+	})
+
+	it('freezes the result and copies every supplied token list', () => {
+		const supplied: PromptToken[] = ['red']
+		const theme = createPromptTheme({ roles: { error: supplied } })
+		expect(Object.isFrozen(theme)).toBe(true)
+		expect(Object.isFrozen(theme.icons)).toBe(true)
+		expect(Object.isFrozen(theme.roles)).toBe(true)
+		expect(Object.isFrozen(theme.roles.error)).toBe(true)
+		expect(Object.isFrozen(theme.roles.hint)).toBe(true) // an untouched default is frozen too
+		supplied.push('bold') // the caller's own array is not the theme's
+		expect(theme.roles.error).toEqual(['red'])
+	})
+})
+
+describe('applyTokens', () => {
+	const styled = createStyler()
+
+	it('chains every token in order and renders once', () => {
+		expect(applyTokens(styled, ['cyan'], 'x')).toBe('\x1b[36mx\x1b[0m')
+		expect(applyTokens(styled, ['blue', 'underline'], 'x')).toBe('\x1b[4;34mx\x1b[0m')
+	})
+
+	it('returns the text unchanged for an empty token list', () => {
+		expect(applyTokens(styled, [], 'plain')).toBe('plain')
+	})
+
+	it('returns the text verbatim for any token list when the styler is disabled', () => {
+		expect(applyTokens(plain, ['red', 'bold'], 'plain')).toBe('plain')
+	})
+})
+
+describe('the default theme renders the pre-theme bytes', () => {
+	const input = createInputState({ message: 'Name', default: 'Ada', validate: { required: true } })
+	const password = createPasswordState({ message: 'Secret', validate: { minimum: 8 } })
+	const select = createSelectState({
+		message: 'Pick',
+		choices: ['alpha', { name: 'beta', value: 'b', description: 'the second' }],
+	})
+	const checkbox = createCheckboxState({
+		message: 'Pick many',
+		choices: ['alpha', { name: 'beta', value: 'b', description: 'the second', checked: true }],
+		min: 2,
+	})
+	const editor = createEditorState({ message: 'Notes' })
+	const enter = parseKey('\r')
+
+	it('input — active, error and submit lines', () => {
+		expect(inputView(input)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[2mAda\x1b[0m',
+		)
+		expect(inputView({ ...input, value: 'Grace' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m Grace',
+		)
+		expect(inputView({ ...input, error: 'This field is required' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mName\x1b[0m \x1b[36m›\x1b[0m \x1b[2mAda\x1b[0m\n\x1b[31m✖\x1b[0m \x1b[31mThis field is required\x1b[0m',
+		)
+		expect(inputReduce({ ...input, value: 'Grace' }, enter).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mName\x1b[0m \x1b[2mGrace\x1b[0m',
+		)
+	})
+
+	it('password — active, error and submit lines', () => {
+		expect(passwordView({ ...password, value: 'secret' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mSecret\x1b[0m \x1b[36m›\x1b[0m ******',
+		)
+		expect(passwordView({ ...password, error: 'Must be at least 8 characters' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mSecret\x1b[0m \x1b[36m›\x1b[0m \n\x1b[31m✖\x1b[0m \x1b[31mMust be at least 8 characters\x1b[0m',
+		)
+		expect(passwordReduce({ ...password, value: 'longenough' }, enter).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mSecret\x1b[0m \x1b[2m**********\x1b[0m',
+		)
+	})
+
+	it('confirm — both defaults and the submit line', () => {
+		const yes = createConfirmState({ message: 'Continue?', default: true })
+		const no = createConfirmState({ message: 'Continue?' })
+		expect(confirmView(yes)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mContinue?\x1b[0m \x1b[2m(\x1b[0m\x1b[32mY\x1b[0m\x1b[2m/n\x1b[0m\x1b[2m)\x1b[0m',
+		)
+		expect(confirmView(no)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mContinue?\x1b[0m \x1b[2m(\x1b[0m\x1b[2my/\x1b[0m\x1b[32mN\x1b[0m\x1b[2m)\x1b[0m',
+		)
+		expect(confirmReduce(yes, enter).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mContinue?\x1b[0m \x1b[2myes\x1b[0m',
+		)
+	})
+
+	it('select — the list, a moved focus and the submit line', () => {
+		expect(selectView(select)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m\n\x1b[36m›\x1b[0m \x1b[32m●\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[2m○\x1b[0m beta  \x1b[2mthe second\x1b[0m',
+		)
+		expect(selectView({ ...select, focused: 1 })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m\n  \x1b[2m○\x1b[0m alpha\n\x1b[36m›\x1b[0m \x1b[32m●\x1b[0m \x1b[1mbeta\x1b[0m  \x1b[2mthe second\x1b[0m',
+		)
+		expect(selectReduce(select, enter).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mPick\x1b[0m \x1b[2malpha\x1b[0m',
+		)
+	})
+
+	it('checkbox — the boxes, the error line and the submit line', () => {
+		expect(checkboxView(checkbox)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick many\x1b[0m\n\x1b[36m›\x1b[0m \x1b[2m☐\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[32m☑\x1b[0m beta  \x1b[2mthe second\x1b[0m\n\x1b[2m1 selected\x1b[0m',
+		)
+		expect(checkboxView({ ...checkbox, error: 'Select at least 2 options' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick many\x1b[0m\n\x1b[36m›\x1b[0m \x1b[2m☐\x1b[0m \x1b[1malpha\x1b[0m\n  \x1b[32m☑\x1b[0m beta  \x1b[2mthe second\x1b[0m\n\x1b[2m1 selected\x1b[0m\n\x1b[31m✖\x1b[0m \x1b[31mSelect at least 2 options\x1b[0m',
+		)
+		expect(checkboxReduce({ ...checkbox, checked: [0, 1] }, enter).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mPick many\x1b[0m \x1b[2malpha, beta\x1b[0m',
+		)
+	})
+
+	it('editor — the finish hint, a committed line and the submit line', () => {
+		expect(editorView(editor)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(Ctrl+D to finish)\x1b[0m\n\x1b[36m›\x1b[0m ',
+		)
+		const typed = editorReduce(editorReduce(editor, parseKey('h')).state, enter).state
+		expect(editorView(typed)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(Ctrl+D to finish)\x1b[0m\nh\n\x1b[36m›\x1b[0m ',
+		)
+		expect(editorView({ ...editor, error: 'This field is required' })).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(Ctrl+D to finish)\x1b[0m\n\x1b[36m›\x1b[0m \n\x1b[31m✖\x1b[0m \x1b[31mThis field is required\x1b[0m',
+		)
+		expect(editorReduce({ ...typed, current: 'x' }, parseKey('\x04')).view).toBe(
+			'\x1b[32m✔\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m2 lines\x1b[0m',
+		)
+	})
+})
+
+describe('a custom theme moves every role site', () => {
+	const theme: PromptThemeOptions = {
+		icons: { pointer: '=>', selected: '*', dot: '-', checked: '[x]', unchecked: '[ ]' },
+		roles: {
+			question: ['magenta'],
+			pointer: ['yellow'],
+			message: ['blue', 'underline'],
+			selected: ['brightGreen'],
+			focus: ['inverse'],
+			hint: ['italic'],
+			description: ['strikethrough'],
+		},
+	}
+
+	it('select — every custom glyph and every custom escape reaches its site', () => {
+		const state = createSelectState({
+			message: 'Pick',
+			choices: ['alpha', { name: 'beta', value: 'b', description: 'the second' }],
+			theme,
+		})
+		expect(selectView(state)).toBe(
+			'\x1b[35m?\x1b[0m \x1b[4;34mPick\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m*\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[3m-\x1b[0m beta  \x1b[9mthe second\x1b[0m',
+		)
+	})
+
+	it('checkbox — the checked and unchecked boxes take the custom glyphs', () => {
+		const state = createCheckboxState({
+			message: 'Pick many',
+			choices: [
+				{ name: 'alpha', value: 'a', checked: true },
+				{ name: 'beta', value: 'b' },
+			],
+			theme,
+		})
+		expect(checkboxView(state)).toBe(
+			'\x1b[35m?\x1b[0m \x1b[4;34mPick many\x1b[0m\n\x1b[33m=>\x1b[0m \x1b[92m[x]\x1b[0m \x1b[7malpha\x1b[0m\n  \x1b[3m[ ]\x1b[0m beta\n\x1b[3m1 selected\x1b[0m',
+		)
+	})
+
+	it('input, password and editor — the pointer glyph and the hint role follow the theme', () => {
+		const input = createInputState({ message: 'Name', default: 'Ada', theme })
+		expect(inputView(input)).toBe(
+			'\x1b[35m?\x1b[0m \x1b[4;34mName\x1b[0m \x1b[33m=>\x1b[0m \x1b[3mAda\x1b[0m',
+		)
+		const password = createPasswordState({ message: 'Secret', theme })
+		expect(passwordView({ ...password, value: 'ab' })).toBe(
+			'\x1b[35m?\x1b[0m \x1b[4;34mSecret\x1b[0m \x1b[33m=>\x1b[0m **',
+		)
+		const editor = createEditorState({ message: 'Notes', theme })
+		expect(editorView(editor)).toBe(
+			'\x1b[35m?\x1b[0m \x1b[4;34mNotes\x1b[0m \x1b[3m(Ctrl+D to finish)\x1b[0m\n\x1b[33m=>\x1b[0m ',
+		)
+	})
+
+	it('the submit and error marks take the custom success / error glyphs', () => {
+		const marks = { icons: { success: '<ok>', error: '<no>' } }
+		const state = createInputState({ message: 'Name', validate: { required: true }, theme: marks })
+		expect(inputReduce({ ...state, value: 'Grace' }, parseKey('\r')).view).toBe(
+			'\x1b[32m<ok>\x1b[0m \x1b[1mName\x1b[0m \x1b[2mGrace\x1b[0m',
+		)
+		expect(inputView({ ...state, error: 'nope' })).toContain('\x1b[31m<no>\x1b[0m')
+	})
+})
+
+describe('a custom hint replaces the computed default', () => {
+	it('confirm — the whole (Y/n) group gives way, painted by the hint role', () => {
+		const state = createConfirmState({ message: 'Continue?', default: true, hint: '[press y]' })
+		expect(confirmView(state)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mContinue?\x1b[0m \x1b[2m[press y]\x1b[0m',
+		)
+		// The accepted keys are unchanged by the hint's wording.
+		expect(confirmReduce(state, parseKey('n')).value).toBe(false)
+	})
+
+	it('editor — the Ctrl+D wording gives way and ctrl-d still finishes', () => {
+		const state = createEditorState({ message: 'Notes', hint: '(EOF ends it)' })
+		expect(editorView(state)).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mNotes\x1b[0m \x1b[2m(EOF ends it)\x1b[0m\n\x1b[36m›\x1b[0m ',
+		)
+		expect(editorReduce(state, parseKey('\x04')).status).toBe('submit')
+	})
+
+	it('select and checkbox — a hint is added after the message, and absent by default', () => {
+		const select = createSelectState({ message: 'Pick', choices: ['a'], hint: 'arrows move' })
+		expect(selectView(select).split('\n')[0]).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m \x1b[2marrows move\x1b[0m',
+		)
+		expect(selectView(createSelectState({ message: 'Pick', choices: ['a'] })).split('\n')[0]).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m',
+		)
+		const checkbox = createCheckboxState({ message: 'Pick', choices: ['a'], hint: 'space toggles' })
+		expect(checkboxView(checkbox).split('\n')[0]).toBe(
+			'\x1b[36m?\x1b[0m \x1b[1mPick\x1b[0m \x1b[2mspace toggles\x1b[0m',
+		)
+	})
+
+	it('hintedHeader renders the header alone when no hint is supplied', () => {
+		const theme = createPromptTheme()
+		expect(hintedHeader(plain, theme, 'Pick')).toBe(promptHeader(plain, theme, 'Pick'))
+		expect(hintedHeader(plain, theme, 'Pick', 'go')).toBe('? Pick go')
+	})
+})
+
+describe('isPromptToken / isPromptThemeOptions', () => {
+	it('accepts every styler accessor name and rejects anything else', () => {
+		expect(isPromptToken('cyan')).toBe(true)
+		expect(isPromptToken('brightWhite')).toBe(true)
+		expect(isPromptToken('strikethrough')).toBe(true)
+		expect(isPromptToken('default')).toBe(false) // a Color, but not a styler accessor
+		expect(isPromptToken('bgRed')).toBe(false) // no background accessor exists to name
+		expect(isPromptToken(1)).toBe(false)
+		expect(isPromptToken(null)).toBe(false)
+	})
+
+	it('accepts a partial theme and rejects an off-shape one', () => {
+		expect(isPromptThemeOptions({})).toBe(true)
+		expect(isPromptThemeOptions({ icons: { pointer: '=>' } })).toBe(true)
+		expect(isPromptThemeOptions({ roles: { message: ['red', 'bold'] } })).toBe(true)
+		expect(isPromptThemeOptions({ roles: { message: [] } })).toBe(true)
+		expect(isPromptThemeOptions({ icons: { pointer: 7 } })).toBe(false)
+		expect(isPromptThemeOptions({ icons: { bogus: 'x' } })).toBe(false)
+		expect(isPromptThemeOptions({ roles: { message: ['plaid'] } })).toBe(false)
+		expect(isPromptThemeOptions({ roles: { bogus: ['red'] } })).toBe(false)
+		expect(isPromptThemeOptions({ theme: {} })).toBe(false)
+		expect(isPromptThemeOptions('cyan')).toBe(false)
+		expect(isPromptThemeOptions(null)).toBe(false)
+	})
+})
+
+describe('sanitizeThemeIcons', () => {
+	it('strips control bytes from every supplied glyph and leaves the roles alone', () => {
+		const sanitized = sanitizeThemeIcons({
+			icons: { pointer: '=>\x07', question: 'q\x1b]52;c;AA==\x07' },
+			roles: { message: ['red'] },
+		})
+		// stripControls removes the control BYTES, so a bare BEL leaves the glyph alone and an
+		// OSC-52 sequence loses the bytes a terminal would act on.
+		expect(sanitized.icons?.pointer).toBe('=>')
+		expect(sanitized.icons?.question).not.toContain('\x1b')
+		expect(sanitized.icons?.question).not.toContain('\x07')
+		expect(sanitized.roles?.message).toEqual(['red'])
+	})
+
+	it('returns a theme with no icons unchanged', () => {
+		const theme: PromptThemeOptions = { roles: { message: ['red'] } }
+		expect(sanitizeThemeIcons(theme)).toEqual(theme)
+	})
+})
+
+describe('wire — theme and hint cross as data', () => {
+	const themeOption = { icons: { pointer: '=>' }, roles: { message: ['magenta'] } }
+
+	it('serializePromptOptions keeps both and JSON round-trips them', () => {
+		const wire = serializePromptOptions({
+			message: 'Pick',
+			hint: 'arrows move',
+			theme: themeOption,
+			styler: createStyler(),
+		})
+		expect(wire).toEqual({ message: 'Pick', hint: 'arrows move', theme: themeOption })
+		expect(parseWireJSON(JSON.stringify(wire))).toEqual(wire)
+	})
+
+	it('dispatchPendingPrompt narrows the wire theme, strips its glyphs, and forwards the hint', async () => {
+		const { terminal, calls } = createRecordingTerminal({ answers: { select: 's' } })
+		const pending: PendingPrompt = {
+			id: 'p1',
+			form: 'select',
+			message: 'Pick',
+			options: {
+				choices: ['alpha'],
+				hint: 'arrows\x07 move',
+				theme: { icons: { pointer: '=>\x1b[31m' }, roles: { message: ['magenta'] } },
+			},
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		const seen = calls.select.calls[0]?.[0]
+		expect(seen?.hint).toBe('arrows move')
+		expect(seen?.theme?.icons?.pointer).not.toContain('\x1b')
+		expect(seen?.theme?.roles?.message).toEqual(['magenta'])
+	})
+
+	it('drops an off-shape wire theme and a non-string hint, leaving the defaults', async () => {
+		const { terminal, calls } = createRecordingTerminal({ answers: { confirm: true } })
+		const pending: PendingPrompt = {
+			id: 'p2',
+			form: 'confirm',
+			message: 'Continue?',
+			options: { theme: { roles: { message: ['plaid'] } }, hint: 42 },
+			status: 'pending',
+			time: 1,
+		}
+		await dispatchPendingPrompt(terminal, pending)
+		expect(calls.confirm.calls[0]?.[0]).toEqual({ message: 'Continue?' })
+		// The prompt the dropped theme would have decorated still renders the defaults.
+		expect(createConfirmState({ message: 'Continue?' }).theme).toEqual(DEFAULT_PROMPT_THEME)
+	})
+
+	it('every form carries a resolved theme on its state', () => {
+		expect(createInputState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)
+		expect(createPasswordState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)
+		expect(createConfirmState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)
+		expect(createSelectState({ message: 'm', choices: ['a'] }).theme).toEqual(DEFAULT_PROMPT_THEME)
+		expect(createCheckboxState({ message: 'm', choices: ['a'] }).theme).toEqual(
+			DEFAULT_PROMPT_THEME,
+		)
+		expect(createEditorState({ message: 'm' }).theme).toEqual(DEFAULT_PROMPT_THEME)
 	})
 })
