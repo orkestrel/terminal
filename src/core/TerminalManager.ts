@@ -1,27 +1,18 @@
 import type {
-	CheckboxOptions,
-	ConfirmOptions,
-	EditorOptions,
-	InputOptions,
-	PasswordOptions,
-	PendingPrompt,
-	PromptFormOptions,
+	PendingForm,
 	PromptInterface,
 	PromptOptions,
-	PromptType,
-	PromptValue,
-	SelectOptions,
 	TerminalAnswerError,
 	TerminalManagerEventMap,
 	TerminalManagerInterface,
 	TerminalManagerOptions,
-	TerminalOptions,
 	TerminalSnapshot,
 	TerminalStoreInterface,
 	TimerHandler,
 } from './types.js'
 import type { Result } from '@orkestrel/contract'
 import type { EmitterInterface } from '@orkestrel/emitter'
+import type { FormInterface, FormValues } from '@orkestrel/form'
 import { TerminalError } from './errors.js'
 import { createPrompt } from './factories.js'
 import { Emitter } from '@orkestrel/emitter'
@@ -29,8 +20,8 @@ import { isArray } from '@orkestrel/contract'
 
 /**
  * The multi-endpoint terminal MANAGER — a registry of named {@link PromptInterface} brokers (one
- * per endpoint), so several parties can `ask` prompts of each other by NAME with a `from` → `to`
- * attribution edge on every parked prompt, and a transitive DEADLOCK check across all in-flight
+ * per endpoint), so several parties can `ask` forms of each other by NAME with a `from` → `to`
+ * attribution edge on every parked form, and a transitive DEADLOCK check across all in-flight
  * asks.
  *
  * @remarks
@@ -41,38 +32,39 @@ import { isArray } from '@orkestrel/contract'
  * - **`ask`.** The target must already be mounted via {@link add} — `ask` never auto-adds it;
  *   rejects `TARGET` for an unknown `to` (listing the known names). Rejects `DEADLOCK` when parking
  *   `from → to` would close a cycle over the CURRENT in-flight edge set (walked transitively);
- *   otherwise parks through the target's broker and resolves with the ORIGINAL ticket Promise (edge
- *   cleanup is attached via `.then`, never altering the value/rejection the caller observes).
+ *   otherwise parks the caller's live form through the target's broker and returns that form's own
+ *   `answer` promise. Edge cleanup never alters the value or rejection the caller observes.
  * - **Durable open / save.** `open(name)` restores an EMPTY broker from the `store` (parked
  *   Promises are process-bound and never resurrected); `save(name)` persists the endpoint's
  *   configured `timeout`.
  * - **Removal.** `remove` drops one endpoint, a batch (§9.2, array overload FIRST), or every
- *   endpoint when called without an argument. It destroys each broker, which expires every prompt
+ *   endpoint when called without an argument. It destroys each broker, which expires every form
  *   still parked on it. `destroy` is idempotent.
  *
  * @example
  * ```ts
+ * const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
  * const manager = new TerminalManager()
  * manager.add('agent')
- * const name = manager.ask('user', 'agent', 'input', { message: 'Your name' })
- * manager.answer('agent', manager.pending('agent')[0].id, 'Ada')
- * await name // 'Ada'
+ * const answer = manager.ask('user', 'agent', form)
+ * manager.answer('agent', manager.pending('agent')[0].id, { name: 'Ada' })
+ * await answer // { name: 'Ada' }
  * ```
  */
 export class TerminalManager implements TerminalManagerInterface {
 	readonly #terminals = new Map<string, PromptInterface>()
-	readonly #config = new Map<string, TerminalOptions>()
+	readonly #config = new Map<string, PromptOptions>()
 	// The handlers subscribed on a mounted broker's emitter — kept so `remove` can `off` them
 	// explicitly (on top of the broker's own `destroy`, which already renders its emitter inert).
 	readonly #listeners = new Map<
 		string,
 		{
-			readonly pending: (prompt: PendingPrompt) => void
-			readonly answer: (id: string, value: unknown) => void
+			readonly pending: (form: PendingForm) => void
+			readonly answer: (id: string, values: FormValues) => void
 			readonly expire: (id: string) => void
 		}
 	>()
-	// In-flight `ask` edges, keyed by the parked ticket's id — the deadlock graph. `from` asked
+	// In-flight `ask` edges, keyed by the parked form's id — the deadlock graph. `from` asked
 	// `to`; cleanup on settle (answer / expire / destroy / remove) removes EXACTLY the edge that
 	// call created.
 	readonly #edges = new Map<string, { readonly from: string; readonly to: string }>()
@@ -114,7 +106,7 @@ export class TerminalManager implements TerminalManagerInterface {
 
 	// === Registry
 
-	add(name: string, options?: TerminalOptions): PromptInterface {
+	add(name: string, options?: PromptOptions): PromptInterface {
 		if (this.#destroyed) throw new TerminalError('DESTROYED', 'manager destroyed')
 		const existing = this.#terminals.get(name)
 		if (existing !== undefined) return existing
@@ -122,6 +114,8 @@ export class TerminalManager implements TerminalManagerInterface {
 		const timer = options?.timer ?? this.#timer
 		const cap = options?.cap ?? this.#cap
 		const promptOptions: PromptOptions = {
+			...(options?.on !== undefined ? { on: options.on } : {}),
+			...(options?.error !== undefined ? { error: options.error } : {}),
 			...(timeout !== undefined ? { timeout } : {}),
 			...(timer !== undefined ? { timer } : {}),
 			...(cap !== undefined ? { cap } : {}),
@@ -136,33 +130,14 @@ export class TerminalManager implements TerminalManagerInterface {
 		broker.emitter.on('answer', listeners.answer)
 		broker.emitter.on('expire', listeners.expire)
 		this.#terminals.set(name, broker)
-		this.#config.set(name, options ?? {})
+		this.#config.set(name, { ...options })
 		this.#listeners.set(name, listeners)
 		return broker
 	}
 
-	// === Ask (overloaded per PromptType, mirroring TerminalManagerInterface)
+	// === Ask
 
-	ask(
-		from: string,
-		to: string,
-		form: 'input' | 'password' | 'editor',
-		options: InputOptions | PasswordOptions | EditorOptions,
-	): Promise<string>
-	ask(from: string, to: string, form: 'confirm', options: ConfirmOptions): Promise<boolean>
-	ask(from: string, to: string, form: 'select', options: SelectOptions): Promise<string>
-	ask(
-		from: string,
-		to: string,
-		form: 'checkbox',
-		options: CheckboxOptions,
-	): Promise<readonly string[]>
-	ask(
-		from: string,
-		to: string,
-		form: PromptType,
-		options: PromptFormOptions,
-	): Promise<PromptValue> {
+	ask(from: string, to: string, form: FormInterface): Promise<FormValues> {
 		const broker = this.#terminals.get(to)
 		if (broker === undefined) {
 			const known = this.terminals()
@@ -188,35 +163,36 @@ export class TerminalManager implements TerminalManagerInterface {
 				),
 			)
 		}
-		const ticket = broker.park({ form, options, from, to })
-		if (broker.pending(ticket.id) !== undefined) {
-			this.#edges.set(ticket.id, { from, to })
-			const clear = this.#createEdgeClear(ticket.id)
-			ticket.value.then(clear, clear)
+		const id = broker.park(form, { from, to })
+		if (broker.pending(id) !== undefined) {
+			this.#edges.set(id, { from, to })
+			form.answer.then(this.#createEdgeClear(id), this.#createEdgeClear(id))
 		}
-		return ticket.value
+		return form.answer
 	}
 
 	// === Pending accessors (§9.1)
 
-	pending(): readonly PendingPrompt[]
-	pending(to: string): readonly PendingPrompt[]
-	pending(to?: string): readonly PendingPrompt[] {
+	pending(): readonly PendingForm[]
+	pending(to: string): readonly PendingForm[]
+	pending(to?: string): readonly PendingForm[] {
 		if (to !== undefined) {
 			const broker = this.#terminals.get(to)
 			return broker === undefined ? [] : broker.pending()
 		}
-		const result: PendingPrompt[] = []
+		const result: PendingForm[] = []
 		for (const broker of this.#terminals.values()) result.push(...broker.pending())
 		return result
 	}
 
 	// === Answer
 
-	answer(to: string, id: string, value: unknown): Result<unknown, TerminalAnswerError> {
+	answer(to: string, id: string, values: FormValues): Result<FormValues, TerminalAnswerError> {
 		const broker = this.#terminals.get(to)
-		if (broker === undefined) return { success: false, error: 'terminal' }
-		return broker.answer(id, value)
+		if (broker === undefined) return { success: false, error: { reason: 'terminal' } }
+		const result = broker.answer(id, values)
+		if (result.success) this.#edges.delete(id)
+		return result
 	}
 
 	// === Durable open / save
@@ -268,21 +244,28 @@ export class TerminalManager implements TerminalManagerInterface {
 		if (this.#destroyed) return
 		this.#destroyed = true
 		this.remove()
+		this.#edges.clear()
 		this.#emitter.destroy()
 	}
 
 	// === Private helpers
 
-	#createPendingListener(): (prompt: PendingPrompt) => void {
-		return (prompt) => this.#emitter.emit('pending', prompt)
+	#createPendingListener(): (form: PendingForm) => void {
+		return (form) => this.#emitter.emit('pending', form)
 	}
 
-	#createAnswerListener(name: string): (id: string, value: unknown) => void {
-		return (id, value) => this.#emitter.emit('answer', name, id, value)
+	#createAnswerListener(name: string): (id: string, values: FormValues) => void {
+		return (id, values) => {
+			this.#edges.delete(id)
+			this.#emitter.emit('answer', name, id, values)
+		}
 	}
 
 	#createExpireListener(name: string): (id: string) => void {
-		return (id) => this.#emitter.emit('expire', name, id)
+		return (id) => {
+			this.#edges.delete(id)
+			this.#emitter.emit('expire', name, id)
+		}
 	}
 
 	#createEdgeClear(id: string): () => void {
@@ -292,7 +275,7 @@ export class TerminalManager implements TerminalManagerInterface {
 	}
 
 	// Drop one endpoint: destroy its broker FIRST (its expire loop re-emits `expire` for every
-	// still-parked prompt through the manager's listeners — still attached at this point, so
+	// still-parked form through the manager's listeners — still attached at this point, so
 	// each settles on the manager emitter too), THEN unsubscribe the manager's listeners and
 	// remove it from every registry map. `false` when `name` was not mounted.
 	#removeOne(name: string): boolean {
@@ -308,7 +291,14 @@ export class TerminalManager implements TerminalManagerInterface {
 		this.#terminals.delete(name)
 		this.#config.delete(name)
 		this.#listeners.delete(name)
+		this.#clearEdges(name)
 		return true
+	}
+
+	#clearEdges(to: string): void {
+		for (const [id, edge] of this.#edges) {
+			if (edge.to === to) this.#edges.delete(id)
+		}
 	}
 
 	// Walk the in-flight edge graph forward from `to`, looking for `from` — a hit means parking
