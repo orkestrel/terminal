@@ -518,7 +518,9 @@ These invariants hold across `src/core`, `src/server`, and this guide.
    `fill(name, matchesAnswer(value) ? value : undefined)`, so a blank line is ABSENCE and `required`
    refuses it. A field with no default and a bare return leaves its key out of the resolved values
    entirely. A field WITH a default binds the declared default, never a value a previous pass held.
-   The `''` sentinel is gone.
+   The `''` sentinel is gone. The blank-line-binds-absence rule is per-control: an empty checkbox
+   binds `[]`, which `matchesAnswer` counts as an answer, so `required` cannot refuse an unchecked
+   checkbox the way it refuses a blank text line.
 4. **A refusal is structured, and the client retries it.** `answer` returns
    `Result<FormValues, AnswerError>`. `{ reason: 'unknown' }` means no form is parked under that id,
    or the one that was has already settled. `{ reason: 'rejected', errors }` carries the
@@ -527,7 +529,13 @@ These invariants hold across `src/core`, `src/server`, and this guide.
    again — until the answer is accepted, the id comes back `unknown`, the form expires, or the client
    is shut down. That loop is what makes a server-side `custom` rule enforceable, because the rule
    never crossed the wire and the client could not have checked it. There is no retry counter: the
-   lifecycle bounds the loop.
+   lifecycle bounds the loop. A retry cannot withdraw an earlier answer: the parked form is
+   authoritative and RETAINS every prior fill, so a corrected retry can only add or replace the
+   fields the last refusal named. A parked form settled OUT OF BAND — its form destroyed or
+   submitted through some path other than this `answer` call — leaves the broker's own record
+   `pending`: the record is marked `answered` or `expired` only inside `#answer` and `#expire`, so a
+   later `answer` for that id does not come back `unknown`. It is submitted against the now-settled
+   form and comes back `{ reason: 'rejected', errors }` instead.
 5. **Ctrl-c is the one exception to "the promise is the form's answer".** `ask` normally resolves or
    rejects with the form's own `answer`, so a caller holding the form can await either. Ctrl-c at the
    driver rejects `ask` with a `TerminalError` coded `CANCEL` and LEAVES THE FORM `editing`, with its
@@ -546,10 +554,14 @@ These invariants hold across `src/core`, `src/server`, and this guide.
    and every DEFAULT stay verbatim, because rewriting them would sever the local rendering copy from
    the authoritative form: the client would answer under keys the parked form does not have, and
    every retry would produce the same rejection forever. Field metadata is dropped, since terminal
-   neither renders nor interprets it. Where a preserved identity or answer string reaches the SCREEN
-   — a prefilled default, a locked held value, an open select's suggested values, a group or label
-   fallback, an authoritative rejection message — it is sanitized at that output boundary only, and
-   the submitted value stays byte-for-byte what arrived.
+   neither renders nor interprets it. A preserved identity or answer string that reaches the SCREEN —
+   a prefilled default, a locked held value, an open select's suggested values, a group or label
+   fallback, an authoritative rejection message — is sanitized at that output boundary only, and the
+   submitted value stays byte-for-byte what arrived. The server driver's `#report` sanitizes BOTH
+   operands it writes — the field's label (falling back to its raw name) and the failure message —
+   so a hostile field name never reaches the screen through a refusal line. A form carrying refusals
+   when `ask` is called renders them at walk entry, before any field is filled, so a caller who
+   re-asks an already-invalid form sees why before typing anything.
 8. **A wire `pattern` never executes locally, and its cost is bounded in length only.** Form
    evaluates a `pattern` rule with a real `RegExp`, at construction and on every fill, so the client
    strips `rule.pattern` from each LOCAL rendering form before building it. Every other rule stays.
@@ -1103,7 +1115,9 @@ numberedList(styler, theme, enabledChoices(choices)) // '  1) Admin' — the non
   scripted TTY: all twelve controls settling one form, the blank line binding as absence, a refused
   value re-asked, an open select accepting a value outside its list, hidden / disabled / locked /
   group handling, the unanswerable form abandoned, ctrl-c leaving the form editing, and the shared
-  readline fallback.
+  readline fallback; plus the `#report` output-boundary regression — a hostile field NAME carrying
+  NUL/DEL bytes, proven sanitized in the rendered failure line against a raw-write negative control
+  that does contain those bytes.
 - [`tests/src/server/helpers.test.ts`](../tests/src/server/helpers.test.ts) — the stream guards, the
   cursor math, the field projections, and the whole-form line shapes.
 - [`tests/src/server/factories.test.ts`](../tests/src/server/factories.test.ts) — `createTerminal`

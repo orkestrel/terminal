@@ -25,7 +25,7 @@ re-pin recipe are recorded in [guides/terminal.md](./guides/terminal.md).
 ## Requirements
 
 - Node.js >= 22
-- Core is ESM; the `./server` subpath ships dual ESM+CJS builds
+- Core and `./server` both ship dual ESM+CJS builds
 
 ## Usage
 
@@ -87,8 +87,8 @@ the multi-endpoint manager, the stores, and the TTY driver.
 
 Two entry points, per the `exports` field in `package.json`: `.` (the
 host-independent core — the reducers, the broker, the bridge, the manager, and
-the stores) and `./server` (the Node-only `Terminal` driver). Core is ESM-only;
-`./server` ships dual ESM+CJS builds.
+the stores) and `./server` (the Node-only `Terminal` driver). Both entry points
+ship dual ESM+CJS builds.
 
 ## License
 

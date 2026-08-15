@@ -9,21 +9,20 @@ import type { TerminalErrorCode } from './types.js'
 // `instanceof`, mirroring the agents-module errors.
 
 /**
- * An error a {@link import('./Prompt.js').Prompt} broker rejects a parked prompt's Promise with.
+ * The error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an
+ * unusable driver stream, a manager routing fault, or a ctrl-c cancellation. A parked form's own
+ * lifecycle failures reject through the form's `answer` with the form package's error, never with
+ * this one.
  *
  * @remarks
- * Carries a {@link TerminalErrorCode} and an optional `context` bag (the prompt `id`). Thrown —
- * as a Promise rejection on the awaited prompt call — when the user aborts an interactive
- * server-`Terminal` prompt with ctrl-c (`CANCEL`). Expiry of a parked broker prompt (its `timeout`
- * elapsed, or the broker was `destroy`ed while it was still `pending`) instead abandons the parked
- * form: its own answer Promise rejects with the Form package's `ABANDONED` error, not a
- * {@link TerminalError}. Narrow a caught value with {@link isTerminalError} and branch on
- * `error.code`.
+ * Carries a {@link TerminalErrorCode} and an optional `context` bag naming the offending values:
+ * `{ cap }` on `LIMIT`, `{ to, known }` on `TARGET`, and `{ from, to, path }` on `DEADLOCK`. Narrow
+ * a caught value with {@link isTerminalError} and branch on `error.code`.
  */
 export class TerminalError extends Error {
 	/** The machine-readable condition — see {@link TerminalErrorCode}. */
 	readonly code: TerminalErrorCode
-	/** An optional context bag naming the offending prompt id. */
+	/** An optional context bag naming the offending values — see the class {@link TerminalError remarks}. */
 	readonly context?: Readonly<Record<string, unknown>>
 
 	constructor(
@@ -47,11 +46,11 @@ export class TerminalError extends Error {
  * @example
  * ```ts
  * try {
- * 	const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
- * 	const id = prompt.park(form)
- * 	await form.answer
+ * 	await terminal.ask(form)
  * } catch (error) {
- * 	if (isTerminalError(error) && error.code === 'CANCEL') retryLater()
+ * 	if (isTerminalError(error) && error.code === 'CANCEL') {
+ * 		// the person aborted
+ * 	}
  * }
  * ```
  */

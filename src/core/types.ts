@@ -167,9 +167,10 @@ export interface PromptStep<T, S> {
  * value a control cannot hold, a write to a settled form — arrives as the dependency's own
  * `FormError` and is never re-coded.
  *
- * - `EXPIRE` — a parked form was not answered before its `timeout`, or the broker was destroyed
- *   while it was still parked. The broker abandons the form, so the caller's `answer` promise
- *   rejects on the form's own lifecycle.
+ * - `EXPIRE` — `park` was called on an already-`destroy`ed broker: the given form is destroyed and
+ *   the call throws before minting an id. A parked form that times out is abandoned instead, not
+ *   coded `EXPIRE` — the broker destroys it and the caller's `answer` promise rejects on the
+ *   form's own lifecycle with the Form package's `ABANDONED` error.
  * - `CANCEL` — the user aborted at the server `Terminal` driver with ctrl-c.
  * - `DRIVER` — the driver could not read the terminal it was given.
  * - `DEADLOCK` — an endpoint was asked to answer its own question.
