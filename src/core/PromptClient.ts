@@ -1,14 +1,13 @@
 import type {
 	FetchHandler,
-	PendingPrompt,
 	PromptClientEventMap,
 	PromptClientInterface,
 	PromptClientOptions,
-	PromptFormInterface,
 	TimerCancel,
 	TimerHandler,
 } from './types.js'
 import type { EmitterInterface } from '@orkestrel/emitter'
+import type { FieldError, FormInterface, FormSchema, FormValues } from '@orkestrel/form'
 import type { SSEEvent } from '@orkestrel/sse'
 import {
 	ACCEPT_EVENT_STREAM,
@@ -19,57 +18,48 @@ import {
 } from './constants.js'
 import {
 	defaultTimer,
-	dispatchPendingPrompt,
 	globalFetch,
 	isAbortError,
 	isInsecureRemote,
+	sanitizeSchema,
 } from './helpers.js'
-import { isPendingPrompt } from './validators.js'
+import { isPendingForm } from './validators.js'
+import { arrayOf, isBoolean, isRecord, isString, parseJSON } from '@orkestrel/contract'
 import { Emitter } from '@orkestrel/emitter'
+import { createForm, isFieldError, parseForm } from '@orkestrel/form'
 import { createSSEParser } from '@orkestrel/sse'
-import { isRecord, isString, parseJSON } from '@orkestrel/contract'
 
 /**
- * The SSE prompt BRIDGE (observable §13) — the client-side counterpart to
- * {@link import('./Prompt.js').Prompt}. Connects to a remote broker's SSE endpoint, receives
- * serialized pending prompts, dispatches EACH to a LOCAL {@link PromptFormInterface} terminal (so
- * a human at THIS machine answers a prompt parked elsewhere), and POSTs the answer back.
- * Universal — `fetch` + SSE are web-standard, so it runs in a browser or on a server; the
- * injected `fetch` / timer make it fully deterministic in tests.
+ * The SSE form bridge. It ingests serialized forms from a remote broker, renders them through a
+ * local terminal, and posts answers back without blocking the event stream.
  *
  * @remarks
- * - **Connect + reconnect.** {@link connect} opens the SSE stream (via the injected `fetch` + the
- *   core `SSEParser`) and loops, reconnecting after the stream drops with the `delay` backoff
- *   (driven by the injected timer) — unless `reconnect` is `false`, the client was
- *   {@link destroy}ed, or the drop was a deliberate {@link disconnect} (an abort).
- * - **Dispatch + answer.** Each decoded `pending` event is narrowed to a `PendingPrompt` (§14 —
- *   never an `as`), dispatched to `terminal`, and its resolved value POSTed back to `url`.
- *   Dispatch is strictly SERIAL: the read loop drives the terminal for ONE prompt at a time and
- *   only reads/dispatches the next event after the current prompt fully settles (its answer
- *   POSTed). A prompt id redelivered (e.g. after a reconnect) WHILE its prior dispatch is still
- *   in flight is skipped (a `#seen` set tracks in-flight ids); once that dispatch settles (or the
- *   broker sends `expire` for the id) the id is dropped from `#seen`, so a later redelivery of the
- *   SAME id after completion is dispatched again — the client does not dedupe across completion.
- * - **Server signals.** An `expire` event (the broker dropped a parked prompt) emits `expire`; a
- *   `shutdown` event calls {@link disconnect} (not {@link destroy}) — the client stops streaming
- *   without auto-reconnect but stays reusable; a later {@link connect} recovers it.
- * - **Lean events (§13).** `connect` / `disconnect` / `expire` / `error` — errors are `unknown`.
- *   `disconnect` fires exactly once per connected-to-disconnected transition, whether triggered by
- *   the server ending the stream cleanly or by a deliberate {@link disconnect} / {@link destroy}.
+ * - **Connect + reconnect.** {@link connect} opens the SSE stream and reconnects after a transport
+ *   drop with the injected backoff unless reconnect is disabled, the client was destroyed, or
+ *   {@link disconnect} deliberately stopped it.
+ * - **Ingest + render.** Each `pending` envelope passes through `isPendingForm`, Form's `parseForm`,
+ *   and terminal's `sanitizeSchema`, then enters a serial render queue. The SSE reader never awaits
+ *   that queue, so `expire` and `shutdown` remain live while a person is answering.
+ * - **Safe local form.** The rendering copy omits every wire `pattern`, because Form compiles a
+ *   pattern during local evaluation. The broker's parked form retains it and remains authoritative.
+ * - **Refusal retry.** A structured `rejected` response seeds a new rendering form with the values
+ *   just submitted, applies every {@link FieldError} through `invalidate`, and asks again. No retry
+ *   counter truncates the loop; acceptance, expiry, and shutdown are its bounds.
+ * - **Replay safety.** A replayed id is skipped while it is queued, rendering, or posting. Once an
+ *   attempt ends, a later delivery of that id may be rendered again.
  *
  * @example
  * ```ts
  * const client = createPromptClient({
  * 	url: 'http://localhost:3001/prompts',
- * 	terminal: createTerminal(), // a local PromptFormInterface (T-c)
- * 	on: { connect: () => log('connected') },
+ * 	terminal: createTerminal(),
  * })
- * await client.connect() // streams remote prompts to the local terminal, POSTs answers back
+ * await client.connect()
  * ```
  */
 export class PromptClient implements PromptClientInterface {
 	readonly url: string
-	readonly #terminal: PromptFormInterface
+	readonly #terminal: PromptClientOptions['terminal']
 	readonly #token: string | undefined
 	readonly #reconnect: boolean
 	readonly #delay: number
@@ -82,8 +72,13 @@ export class PromptClient implements PromptClientInterface {
 	#connecting = false
 	#connected = false
 	#destroyed = false
+	#draining = false
 	#warnedInsecureToken = false
 	readonly #seen = new Set<string>()
+	readonly #queue = new Map<string, FormSchema>()
+	#active:
+		| { readonly id: string; readonly form: FormInterface; readonly stopped: boolean }
+		| undefined
 
 	constructor(options: PromptClientOptions) {
 		this.url = options.url
@@ -107,15 +102,8 @@ export class PromptClient implements PromptClientInterface {
 		return this.#connected
 	}
 
-	// === Connection lifecycle
-
 	async connect(): Promise<void> {
-		if (this.#destroyed) return
-		// Re-entrancy guard: a connect already in progress owns `#controller` / the backoff fields —
-		// a second concurrent call must not race them, so it returns immediately.
-		if (this.#connecting) return
-		// Arm the "should be connected" flag — `disconnect()` clears it to stop the reconnect loop
-		// (a deliberate disconnect, not a transport drop); re-arming here lets a later connect restart.
+		if (this.#destroyed || this.#connecting) return
 		this.#connecting = true
 		while (this.#connecting && !this.#destroyed) {
 			try {
@@ -125,19 +113,12 @@ export class PromptClient implements PromptClientInterface {
 				if (this.#destroyed || isAbortError(error)) return
 				this.#emitter.emit('error', error)
 			}
-			// Stop after a clean end / error unless reconnect is on and the client is still connecting.
 			if (!this.#reconnect || !this.#connecting || this.#destroyed) return
-			// Park on the backoff. `disconnect()` wakes this early and clears `#connecting`, so the loop
-			// re-checks the flag above and EXITS instead of reconnecting.
 			await this.#wait(this.#delay)
 		}
 	}
 
 	disconnect(): void {
-		// Stop the CURRENT connection AND prevent reconnect — the user explicitly disconnected. Clearing
-		// `#connecting` makes the connect loop exit the next time it re-checks (a later `connect()` may
-		// restart it). Abort an in-flight stream; and if the loop is parked on the backoff, cancel that
-		// timer and wake the parked `#wait` so the loop re-checks `#connecting` immediately and exits.
 		this.#connecting = false
 		this.#controller?.abort()
 		this.#controller = undefined
@@ -153,15 +134,10 @@ export class PromptClient implements PromptClientInterface {
 		if (this.#destroyed) return
 		this.#destroyed = true
 		this.disconnect()
-		this.#seen.clear()
+		this.#interrupt()
 		this.#emitter.destroy()
 	}
 
-	// === Private helpers
-
-	// Open the SSE stream once and pump it to completion: GET the endpoint, read the body stream,
-	// decode bytes, feed the core SSEParser, and handle each dispatched event. Throws on a non-OK
-	// response / missing body / abort — `connect` catches and (maybe) reconnects.
 	async #stream(): Promise<void> {
 		if (this.#token !== undefined && isInsecureRemote(this.url) && !this.#warnedInsecureToken) {
 			this.#warnedInsecureToken = true
@@ -185,17 +161,16 @@ export class PromptClient implements PromptClientInterface {
 
 		const reader = body.getReader()
 		const decoder = new TextDecoder()
-		// Bound the parser's internal buffer — an OVERFLOW throws out of `parser.parse`, propagates
-		// through this loop, `connect`'s catch (as an `error` event), and into the backoff reconnect
-		// (which opens a fresh parser); this propagate-and-reconnect policy is intentional.
 		const parser = createSSEParser({ limit: SSE_BUFFER_LIMIT })
 		try {
 			for (;;) {
 				const { done, value } = await reader.read()
 				if (done) break
 				for (const event of parser.parse(decoder.decode(value, { stream: true }))) {
-					await this.#handle(event)
+					this.#handle(event)
+					if (!this.#connecting) break
 				}
+				if (!this.#connecting) break
 			}
 		} finally {
 			reader.releaseLock()
@@ -203,68 +178,151 @@ export class PromptClient implements PromptClientInterface {
 		this.#markDisconnected()
 	}
 
-	// Route one decoded SSE event by its `event:` name (§14-narrow every payload).
-	async #handle(event: SSEEvent): Promise<void> {
+	#handle(event: SSEEvent): void {
 		if (event.event === SSE_EVENTS.pending) {
 			const parsed = parseJSON(event.data)
-			if (isPendingPrompt(parsed) && !this.#seen.has(parsed.id))
-				await this.#dispatch(parsed.id, parsed)
+			if (!isPendingForm(parsed) || this.#seen.has(parsed.id)) return
+			const schema = parseForm(parsed.schema)
+			if (schema === undefined) {
+				this.#emitter.emit(
+					'error',
+					new Error(`broker sent an invalid form schema for ${parsed.id}`),
+				)
+				return
+			}
+			this.#seen.add(parsed.id)
+			this.#queue.set(parsed.id, sanitizeSchema(schema))
+			void this.#drain()
 			return
 		}
 		if (event.event === SSE_EVENTS.expire) {
 			const parsed = parseJSON(event.data)
-			if (isRecord(parsed) && isString(parsed.id)) {
-				this.#seen.delete(parsed.id)
-				this.#emitter.emit('expire', parsed.id)
-			}
+			if (isRecord(parsed) && isString(parsed.id)) this.#expire(parsed.id)
 			return
 		}
-		if (event.event === SSE_EVENTS.shutdown) this.disconnect()
-	}
-
-	// Dispatch one pending prompt to the local terminal and POST its answer back. Dispatch is
-	// strictly serial — see the class docstring — so this always runs to completion (or errors)
-	// before the read loop reads and dispatches the next event.
-	async #dispatch(id: string, pending: PendingPrompt): Promise<void> {
-		this.#seen.add(id)
-		try {
-			const value = await dispatchPendingPrompt(this.#terminal, pending)
-			await this.#post(id, value)
-		} catch (error) {
-			this.#emitter.emit('error', error)
-		} finally {
-			this.#seen.delete(id)
+		if (event.event === SSE_EVENTS.shutdown) {
+			this.disconnect()
+			this.#interrupt()
 		}
 	}
 
-	// POST one answer back to the broker; surface a non-OK / failed POST as an `error` event.
-	async #post(id: string, value: unknown): Promise<void> {
+	async #drain(): Promise<void> {
+		if (this.#draining) return
+		this.#draining = true
+		try {
+			while (!this.#destroyed) {
+				let queued: readonly [string, FormSchema] | undefined
+				for (const entry of this.#queue) {
+					queued = entry
+					break
+				}
+				if (queued === undefined) return
+				const [id, schema] = queued
+				this.#queue.delete(id)
+				try {
+					await this.#render(id, schema)
+				} catch (error) {
+					const active = this.#active
+					if (active?.id !== id || !active.stopped) this.#emitter.emit('error', error)
+				} finally {
+					const active = this.#active
+					if (active?.id === id) {
+						active.form.destroy()
+						this.#active = undefined
+					}
+					if (!this.#queue.has(id)) this.#seen.delete(id)
+				}
+			}
+		} finally {
+			this.#draining = false
+		}
+	}
+
+	async #render(id: string, schema: FormSchema): Promise<void> {
+		let values: FormValues | undefined
+		let errors: readonly FieldError[] = []
+		while (this.#seen.has(id) && !this.#destroyed) {
+			const form = this.#createRenderingForm(schema, values)
+			this.#active = { id, form, stopped: false }
+			for (const error of errors) form.invalidate(error.field, error.message)
+			const submitted = await this.#terminal.ask(form)
+			const active = this.#active
+			if (active?.id !== id || active.stopped) return
+			const rejected = await this.#post(id, submitted)
+			const posted = this.#active
+			if (posted?.id !== id || posted.stopped || rejected === undefined) return
+			values = submitted
+			errors = rejected
+			form.destroy()
+			this.#active = undefined
+		}
+	}
+
+	#createRenderingForm(schema: FormSchema, values?: FormValues): FormInterface {
+		const fields = schema.fields.map((field) => {
+			if (field.rule?.pattern === undefined) return field
+			const { pattern: _pattern, ...rule } = field.rule
+			return { ...field, rule }
+		})
+		const form = createForm({ ...schema, fields }, values === undefined ? undefined : { values })
+		void form.answer.catch(() => undefined)
+		return form
+	}
+
+	async #post(id: string, values: FormValues): Promise<readonly FieldError[] | undefined> {
 		const response = await this.#fetch(this.url, {
 			method: 'POST',
 			headers: this.#headers({ 'Content-Type': 'application/json' }),
-			body: JSON.stringify({ id, value }),
+			body: JSON.stringify({ id, values }),
 		})
 		if (!response.ok) this.#emitter.emit('error', new Error(`broker rejected answer ${id}`))
+		const parsed = parseJSON(await response.text())
+		if (!isRecord(parsed) || !isBoolean(parsed.success)) {
+			this.#emitter.emit('error', new Error(`broker returned an invalid answer result for ${id}`))
+			return undefined
+		}
+		if (parsed.success) return undefined
+		const error = parsed.error
+		if (!isRecord(error) || !isString(error.reason)) {
+			this.#emitter.emit('error', new Error(`broker returned an invalid answer error for ${id}`))
+			return undefined
+		}
+		if (error.reason === 'unknown') return undefined
+		if (error.reason === 'rejected' && arrayOf(isFieldError)(error.errors)) return error.errors
+		this.#emitter.emit('error', new Error(`broker returned an invalid answer refusal for ${id}`))
+		return undefined
 	}
 
-	// Emit `disconnect` exactly once per connected→disconnected transition — the single choke point
-	// for both the clean server-end tail of `#stream` and the deliberate `disconnect()`/`destroy()`
-	// teardown, so neither path can double-emit or miss the event.
+	#expire(id: string): void {
+		const active = this.#active
+		if (active?.id === id) {
+			this.#active = { ...active, stopped: true }
+			this.#seen.delete(id)
+			active.form.destroy()
+		} else if (this.#queue.delete(id)) this.#seen.delete(id)
+		this.#emitter.emit('expire', id)
+	}
+
+	#interrupt(): void {
+		this.#queue.clear()
+		this.#seen.clear()
+		const active = this.#active
+		if (active === undefined) return
+		this.#active = { ...active, stopped: true }
+		active.form.destroy()
+	}
+
 	#markDisconnected(): void {
 		if (!this.#connected) return
 		this.#connected = false
 		this.#emitter.emit('disconnect')
 	}
 
-	// Merge the base headers with the auth token header when a token is configured.
 	#headers(base: Record<string, string>): Record<string, string> {
 		if (this.#token !== undefined) return { ...base, [HEADER_TOKEN]: this.#token }
 		return { ...base }
 	}
 
-	// Park `ms` on the INJECTED timer (deterministic in tests) — the reconnect backoff. The timer's
-	// cancel and the resolver are held on `#backoff` / `#wake` so `disconnect()` can wake the loop
-	// early (cancel the timer + resolve now); both clear on settle so they never fire twice.
 	#wait(ms: number): Promise<void> {
 		return new Promise((resolve) => {
 			const settle = this.#createSettler(resolve)
