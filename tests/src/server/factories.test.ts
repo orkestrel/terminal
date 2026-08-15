@@ -1,46 +1,21 @@
-import { describe, expect, it } from 'vitest'
-import { Readable } from 'node:stream'
+import { RETURN } from '@src/core'
 import { createTerminal } from '@src/server'
-import { createFakeTTY, createStreamTarget } from '../../setupServer.js'
-
-// Factory coverage for the T-c server-terminals branch (AGENTS §16) — `createTerminal` builds a
-// working `TerminalInterface` over the injected streams and exposes exactly the six prompt forms;
-// the deep per-prompt behavior is exercised in Terminal.test.ts. Construction with default (real
-// process) streams must not throw — a bare `createTerminal()` is valid (it just isn't driven here).
+import { createScriptedTTY } from '../../setupServer.js'
+import { createForm } from '@orkestrel/form'
+import { describe, expect, it } from 'vitest'
 
 describe('createTerminal', () => {
-	it('constructs with no options (default process streams) without throwing', () => {
-		expect(() => createTerminal()).not.toThrow()
-	})
-
-	it('constructs with only one stream injected (the other defaults) without throwing', () => {
-		const tty = createFakeTTY()
-		expect(() => createTerminal({ input: tty.input })).not.toThrow()
-		expect(() => createTerminal({ output: tty.output })).not.toThrow()
-	})
-
-	it('exposes the six PromptFormInterface methods', () => {
+	it('returns the one-method whole-form interface', () => {
 		const terminal = createTerminal()
-		expect(typeof terminal.input).toBe('function')
-		expect(typeof terminal.password).toBe('function')
-		expect(typeof terminal.confirm).toBe('function')
-		expect(typeof terminal.select).toBe('function')
-		expect(typeof terminal.checkbox).toBe('function')
-		expect(typeof terminal.editor).toBe('function')
+		expect(typeof terminal.ask).toBe('function')
+		expect(Object.keys(terminal)).not.toContain('input')
 	})
 
-	it('drives an interactive prompt to resolution over the injected fake TTY', async () => {
-		const tty = createFakeTTY()
+	it('forwards injected streams to a working interactive driver', async () => {
+		const tty = createScriptedTTY([['Ada', RETURN]])
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
-		const promise = terminal.confirm({ message: 'OK?', default: false })
-		tty.push('y')
-		expect(await promise).toBe(true)
-	})
-
-	it('drives a non-TTY prompt to resolution over an injected readable', async () => {
-		const input = Readable.from(['Ada\n'])
-		const { target } = createStreamTarget({ isTTY: false })
-		const terminal = createTerminal({ input, output: target })
-		expect(await terminal.input({ message: 'Name' })).toBe('Ada')
+		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+		expect(await terminal.ask(form)).toEqual({ name: 'Ada' })
+		expect(tty.listeners()).toBe(0)
 	})
 })

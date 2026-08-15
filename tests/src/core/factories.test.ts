@@ -1,41 +1,52 @@
-import { createPrompt, createPromptClient } from '@src/core'
-import { createManualTimer, createRecordingTerminal, requireElement } from '../../setup.js'
+import {
+	createDatabaseTerminalStore,
+	createMemoryTerminalStore,
+	createPrompt,
+	createPromptClient,
+	createTerminalManager,
+} from '@src/core'
+import { createManualTimer, createRecordingTerminal } from '../../setup.js'
+import { createForm } from '@orkestrel/form'
 import { describe, expect, it } from 'vitest'
 
-// The terminals factories are thin constructors — these tests assert each returns a working
-// instance with its options forwarded (the broker parks + the injected timer drives expiry; the
-// client exposes its url + connects through the injected fetch). The full park / answer / dispatch
-// behavior is covered by Prompt.test.ts / PromptClient.test.ts.
-
-describe('createPrompt', () => {
-	it('returns a working broker that parks a prompt and forwards the on hook', async () => {
-		const parked: string[] = []
-		const prompt = createPrompt({ on: { pending: (pending) => parked.push(pending.id) } })
-
-		const answer = prompt.input({ message: 'Name?' })
-		expect(prompt.count).toBe(1)
-		const pending = requireElement(prompt.pending(), 0)
-		expect(parked).toEqual([pending.id]) // the on hook fired
-		prompt.answer(pending.id, 'Ada')
-		expect(await answer).toBe('Ada')
-	})
-
-	it('forwards the injected timer for deterministic expiry', () => {
+describe('core factories', () => {
+	it('createPrompt forwards hooks and the timer seam to a working broker', async () => {
 		const timer = createManualTimer()
-		const prompt = createPrompt({ timeout: 10, timer: timer.handler })
-		void prompt.input({ message: 'x' })
-		expect(timer.pending).toBe(1) // the injected timer armed the deadline
-	})
-})
-
-describe('createPromptClient', () => {
-	it('returns a client exposing its url, not yet connected', () => {
-		const { terminal } = createRecordingTerminal()
-		const client = createPromptClient({
-			url: 'http://broker/prompts',
-			terminal,
+		const pending: string[] = []
+		const prompt = createPrompt({
+			timer: timer.handler,
+			on: { pending: (form) => pending.push(form.id) },
 		})
-		expect(client.url).toBe('http://broker/prompts')
+		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+		const id = prompt.park(form)
+
+		expect(pending).toEqual([id])
+		expect(timer.pending).toBe(1)
+		prompt.answer(id, { name: 'Ada' })
+		expect(await form.answer).toEqual({ name: 'Ada' })
+	})
+
+	it('createPromptClient returns a disconnected client with the supplied URL', () => {
+		const terminal = createRecordingTerminal()
+		const client = createPromptClient({ url: 'http://localhost/prompts', terminal })
+		expect(client.url).toBe('http://localhost/prompts')
 		expect(client.connected).toBe(false)
+		client.destroy()
+	})
+
+	it('createTerminalManager returns a working registry', () => {
+		const manager = createTerminalManager()
+		expect(manager.add('agent')).toBe(manager.terminal('agent'))
+		expect(manager.terminals()).toEqual(['agent'])
+		manager.destroy()
+	})
+
+	it('store factories return working independent implementations', async () => {
+		for (const store of [createMemoryTerminalStore(), createDatabaseTerminalStore()]) {
+			await store.set({ id: 'agent', timeout: 20 })
+			expect(await store.get('agent')).toEqual({ id: 'agent', timeout: 20 })
+			await store.delete('agent')
+			expect(await store.get('agent')).toBeUndefined()
+		}
 	})
 })
