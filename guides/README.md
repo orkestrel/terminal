@@ -23,7 +23,10 @@ directory (AGENTS §22).
 prompt core renders its `view` through (one style engine). It documents
 **that package's** surface, not anything sourced in this repo; it is kept
 here so a reader of this package can see the primitive it is built from
-without leaving this guide set.
+without leaving this guide set. It mirrors console's published release, so
+it predates the `StylerInterface.render` / `freezeStyle` surface this package
+builds against — see the build requirement at the top of
+[`terminal.md`](terminal.md).
 
 [`contract.md`](contract.md) is a byte-identical mirror of the guide
 for `@orkestrel/contract` — a runtime dependency, the `Guard<T>` vocabulary
