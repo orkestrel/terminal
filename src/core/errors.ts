@@ -1,12 +1,8 @@
 import type { TerminalErrorCode } from './types.js'
 
-// AGENTS §12: a real error type, not a sentinel. An interactive server-`Terminal` prompt aborted
-// with ctrl-c REJECTS its Promise with a `TerminalError` carrying a machine-readable `code`, so a
-// caller branches on `error.code` rather than parsing the message. A parked broker prompt that
-// expires (its `timeout` elapsed, or the broker was `destroy`ed while it was still pending) instead
-// abandons the parked form, and its own answer Promise rejects with the Form package's `ABANDONED`
-// error. The optional `context` bag names the offending prompt id. The guard narrows with
-// `instanceof`, mirroring the agents-module errors.
+// AGENTS §12: a real error type, not a sentinel. Callers branch on the machine-readable
+// `error.code` rather than parsing the message, and the guard narrows with `instanceof`,
+// mirroring the agents-module errors.
 
 /**
  * The error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an
