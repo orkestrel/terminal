@@ -4,10 +4,9 @@
 >
 > The design is **one pure core, three drivers**. The cross-environment core ([`src/core`](../src/core), surfaced through `@src/core`) owns the universal prompt logic — the decoder, the reducers, the validation, the broker, and the SSE bridge — all pure types + functions + immutable state. The server backend ([`src/server`](../src/server), surfaced through `@src/server`) owns ONLY the `Terminal` raw-mode driver, the one piece that touches a real `process.stdin`. Validation is **declarative DATA** (a `ValidationRules` bag, not a closure), so it crosses the wire: the broker serializes the rules, the client rebuilds the validator from them — the reason a remotely-parked prompt validates exactly as a local one. The reducers render their `view` through the shared console [`StylerInterface`](console.md) (AGENTS — one style engine), so the driver only feeds bytes in and writes the rendered string out.
 
-**Build requirement.** Every view needs a console release greater than `0.0.6` that carries both
-`StylerInterface.render` and `freezeStyle`. This package still declares `@orkestrel/console` as
-`^0.0.6`; on `0.0.x`, that range pins exactly `0.0.6`. Re-pin it to the carrying release before a
-registry build or publish.
+**Build requirement.** Every view needs `StylerInterface.render` and `freezeStyle`, which
+`@orkestrel/console` ships as of `0.0.7`. This package declares `^0.0.7`; on `0.0.x`, that range
+pins exactly the carrying release, so an ordinary registry install satisfies it.
 
 ## Surface
 
