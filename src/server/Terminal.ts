@@ -2,10 +2,12 @@ import type {
 	CheckboxOptions,
 	ConfirmOptions,
 	EditorOptions,
+	EditorState,
 	InputOptions,
 	KeyEvent,
 	PasswordOptions,
 	PromptStep,
+	PromptTheme,
 	SelectOptions,
 } from '@src/core'
 import type { StylerInterface } from '@orkestrel/console'
@@ -25,14 +27,15 @@ import {
 	checkboxReduce,
 	confirmReduce,
 	editorReduce,
+	hintedHeader,
 	inputReduce,
 	parseKey,
 	passwordReduce,
+	promptHeader,
 	resolveValidation,
 	selectReduce,
 	TerminalError,
 } from '@src/core'
-import { createStyler } from '@orkestrel/console'
 import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 import {
@@ -84,7 +87,9 @@ export class Terminal implements TerminalInterface {
 		if (rawCapable(this.#input)) return this.#drive(state, inputReduce)
 		return this.#lineFallback(
 			options.message,
-			options.styler,
+			state.styler,
+			state.theme,
+			undefined,
 			(answer) => {
 				const value = answer.length > 0 ? answer : (options.default ?? '')
 				return resolveValidation(options.validate)(value) === true ? { value } : undefined
@@ -99,7 +104,9 @@ export class Terminal implements TerminalInterface {
 		if (rawCapable(this.#input)) return this.#drive(state, passwordReduce)
 		return this.#lineFallback(
 			options.message,
-			options.styler,
+			state.styler,
+			state.theme,
+			undefined,
 			(answer) =>
 				resolveValidation(options.validate)(answer) === true ? { value: answer } : undefined,
 			// EOF: settle the entered secret (or '') — a piped stream can't be re-prompted.
@@ -114,7 +121,9 @@ export class Terminal implements TerminalInterface {
 		if (rawCapable(this.#input)) return this.#drive(state, confirmReduce)
 		return this.#lineFallback(
 			options.message,
-			options.styler,
+			state.styler,
+			state.theme,
+			state.hint,
 			(answer) => {
 				const normalized = answer.trim().toLowerCase()
 				if (normalized.length === 0) return { value: options.default ?? false }
@@ -132,9 +141,10 @@ export class Terminal implements TerminalInterface {
 		if (rawCapable(this.#input)) return this.#drive(state, selectReduce)
 		return this.#listFallback(
 			options.message,
-			options.styler,
+			state.styler,
+			state.theme,
 			state.choices,
-			FALLBACK_SELECT_HINT,
+			state.hint ?? FALLBACK_SELECT_HINT,
 			(line) => {
 				const index = Number.parseInt(line.trim(), 10) - 1
 				const choice = state.choices[index]
@@ -150,9 +160,10 @@ export class Terminal implements TerminalInterface {
 		if (rawCapable(this.#input)) return this.#drive(state, checkboxReduce)
 		return this.#listFallback(
 			options.message,
-			options.styler,
+			state.styler,
+			state.theme,
 			state.choices,
-			FALLBACK_CHECKBOX_HINT,
+			state.hint ?? FALLBACK_CHECKBOX_HINT,
 			(line) => {
 				const indices = line
 					.split(',')
@@ -173,7 +184,7 @@ export class Terminal implements TerminalInterface {
 	editor(options: EditorOptions): Promise<string> {
 		const state = createEditorState(options)
 		if (rawCapable(this.#input)) return this.#drive(state, editorReduce)
-		return this.#editorFallback(options)
+		return this.#editorFallback(state)
 	}
 
 	// === The raw-mode kernel
@@ -294,16 +305,17 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #lineFallback<T>(
 		message: string,
-		styler: StylerInterface | undefined,
+		styler: StylerInterface,
+		theme: PromptTheme,
+		hint: string | undefined,
 		take: (answer: string) => { readonly value: T } | undefined,
 		eof: (answer: string) => T,
 		// A degraded TTY (isTTY but no setRawMode) must never echo a masked answer — used by `password`.
 		masked = false,
 	): Promise<T> {
-		const paint = styler ?? createStyler()
 		for (;;) {
 			const { answer, ended } = await this.#question(
-				`${paint.cyan('?')} ${paint.bold(message)} `,
+				`${hintedHeader(styler, theme, message, hint)} `,
 				masked,
 			)
 			const accepted = take(answer)
@@ -319,20 +331,22 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #listFallback<T>(
 		message: string,
-		styler: StylerInterface | undefined,
+		styler: StylerInterface,
+		theme: PromptTheme,
 		choices: ReadonlyArray<{ readonly name: string }>,
 		hint: string,
 		take: (line: string) => { readonly value: T } | undefined,
 		eof: T,
 	): Promise<T> {
-		const paint = styler ?? createStyler()
-		let list = `${paint.cyan('?')} ${paint.bold(message)}\n`
+		let list = `${promptHeader(styler, theme, message)}\n`
 		choices.forEach((choice, index) => {
-			list += `  ${paint.dim(`${String(index + 1)})`)} ${choice.name}\n`
+			list += `  ${styler.render(theme.roles.hint, `${String(index + 1)})`)} ${choice.name}\n`
 		})
 		this.#output.write(list)
 		for (;;) {
-			const { answer, ended } = await this.#question(`${paint.dim(`${hint}:`)} `)
+			const { answer, ended } = await this.#question(
+				`${styler.render(theme.roles.hint, `${hint}:`)} `,
+			)
 			const accepted = take(answer)
 			if (accepted !== undefined) return accepted.value
 			// EOF on a piped stream — no further line can arrive, so settle the empty fallback rather
@@ -353,13 +367,12 @@ export class Terminal implements TerminalInterface {
 	 * on the consumed stream — the EOF analogue of the raw-mode editor's re-edit, which a piped stream
 	 * cannot offer.
 	 */
-	async #editorFallback(options: EditorOptions): Promise<string> {
-		const paint = options.styler ?? createStyler()
+	async #editorFallback(state: EditorState): Promise<string> {
 		this.#output.write(
-			`${paint.cyan('?')} ${paint.bold(options.message)} ${paint.dim('(EOF to finish)')}\n`,
+			`${hintedHeader(state.styler, state.theme, state.message, state.hint ?? '(EOF to finish)')}\n`,
 		)
 		const text = await this.#lines()
-		return text.length > 0 ? text : (options.default ?? '')
+		return text.length > 0 ? text : state.default
 	}
 
 	/**

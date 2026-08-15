@@ -1,7 +1,7 @@
 import type { FakeTTYInterface } from '../../setupServer.js'
-import type { InputStreamInterface, OutputStreamInterface } from '@src/server'
+import type { InputStreamInterface, OutputStreamInterface, TerminalInterface } from '@src/server'
 import { describe, expect, it } from 'vitest'
-import { Readable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
 import { assertCleanExit, createFakeTTY, createStreamTarget, rawOutput } from '../../setupServer.js'
@@ -32,6 +32,22 @@ const CURSOR_SHOW = `${ESC}[?25h`
 // A real node Readable that yields `chunks` then ends — drives the non-TTY (readline) fallback path.
 function readableFrom(chunks: readonly string[]): Readable {
 	return Readable.from(chunks)
+}
+
+async function captureFallback(
+	chunks: readonly string[],
+	run: (terminal: TerminalInterface) => Promise<unknown>,
+): Promise<string> {
+	const written: string[] = []
+	const output = new Writable({
+		write(chunk, _encoding, callback) {
+			written.push(String(chunk))
+			callback()
+		},
+	})
+	const terminal = createTerminal({ input: readableFrom(chunks), output })
+	await run(terminal)
+	return written.join('')
 }
 
 // `rawOutput` (the un-stripped twin of `tty.text()`) and `assertCleanExit` (the raw-mode leak-freedom
@@ -707,6 +723,76 @@ describe('Terminal — in-place re-render math (via the driver)', () => {
 })
 
 describe('Terminal — non-TTY fallback (node:readline)', () => {
+	it('preserves the exact default rendering bytes for every prompt form', async () => {
+		const output = {
+			input: await captureFallback(['Ada\n'], (terminal) => terminal.input({ message: 'Name' })),
+			password: await captureFallback(['secret\n'], (terminal) =>
+				terminal.password({ message: 'Secret' }),
+			),
+			confirm: await captureFallback(['yes\n'], (terminal) =>
+				terminal.confirm({ message: 'Proceed?' }),
+			),
+			select: await captureFallback(['2\n'], (terminal) =>
+				terminal.select({ message: 'Pick', choices: ['red', 'green', 'blue'] }),
+			),
+			checkbox: await captureFallback(['1,3\n'], (terminal) =>
+				terminal.checkbox({ message: 'Pick', choices: ['a', 'b', 'c'] }),
+			),
+			editor: await captureFallback(['first\n', 'second\n'], (terminal) =>
+				terminal.editor({ message: 'Notes' }),
+			),
+		}
+		const reset = `${ESC}[0m`
+		const expected = {
+			input: `${ESC}[36m?${reset} ${ESC}[1mName${reset} `,
+			password: `${ESC}[36m?${reset} ${ESC}[1mSecret${reset} `,
+			confirm: `${ESC}[36m?${reset} ${ESC}[1mProceed?${reset} `,
+			select: `${ESC}[36m?${reset} ${ESC}[1mPick${reset}\n  ${ESC}[2m1)${reset} red\n  ${ESC}[2m2)${reset} green\n  ${ESC}[2m3)${reset} blue\n${ESC}[2mEnter a number:${reset} `,
+			checkbox: `${ESC}[36m?${reset} ${ESC}[1mPick${reset}\n  ${ESC}[2m1)${reset} a\n  ${ESC}[2m2)${reset} b\n  ${ESC}[2m3)${reset} c\n${ESC}[2mEnter numbers separated by commas:${reset} `,
+			editor: `${ESC}[36m?${reset} ${ESC}[1mNotes${reset} ${ESC}[2m(EOF to finish)${reset}\n`,
+		}
+		expect(output).toEqual(expected)
+		expect(output).not.toEqual({ ...expected, editor: `${expected.editor}outside` })
+	})
+
+	it('renders a custom fallback icon and role style', async () => {
+		const output = await captureFallback(['1\n'], (terminal) =>
+			terminal.select({
+				message: 'Pick',
+				choices: ['red'],
+				theme: {
+					icons: { question: '#' },
+					roles: { message: { foreground: 'magenta', attributes: ['italic'] } },
+				},
+			}),
+		)
+		expect(output).toContain(`${ESC}[36m#${ESC}[0m`)
+		expect(output).toContain(`${ESC}[3;35mPick${ESC}[0m`)
+	})
+
+	it('uses custom hints across the fallback prompt forms that accept one', async () => {
+		const confirm = await captureFallback(['yes\n'], (terminal) =>
+			terminal.confirm({ message: 'Proceed?', hint: 'type yes or no' }),
+		)
+		const select = await captureFallback(['1\n'], (terminal) =>
+			terminal.select({ message: 'Pick', choices: ['red'], hint: 'choose one' }),
+		)
+		const checkbox = await captureFallback(['1\n'], (terminal) =>
+			terminal.checkbox({ message: 'Pick', choices: ['red'], hint: 'choose many' }),
+		)
+		const editor = await captureFallback(['note\n'], (terminal) =>
+			terminal.editor({ message: 'Notes', hint: '(send EOF)' }),
+		)
+
+		expect(confirm).toContain('type yes or no')
+		expect(select).toContain('choose one:')
+		expect(select).not.toContain('Enter a number')
+		expect(checkbox).toContain('choose many:')
+		expect(checkbox).not.toContain('Enter numbers separated by commas')
+		expect(editor).toContain('(send EOF)')
+		expect(editor).not.toContain('(EOF to finish)')
+	})
+
 	it('input reads a validated line', async () => {
 		const input = readableFrom(['Grace\n'])
 		const { target } = createStreamTarget({ isTTY: false })
