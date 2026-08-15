@@ -3,6 +3,7 @@
 // walking scripted TTY streams — composed with no part of the system under test replaced.
 
 import type { PendingForm, PromptInterface, WireEvent } from '@src/core'
+import type { FormSchema } from '@orkestrel/form'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import {
 	CTRL_D,
@@ -38,6 +39,20 @@ function writeFrame(response: ServerResponse, frame: WireEvent): void {
 	response.write(`event: ${frame.event}\ndata: ${frame.data}\n\n`)
 }
 
+/** Build the listener that forwards each newly parked form to every open fixture client. */
+function createPendingHandler(clients: ReadonlySet<FixtureClient>): (form: PendingForm) => void {
+	return (form) => {
+		for (const client of clients) writeFrame(client.response, serializePending(form))
+	}
+}
+
+/** Build the listener that forwards each expiry to every open fixture client. */
+function createExpireHandler(clients: ReadonlySet<FixtureClient>): (id: string) => void {
+	return (id) => {
+		for (const client of clients) writeFrame(client.response, serializeExpire(id))
+	}
+}
+
 /**
  * Start a real `node:http` server that forwards a real {@link PromptInterface} broker over SSE and
  * lands every POST back through `prompt.answer` — the transport TU8 proves, built from the
@@ -48,12 +63,8 @@ function startFixtureServer(prompt: PromptInterface): Promise<FixtureServer> {
 		let posts = 0
 		let postWaiters: Array<(result: unknown) => void> = []
 		const clients = new Set<FixtureClient>()
-		const onPending = (form: PendingForm): void => {
-			for (const client of clients) writeFrame(client.response, serializePending(form))
-		}
-		const onExpire = (id: string): void => {
-			for (const client of clients) writeFrame(client.response, serializeExpire(id))
-		}
+		const onPending = createPendingHandler(clients)
+		const onExpire = createExpireHandler(clients)
 		prompt.emitter.on('pending', onPending)
 		prompt.emitter.on('expire', onExpire)
 
@@ -149,12 +160,12 @@ describe('terminal end to end', () => {
 		const prompt = createPrompt()
 		const server = await startFixtureServer(prompt)
 		openServers.push(server)
-		const schema = {
+		const schema: FormSchema = {
 			name: 'profile',
 			label: 'Profile',
 			fields: [
 				{
-					control: 'text' as const,
+					control: 'text',
 					name: 'name',
 					label: 'Name',
 					rule: {
@@ -163,7 +174,7 @@ describe('terminal end to end', () => {
 					},
 				},
 				{
-					control: 'select' as const,
+					control: 'select',
 					name: 'role',
 					label: 'Role',
 					choices: [

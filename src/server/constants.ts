@@ -15,8 +15,8 @@ export const CSI = `${ESCAPE}[`
 
 /**
  * The cursor-UP sequence TEMPLATE (`ESC[{count}A`) — {@link import('./helpers.js').moveUp}
- * interpolates `{count}` with the number of lines to climb (the `{count}` placeholder idiom the core
- * terminals' `RULE_MESSAGES` uses). Kept as a template so the count stays out of the constant.
+ * interpolates the `{count}` placeholder with the number of lines to climb. Kept as a template so
+ * the count stays out of the constant.
  */
 export const CSI_UP = `${CSI}{count}A`
 

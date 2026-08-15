@@ -1,6 +1,12 @@
-import { CTRL_C, CTRL_D, KEY_CSI, RETURN, isTerminalError } from '@src/core'
+import { CTRL_C, CTRL_D, KEY_CSI, RETURN, createPromptClient, isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
-import { createTwelveControlSchema } from '../../setup.js'
+import {
+	createJSONResponse,
+	createPendingForm,
+	createSSEResponse,
+	createTwelveControlSchema,
+	requireElement,
+} from '../../setup.js'
 import {
 	createFakeTTY,
 	createLineInput,
@@ -10,6 +16,7 @@ import {
 } from '../../setupServer.js'
 import { createForm, isFormError } from '@orkestrel/form'
 import { strip } from '@orkestrel/console'
+import { waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('Terminal', () => {
@@ -123,6 +130,77 @@ describe('Terminal', () => {
 		expect(tty.text()).not.toContain('\u0000')
 		expect(tty.text()).not.toContain('\u007f')
 		expect(`${locked}${offered}`).toContain('\u0000')
+	})
+
+	it('sanitizes field identity and failure text at the report boundary', async () => {
+		const name = 'na\u0000me\u007f'
+		const message = 'No\u0000pe\u007f'
+		const tty = createScriptedTTY([])
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const form = createForm({
+			fields: [{ control: 'text', name, hidden: true, rule: { required: true } }],
+		})
+		form.invalidate(name, message)
+
+		const error = await terminal.ask(form).catch((reason: unknown) => reason)
+		expect(isFormError(error) && error.code).toBe('ABANDONED')
+		expect(tty.text()).toContain('name: Nope')
+		expect(tty.text()).not.toContain('\u0000')
+		expect(tty.text()).not.toContain('\u007f')
+
+		const raw = createFakeTTY()
+		raw.output.write(`${name}: ${message}`)
+		expect(raw.text()).toContain('\u0000')
+		expect(raw.text()).toContain('\u007f')
+	})
+
+	it('renders an authoritative refusal before posting the corrected retry', async () => {
+		const tty = createScriptedTTY([
+			['bad', RETURN],
+			['good', RETURN],
+		])
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const pending = createPendingForm(
+			{ fields: [{ control: 'text', name: 'word', label: 'Word' }] },
+			{ id: 'retry' },
+		)
+		const message = 'Use\u0000 good\u007f'
+		const bodies: string[] = []
+		const outputAtPost: string[] = []
+		const client = createPromptClient({
+			url: 'http://localhost/prompts',
+			terminal,
+			reconnect: false,
+			fetch: async (_input, init) => {
+				if (init?.method !== 'POST') {
+					return createSSEResponse([{ event: 'pending', data: pending }])
+				}
+				bodies.push(init.body ?? '')
+				outputAtPost.push(tty.text())
+				return bodies.length === 1
+					? createJSONResponse({
+							success: false,
+							error: {
+								reason: 'rejected',
+								errors: [{ field: 'word', message }],
+							},
+						})
+					: createJSONResponse({ success: true, value: { word: 'good' } })
+			},
+		})
+
+		await client.connect()
+		await waitForDelay(10)
+
+		expect(bodies).toEqual([
+			JSON.stringify({ id: 'retry', values: { word: 'bad' } }),
+			JSON.stringify({ id: 'retry', values: { word: 'good' } }),
+		])
+		expect(requireElement(outputAtPost, 0)).not.toContain('Word: Use good')
+		expect(requireElement(outputAtPost, 1)).toContain('Word: Use good')
+		expect(requireElement(outputAtPost, 1)).not.toContain('\u0000')
+		expect(requireElement(outputAtPost, 1)).not.toContain('\u007f')
+		client.destroy()
 	})
 
 	it('collects multiple file paths until a blank line', async () => {

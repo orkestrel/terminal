@@ -129,6 +129,7 @@ export class Terminal implements TerminalInterface {
 
 	async ask(form: FormInterface): Promise<FormValues> {
 		try {
+			this.#report(form, form.errors)
 			await this.#walk(form, form.schema.fields)
 			for (;;) {
 				if (form.status !== 'editing') return await form.answer
@@ -235,11 +236,12 @@ export class Terminal implements TerminalInterface {
 		return fields
 	}
 
-	/** Write every failure the submit reported, each against its field's label, before the walk asks again. */
+	/** Write every supplied failure against its field's label. */
 	#report(form: FormInterface, errors: readonly FieldError[]): void {
 		for (const error of errors) {
-			const label = form.field(error.field)?.label ?? error.field
-			const line = errorLine(this.#styler, this.#theme, `${label}: ${error.message}`)
+			const label = sanitizeDisplayText(form.field(error.field)?.label ?? error.field)
+			const message = sanitizeDisplayText(error.message)
+			const line = errorLine(this.#styler, this.#theme, `${label}: ${message}`)
 			this.#output.write(`${line}${LINE_FEED}`)
 		}
 	}
