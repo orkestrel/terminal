@@ -88,26 +88,6 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
 }
 
 /**
- * Whether `value` is a Node {@link NodeJS.WritableStream} — a total structural guard (AGENTS §14)
- * checking for the callable `write` / `end` that `node:readline`'s `createInterface` accepts as its
- * `output`. Paired with {@link isReadable} so the non-TTY fallback narrows BOTH streams to the
- * readline boundary without an `as`. Never throws.
- *
- * @param value - The resolved output stream (or any value crossing the boundary)
- * @returns `true` when `value` has the writable methods readline needs
- */
-export function isWritable(value: unknown): value is NodeJS.WritableStream {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'write' in value &&
-		typeof value.write === 'function' &&
-		'end' in value &&
-		typeof value.end === 'function'
-	)
-}
-
-/**
  * Whether an input stream can be driven in RAW mode — it both reports `isTTY === true` AND exposes a
  * callable `setRawMode`. The {@link import('./Terminal.js').Terminal} probes this to choose its path:
  * `true` ⇒ the interactive raw-mode prompts (arrow-key navigation, live re-render); `false` ⇒ the

@@ -3,6 +3,7 @@ import type {
 	PromptClientOptions,
 	PromptInterface,
 	PromptOptions,
+	TerminalManagerInterface,
 	TerminalManagerOptions,
 	TerminalSnapshotRow,
 	TerminalStoreInterface,
@@ -86,7 +87,7 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
  * manager.add('agent')
  * ```
  */
-export function createTerminalManager(options?: TerminalManagerOptions): TerminalManager {
+export function createTerminalManager(options?: TerminalManagerOptions): TerminalManagerInterface {
 	return new TerminalManager(options)
 }
 

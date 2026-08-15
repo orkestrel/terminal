@@ -10,7 +10,6 @@ import {
 	isInputStream,
 	isOutputStream,
 	isReadable,
-	isWritable,
 	lineCount,
 	lockedLine,
 	moveUp,
@@ -41,12 +40,10 @@ describe('stream guards', () => {
 		expect(isOutputStream(undefined)).toBe(false)
 	})
 
-	it('narrows real Node readable and writable streams', () => {
+	it('narrows a real Node readable stream', () => {
 		const stream = new PassThrough()
 		expect(isReadable(stream)).toBe(true)
-		expect(isWritable(stream)).toBe(true)
 		expect(isReadable({ on() {}, off() {} })).toBe(false)
-		expect(isWritable({ write() {} })).toBe(false)
 		stream.destroy()
 	})
 

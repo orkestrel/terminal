@@ -1,21 +1,24 @@
 import type { TerminalErrorCode } from './types.js'
 
-// AGENTS §12: a real error type, not a sentinel. A parked broker prompt that is never
-// answered (its `timeout` elapsed, or the broker was `destroy`ed while it was still pending)
-// REJECTS its Promise with a `TerminalError` carrying a machine-readable `code`, so an
-// `await prompt.input(...)` caller branches on `error.code` rather than parsing the message.
-// The optional `context` bag names the offending prompt id. The guard narrows with `instanceof`,
-// mirroring the agents-module errors.
+// AGENTS §12: a real error type, not a sentinel. An interactive server-`Terminal` prompt aborted
+// with ctrl-c REJECTS its Promise with a `TerminalError` carrying a machine-readable `code`, so a
+// caller branches on `error.code` rather than parsing the message. A parked broker prompt that
+// expires (its `timeout` elapsed, or the broker was `destroy`ed while it was still pending) instead
+// abandons the parked form, and its own answer Promise rejects with the Form package's `ABANDONED`
+// error. The optional `context` bag names the offending prompt id. The guard narrows with
+// `instanceof`, mirroring the agents-module errors.
 
 /**
  * An error a {@link import('./Prompt.js').Prompt} broker rejects a parked prompt's Promise with.
  *
  * @remarks
  * Carries a {@link TerminalErrorCode} and an optional `context` bag (the prompt `id`). Thrown —
- * as a Promise rejection on the awaited prompt call — when a parked prompt is not answered before
- * its `timeout`, or when the broker is `destroy`ed while the prompt is still `pending` (both
- * `EXPIRE`); or when the user aborts an interactive server-`Terminal` prompt with ctrl-c
- * (`CANCEL`). Narrow a caught value with {@link isTerminalError} and branch on `error.code`.
+ * as a Promise rejection on the awaited prompt call — when the user aborts an interactive
+ * server-`Terminal` prompt with ctrl-c (`CANCEL`). Expiry of a parked broker prompt (its `timeout`
+ * elapsed, or the broker was `destroy`ed while it was still `pending`) instead abandons the parked
+ * form: its own answer Promise rejects with the Form package's `ABANDONED` error, not a
+ * {@link TerminalError}. Narrow a caught value with {@link isTerminalError} and branch on
+ * `error.code`.
  */
 export class TerminalError extends Error {
 	/** The machine-readable condition — see {@link TerminalErrorCode}. */
@@ -44,9 +47,11 @@ export class TerminalError extends Error {
  * @example
  * ```ts
  * try {
- * 	const name = await prompt.input({ message: 'Your name' })
+ * 	const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+ * 	const id = prompt.park(form)
+ * 	await form.answer
  * } catch (error) {
- * 	if (isTerminalError(error) && error.code === 'EXPIRE') retryLater()
+ * 	if (isTerminalError(error) && error.code === 'CANCEL') retryLater()
  * }
  * ```
  */

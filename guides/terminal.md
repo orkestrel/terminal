@@ -276,7 +276,7 @@ A named registry of brokers, so several parties can ask forms of each other BY N
 | -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `TerminalManagerInterface` | interface | The registry — `emitter` / `count` data plus `terminal` / `terminals` / `add` / `ask` / `pending` / `answer` / `open` / `save` / `remove` / `destroy`. |
 | `TerminalManager`          | class     | The observable registry — mints and reuses named brokers, attributes each ask, refuses `TARGET` and `DEADLOCK`, persists config.                       |
-| `createTerminalManager`    | function  | Create the registry. It returns the concrete `TerminalManager`, which implements `TerminalManagerInterface` exactly.                                   |
+| `createTerminalManager`    | function  | Create the registry. It returns `TerminalManagerInterface`, implemented exactly by `TerminalManager`.                                                  |
 | `TerminalManagerOptions`   | interface | `createTerminalManager` options — `store`, the manager-wide `timeout` / `timer` / `cap` default, and `on` / `error` (data-only).                       |
 | `TerminalManagerEventMap`  | type      | The manager's events — every mounted broker's `pending(form)` / `answer(to, id, values)` / `expire(to, id)`, attributed by name.                       |
 | `TerminalAnswerError`      | type      | Why a manager `answer` refused — an `AnswerError`, plus `{ reason: 'terminal' }` when no endpoint is mounted under that name.                          |
@@ -363,25 +363,24 @@ raw-mode stdin, drives the core reducers, renders each view in place, and falls 
 The stream guards, the cursor math behind the in-place re-render, and the per-field line projections
 the walk renders with ([`src/server`](../src/server)). All pure, all exported, all unit-tested.
 
-| API               | Kind     | Summary                                                                                                                                                                                                                                      |
-| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isInputStream`   | function | Whether a value is a usable `InputStreamInterface` (callable `on` / `off`) — the input boundary guard, total.                                                                                                                                |
-| `isOutputStream`  | function | Whether a value is a usable `OutputStreamInterface` (callable `write`) — the output boundary guard, total.                                                                                                                                   |
-| `isReadable`      | function | Whether a value is a Node readable stream (callable `read` / `pipe` / `on`) — narrows the input to the `node:readline` boundary.                                                                                                             |
-| `isWritable`      | function | Whether a value is a Node writable stream (callable `write` / `end`) — the writable twin of `isReadable`. The walk hands readline an input only and writes every line itself, so nothing in this package narrows an output to that boundary. |
-| `rawCapable`      | function | Whether an input can be driven in RAW mode (`isTTY === true` AND a callable `setRawMode`) — selects raw mode over the readline fallback.                                                                                                     |
-| `lineCount`       | function | How many terminal LINES a rendered view occupies — one more than its newline count. The basis of the in-place re-render.                                                                                                                     |
-| `moveUp`          | function | The cursor-UP sequence (`ESC[{count}A`), or `''` when `count <= 0`.                                                                                                                                                                          |
-| `redrawPrefix`    | function | The reposition-and-clear prefix written before re-rendering in place — climb, return to column 0, erase to end of screen.                                                                                                                    |
-| `fieldToText`     | function | Project any field read as one LINE — `text` and the six controls a terminal has no widget for — into the `TextField` the text reducer takes.                                                                                                 |
-| `valueToText`     | function | Project one held answer into read-only text — a scalar as itself, a boolean as `yes` / `no`, a list joined by commas, absence as nothing.                                                                                                    |
-| `enabledChoices`  | function | The choices a field actually OFFERS — the form refuses a disabled choice at every door, so the walk never puts one in front of the cursor.                                                                                                   |
-| `disabledChoices` | function | The choices a field SHOWS but refuses — the complement, so a withheld choice is named rather than silently missing.                                                                                                                          |
-| `groupHeader`     | function | The section header the walk writes when it enters a new field group.                                                                                                                                                                         |
-| `lockedLine`      | function | The read-only line a LOCKED field renders — its label, the locked mark, and the answer the form already holds.                                                                                                                               |
-| `suggestionLine`  | function | The line listing an OPEN select's offered values above its text prompt, because an open select admits an answer the list does not offer.                                                                                                     |
-| `unavailableLine` | function | The line naming the choices a field shows but refuses, written above the list the walk drives.                                                                                                                                               |
-| `numberedList`    | function | The numbered choice list the non-TTY fallback prints, since a piped stream cannot navigate with arrow keys.                                                                                                                                  |
+| API               | Kind     | Summary                                                                                                                                      |
+| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `isInputStream`   | function | Whether a value is a usable `InputStreamInterface` (callable `on` / `off`) — the input boundary guard, total.                                |
+| `isOutputStream`  | function | Whether a value is a usable `OutputStreamInterface` (callable `write`) — the output boundary guard, total.                                   |
+| `isReadable`      | function | Whether a value is a Node readable stream (callable `read` / `pipe` / `on`) — narrows the input to the `node:readline` boundary.             |
+| `rawCapable`      | function | Whether an input can be driven in RAW mode (`isTTY === true` AND a callable `setRawMode`) — selects raw mode over the readline fallback.     |
+| `lineCount`       | function | How many terminal LINES a rendered view occupies — one more than its newline count. The basis of the in-place re-render.                     |
+| `moveUp`          | function | The cursor-UP sequence (`ESC[{count}A`), or `''` when `count <= 0`.                                                                          |
+| `redrawPrefix`    | function | The reposition-and-clear prefix written before re-rendering in place — climb, return to column 0, erase to end of screen.                    |
+| `fieldToText`     | function | Project any field read as one LINE — `text` and the six controls a terminal has no widget for — into the `TextField` the text reducer takes. |
+| `valueToText`     | function | Project one held answer into read-only text — a scalar as itself, a boolean as `yes` / `no`, a list joined by commas, absence as nothing.    |
+| `enabledChoices`  | function | The choices a field actually OFFERS — the form refuses a disabled choice at every door, so the walk never puts one in front of the cursor.   |
+| `disabledChoices` | function | The choices a field SHOWS but refuses — the complement, so a withheld choice is named rather than silently missing.                          |
+| `groupHeader`     | function | The section header the walk writes when it enters a new field group.                                                                         |
+| `lockedLine`      | function | The read-only line a LOCKED field renders — its label, the locked mark, and the answer the form already holds.                               |
+| `suggestionLine`  | function | The line listing an OPEN select's offered values above its text prompt, because an open select admits an answer the list does not offer.     |
+| `unavailableLine` | function | The line naming the choices a field shows but refuses, written above the list the walk drives.                                               |
+| `numberedList`    | function | The numbered choice list the non-TTY fallback prints, since a piped stream cannot navigate with arrow keys.                                  |
 
 ### The server constants
 
@@ -1009,7 +1008,6 @@ import {
 	isInputStream,
 	isOutputStream,
 	isReadable,
-	isWritable,
 	lineCount,
 	lockedLine,
 	moveUp,
@@ -1042,7 +1040,6 @@ isInputStream(input) // true — callable on/off
 isOutputStream(output) // true — callable write
 rawCapable(input) // true: a TTY with setRawMode, so the walk runs interactively
 isReadable(process.stdin) // true — the node:readline boundary the fallback narrows to
-isWritable(process.stdout) // true — the writable twin of isReadable
 
 // The cursor math behind the in-place re-render.
 lineCount('one\ntwo\nthree') // 3
