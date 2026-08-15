@@ -1,6 +1,6 @@
-import type { FormSchema } from '@orkestrel/form'
 import { CTRL_C, CTRL_D, KEY_CSI, RETURN, isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
+import { createTwelveControlSchema } from '../../setup.js'
 import {
 	createFakeTTY,
 	createLineInput,
@@ -11,42 +11,6 @@ import {
 import { createForm, isFormError } from '@orkestrel/form'
 import { strip } from '@orkestrel/console'
 import { describe, expect, it } from 'vitest'
-
-function createTwelveControlSchema(): FormSchema {
-	return {
-		label: 'Registration',
-		fields: [
-			{ control: 'text', name: 'name', label: 'Name', rule: { required: true } },
-			{ control: 'password', name: 'secret', label: 'Secret' },
-			{ control: 'number', name: 'age', label: 'Age' },
-			{ control: 'date', name: 'date', label: 'Date' },
-			{ control: 'time', name: 'time', label: 'Time' },
-			{ control: 'datetime', name: 'meeting', label: 'Meeting' },
-			{ control: 'color', name: 'color', label: 'Color' },
-			{ control: 'confirm', name: 'ready', label: 'Ready' },
-			{
-				control: 'select',
-				name: 'role',
-				label: 'Role',
-				choices: [
-					{ value: 'admin', label: 'Admin' },
-					{ value: 'viewer', label: 'Viewer' },
-				],
-			},
-			{
-				control: 'checkbox',
-				name: 'scope',
-				label: 'Scope',
-				choices: [
-					{ value: 'read', label: 'Read' },
-					{ value: 'write', label: 'Write' },
-				],
-			},
-			{ control: 'file', name: 'files', label: 'Files', multiple: true },
-			{ control: 'editor', name: 'notes', label: 'Notes' },
-		],
-	}
-}
 
 describe('Terminal', () => {
 	it('walks all twelve controls through real reducers and settles one whole form', async () => {
@@ -133,6 +97,32 @@ describe('Terminal', () => {
 
 		expect(await terminal.ask(form)).toEqual({ role: 'operator' })
 		expect(tty.text()).toContain('Suggestions: admin')
+	})
+
+	it('sanitizes preserved values only when locked and suggestion lines echo them', async () => {
+		const locked = 'fi\u0000xed\u007f'
+		const offered = 'ad\u0000min\u007f'
+		const tty = createScriptedTTY([['operator', RETURN]])
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const form = createForm({
+			fields: [
+				{ control: 'text', name: 'locked', label: 'Code', default: locked, locked: true },
+				{
+					control: 'select',
+					name: 'role',
+					label: 'Role',
+					open: true,
+					choices: [{ value: offered, label: 'Admin' }],
+				},
+			],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ locked, role: 'operator' })
+		expect(tty.text()).toContain('○ Code (locked) fixed')
+		expect(tty.text()).toContain('Suggestions: admin')
+		expect(tty.text()).not.toContain('\u0000')
+		expect(tty.text()).not.toContain('\u007f')
+		expect(`${locked}${offered}`).toContain('\u0000')
 	})
 
 	it('collects multiple file paths until a blank line', async () => {

@@ -1,6 +1,7 @@
 import type { FetchInit } from '@src/core'
 import {
 	createHostileWireSchema,
+	createJSONResponse,
 	createPendingForm,
 	createRecordingTerminal,
 	createSSEResponse,
@@ -10,13 +11,6 @@ import {
 import { HEADER_TOKEN, createPromptClient } from '@src/core'
 import { waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
-
-function createJSONResponse(value: unknown, status = 200): Response {
-	return new Response(JSON.stringify(value), {
-		status,
-		headers: { 'Content-Type': 'application/json' },
-	})
-}
 
 describe('PromptClient', () => {
 	it('parses, sanitizes, renders, and POSTs exactly {id, values}', async () => {
@@ -64,7 +58,8 @@ describe('PromptClient', () => {
 
 	it('sanitizes the full hostile schema before any terminal-readable position is observed', async () => {
 		const terminal = createRecordingTerminal({ defer: true })
-		const pending = createPendingForm(createHostileWireSchema(), { id: 'hostile' })
+		const schema = createHostileWireSchema()
+		const pending = createPendingForm(schema, { id: 'hostile' })
 		const client = createPromptClient({
 			url: 'http://localhost/prompts',
 			terminal,
@@ -75,20 +70,39 @@ describe('PromptClient', () => {
 		await client.connect()
 		await waitForDelay()
 		const observed = requireElement(terminal.calls.calls, 0)[0].schema
-		const wire = JSON.stringify(observed)
 
-		expect(
-			[...wire].some((character) => {
-				const code = character.charCodeAt(0)
-				return code < 32 || code === 127
-			}),
-		).toBe(false)
-		expect(wire).not.toContain('\u001b[')
+		expect(observed.name).toBe(schema.name)
+		expect(observed.groups?.map((group) => group.name)).toEqual(
+			schema.groups?.map((group) => group.name),
+		)
+		expect(observed.fields.map((field) => field.name)).toEqual(
+			schema.fields.map((field) => field.name),
+		)
+		expect(observed.fields.map((field) => field.group)).toEqual(
+			schema.fields.map((field) => field.group),
+		)
+		expect(observed.label).toBe('Form')
+		expect(observed.help).toBe('Form help')
 		expect(observed.fields).toHaveLength(12)
 		expect(observed.groups?.[0]).toEqual({
-			name: 'group',
+			name: schema.groups?.[0]?.name,
 			label: 'Group',
 			help: 'Group help',
+		})
+		const sourceText = requireElement(schema.fields, 0)
+		const sourceSelect = requireElement(schema.fields, 9)
+		if (sourceText.control !== 'text' || sourceSelect.control !== 'select') {
+			throw new Error('The hostile schema fixture changed control order')
+		}
+		expect(observed.fields[0]).toMatchObject({
+			default: sourceText.default,
+			label: 'Text',
+			help: 'Text help',
+			placeholder: 'placeholder',
+		})
+		expect(observed.fields[9]).toMatchObject({
+			choices: [{ value: sourceSelect.choices[0]?.value, label: 'One', help: 'One help' }],
+			default: sourceSelect.default,
 		})
 		expect('meta' in requireElement(observed.fields, 0)).toBe(false)
 		client.destroy()
@@ -103,11 +117,12 @@ describe('PromptClient', () => {
 			{ id: 'retry' },
 		)
 		const bodies: string[] = []
+		const message = 'Must\u0000 match\u007f the required pattern'
 		const rejection = {
 			success: false,
 			error: {
 				reason: 'rejected',
-				errors: [{ field: 'word', message: 'Must match the required pattern', rule: 'pattern' }],
+				errors: [{ field: 'word', message, rule: 'pattern' }],
 			},
 		}
 		const client = createPromptClient({
@@ -135,6 +150,7 @@ describe('PromptClient', () => {
 		expect(second.schema.fields[0]?.rule?.pattern).toBeUndefined()
 		expect(second.values).toEqual({ word: 'bad' })
 		expect(second.errors).toEqual([{ field: 'word', message: 'Must match the required pattern' }])
+		expect(message).not.toBe('Must match the required pattern')
 		expect(bodies).toEqual([
 			JSON.stringify({ id: 'retry', values: { word: 'bad' } }),
 			JSON.stringify({ id: 'retry', values: { word: 'good' } }),

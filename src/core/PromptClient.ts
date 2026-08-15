@@ -21,6 +21,7 @@ import {
 	globalFetch,
 	isAbortError,
 	isInsecureRemote,
+	sanitizeDisplayText,
 	sanitizeSchema,
 } from './helpers.js'
 import { isPendingForm } from './validators.js'
@@ -244,7 +245,7 @@ export class PromptClient implements PromptClientInterface {
 		while (this.#seen.has(id) && !this.#destroyed) {
 			const form = this.#createRenderingForm(schema, values)
 			this.#active = { id, form, stopped: false }
-			for (const error of errors) form.invalidate(error.field, error.message)
+			for (const error of errors) form.invalidate(error.field, sanitizeDisplayText(error.message))
 			const submitted = await this.#terminal.ask(form)
 			const active = this.#active
 			if (active?.id !== id || active.stopped) return

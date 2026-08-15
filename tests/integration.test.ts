@@ -13,7 +13,7 @@ import {
 	serializePending,
 } from '@src/core'
 import { createTerminal } from '@src/server'
-import { createHostileText, createHostileWireSchema } from './setup.js'
+import { createHostilePattern, createHostileText, createHostileWireSchema } from './setup.js'
 import { createFakeTTY, createScriptedTTY } from './setupServer.js'
 import { createForm, isFormValues, serializeForm } from '@orkestrel/form'
 import { createServer } from 'node:http'
@@ -226,15 +226,20 @@ describe('terminal end to end', () => {
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const client = createPromptClient({ url: server.url, terminal, reconnect: false })
 
-		// The claim under test is the render: every byte the scripted output stream received is
-		// clean. That is proven the moment the walk finishes and posts back, which needs only one
-		// landed POST, not an accepted answer — the TU8 report records a separately surfaced defect
-		// that keeps a schema with hostile bytes in its field names from ever being accepted here.
 		const connecting = client.connect()
-		await server.post()
+		const values = await form.answer
 		client.disconnect()
 		await connecting
 		client.destroy()
+
+		const hostile = createHostileText
+		expect(values).toEqual({
+			[hostile('text')]: createHostilePattern('pattern'),
+			[hostile('editor')]: hostile('editor seed'),
+			[hostile('confirm')]: false,
+			[hostile('select')]: hostile('one'),
+			[hostile('checkbox')]: [hostile('two')],
+		})
 
 		// `text()` strips the terminal's OWN legitimate styling ANSI (color, cursor, bold), the byte
 		// class this instrument must not flag, leaving only bytes the schema itself smuggled in.

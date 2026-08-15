@@ -100,6 +100,14 @@ export function createSSEResponse(
 	)
 }
 
+/** Build one JSON response from inert test data. */
+export function createJSONResponse(value: unknown, status = 200): Response {
+	return new Response(JSON.stringify(value), {
+		status,
+		headers: { 'Content-Type': 'application/json' },
+	})
+}
+
 /** Fold raw key strings through a real reducer. */
 export function feedReducer<TValue, TState>(
 	reduce: (state: TState, key: ReturnType<typeof parseKey>) => PromptStep<TValue, TState>,
@@ -186,6 +194,43 @@ export function createFormSchema(): FormSchema {
 		name: 'profile',
 		label: 'Profile',
 		fields: [{ control: 'text', name: 'name', label: 'Name', rule: { required: true } }],
+	}
+}
+
+/** Build one form covering every supported field control. */
+export function createTwelveControlSchema(): FormSchema {
+	return {
+		label: 'Registration',
+		fields: [
+			{ control: 'text', name: 'name', label: 'Name', rule: { required: true } },
+			{ control: 'password', name: 'secret', label: 'Secret' },
+			{ control: 'number', name: 'age', label: 'Age' },
+			{ control: 'date', name: 'date', label: 'Date' },
+			{ control: 'time', name: 'time', label: 'Time' },
+			{ control: 'datetime', name: 'meeting', label: 'Meeting' },
+			{ control: 'color', name: 'color', label: 'Color' },
+			{ control: 'confirm', name: 'ready', label: 'Ready' },
+			{
+				control: 'select',
+				name: 'role',
+				label: 'Role',
+				choices: [
+					{ value: 'admin', label: 'Admin' },
+					{ value: 'viewer', label: 'Viewer' },
+				],
+			},
+			{
+				control: 'checkbox',
+				name: 'scope',
+				label: 'Scope',
+				choices: [
+					{ value: 'read', label: 'Read' },
+					{ value: 'write', label: 'Write' },
+				],
+			},
+			{ control: 'file', name: 'files', label: 'Files', multiple: true },
+			{ control: 'editor', name: 'notes', label: 'Notes' },
+		],
 	}
 }
 
@@ -311,6 +356,9 @@ export function createHostileWireSchema(): FormSchema {
 	return {
 		...schema,
 		fields: schema.fields.map((field) => {
+			if (field.control === 'text') {
+				return { ...field, default: createHostilePattern('pattern') }
+			}
 			if (field.control === 'date') {
 				const { default: _default, rule: _rule, ...rest } = field
 				return rest

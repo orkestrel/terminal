@@ -35,6 +35,7 @@ import {
 	parseKey,
 	passwordReduce,
 	promptHeader,
+	sanitizeDisplayText,
 	selectReduce,
 	TerminalError,
 } from '@src/core'
@@ -179,7 +180,9 @@ export class Terminal implements TerminalInterface {
 	/** Write a group's label as a section header, resolving the schema's declared label and falling back to the group's own name. */
 	#group(form: FormInterface, name: string): void {
 		const label = form.schema.groups?.find((group) => group.name === name)?.label ?? name
-		this.#output.write(`${LINE_FEED}${groupHeader(this.#styler, this.#theme, label)}${LINE_FEED}`)
+		this.#output.write(
+			`${LINE_FEED}${groupHeader(this.#styler, this.#theme, sanitizeDisplayText(label))}${LINE_FEED}`,
+		)
 	}
 
 	/** Render a locked field read-only — its label, its mark, and the answer the form already holds. */
@@ -187,8 +190,8 @@ export class Terminal implements TerminalInterface {
 		const line = lockedLine(
 			this.#styler,
 			this.#theme,
-			field.label ?? field.name,
-			valueToText(form.values[field.name]),
+			sanitizeDisplayText(field.label ?? field.name),
+			sanitizeDisplayText(valueToText(form.values[field.name])),
 		)
 		this.#output.write(`${line}${LINE_FEED}`)
 	}
@@ -292,7 +295,11 @@ export class Terminal implements TerminalInterface {
 		this.#unavailable(field.choices)
 		if (field.open === true) {
 			if (choices.length > 0) {
-				this.#output.write(`${suggestionLine(this.#styler, this.#theme, choices)}${LINE_FEED}`)
+				const display = choices.map((choice) => ({
+					...choice,
+					value: sanitizeDisplayText(choice.value),
+				}))
+				this.#output.write(`${suggestionLine(this.#styler, this.#theme, display)}${LINE_FEED}`)
 			}
 			return this.#text(form, field)
 		}

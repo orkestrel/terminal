@@ -58,6 +58,7 @@ import {
 	createManualTimer,
 	createPendingForm,
 	feedReducer,
+	requireElement,
 } from '../../setup.js'
 import { strip } from '@orkestrel/console'
 import { waitForDelay } from '@orkestrel/test'
@@ -141,6 +142,18 @@ describe('input reducer', () => {
 		const initial = createInputState({ control: 'text', name: 'name', label: 'Name' })
 		expect(strip(inputView(initial))).toContain('? Name ›')
 		expect(strip(feedReducer(inputReduce, initial, ['A', RETURN]).view)).toBe('✔ Name A')
+	})
+
+	it('sanitizes preserved names and defaults only when they are echoed', () => {
+		const name = 'na\u0000me\u007f'
+		const seed = 'se\u0000ed\u007f'
+		const initial = createInputState({ control: 'text', name, default: seed })
+
+		expect(strip(inputView(initial))).toBe('? name › seed')
+		const submitted = inputReduce(initial, parseKey(RETURN))
+		expect(submitted.value).toBe(seed)
+		expect(strip(submitted.view)).toBe('✔ name seed')
+		expect(seed).not.toBe(sanitizeDisplayText(seed))
 	})
 })
 
@@ -306,76 +319,74 @@ describe('schema sanitization', () => {
 		expect(sanitizeDisplayText('\u001b[31mQ\u001b[0m\u0000\t\n\r\u007f')).toBe('Q')
 	})
 
-	it('cleans every rendered-string position and strips metadata', () => {
+	it('preserves identity and value strings while cleaning display strings and metadata', () => {
 		const hostile = createHostileSchema()
 		const sanitized = sanitizeSchema(hostile)
 
-		expect(sanitized).toEqual({
-			name: 'form',
-			label: 'Form',
-			help: 'Form help',
-			groups: [{ name: 'group', label: 'Group', help: 'Group help' }],
-			fields: [
-				{
-					control: 'text',
-					name: 'text',
-					label: 'Text',
-					help: 'Text help',
-					group: 'group',
-					default: 'seed',
-					placeholder: 'placeholder',
-					rule: { pattern: 'pattern' },
-				},
-				{
-					control: 'editor',
-					name: 'editor',
-					label: 'Editor',
-					default: 'editor seed',
-					placeholder: 'editor placeholder',
-				},
-				{ control: 'password', name: 'password', label: 'Password', mask: '*' },
-				{ control: 'number', name: 'number', label: 'Number', placeholder: 'number placeholder' },
-				{
-					control: 'date',
-					name: 'date',
-					label: 'Date',
-					default: '2026-08-15',
-					rule: { minimum: '2026-01-01', maximum: '2026-12-31' },
-				},
-				{ control: 'time', name: 'time', label: 'Time', default: '12:30' },
-				{
-					control: 'datetime',
-					name: 'datetime',
-					label: 'Datetime',
-					default: '2026-08-15T12:30',
-				},
-				{ control: 'color', name: 'color', label: 'Color', default: '#112233' },
-				{ control: 'confirm', name: 'confirm', label: 'Confirm' },
-				{
-					control: 'select',
-					name: 'select',
-					label: 'Select',
-					choices: [{ value: 'one', label: 'One', help: 'One help' }],
-					default: 'one',
-				},
-				{
-					control: 'checkbox',
-					name: 'checkbox',
-					label: 'Checkbox',
-					choices: [{ value: 'two', label: 'Two', help: 'Two help' }],
-					default: ['two'],
-				},
-				{ control: 'file', name: 'file', label: 'File', accept: ['text/plain'] },
-			],
+		expect(sanitized.name).toBe(hostile.name)
+		expect(sanitized.groups?.map((group) => group.name)).toEqual(
+			hostile.groups?.map((group) => group.name),
+		)
+		expect(sanitized.fields.map((field) => field.name)).toEqual(
+			hostile.fields.map((field) => field.name),
+		)
+		expect(sanitized.fields.map((field) => field.group)).toEqual(
+			hostile.fields.map((field) => field.group),
+		)
+		expect(
+			sanitized.fields.map((field) => ('default' in field ? field.default : undefined)),
+		).toEqual(hostile.fields.map((field) => ('default' in field ? field.default : undefined)))
+		expect(
+			sanitized.fields.flatMap((field) =>
+				field.control === 'select' || field.control === 'checkbox'
+					? field.choices.map((choice) => choice.value)
+					: [],
+			),
+		).toEqual(
+			hostile.fields.flatMap((field) =>
+				field.control === 'select' || field.control === 'checkbox'
+					? field.choices.map((choice) => choice.value)
+					: [],
+			),
+		)
+
+		expect(sanitized.label).toBe('Form')
+		expect(sanitized.help).toBe('Form help')
+		expect(requireElement(sanitized.groups ?? [], 0)).toMatchObject({
+			label: 'Group',
+			help: 'Group help',
 		})
+		expect(requireElement(sanitized.fields, 0)).toMatchObject({
+			label: 'Text',
+			help: 'Text help',
+			placeholder: 'placeholder',
+			rule: { pattern: 'pattern' },
+		})
+		expect(requireElement(sanitized.fields, 1)).toMatchObject({
+			label: 'Editor',
+			placeholder: 'editor placeholder',
+		})
+		expect(requireElement(sanitized.fields, 2)).toMatchObject({ mask: '*' })
+		expect(requireElement(sanitized.fields, 3)).toMatchObject({
+			placeholder: 'number placeholder',
+		})
+		expect(requireElement(sanitized.fields, 9)).toMatchObject({
+			choices: [{ label: 'One', help: 'One help' }],
+		})
+		expect(requireElement(sanitized.fields, 10)).toMatchObject({
+			choices: [{ label: 'Two', help: 'Two help' }],
+		})
+		expect(requireElement(sanitized.fields, 11)).toMatchObject({ accept: ['text/plain'] })
+		expect(requireElement(sanitized.fields, 4).rule).toEqual(requireElement(hostile.fields, 4).rule)
+		expect('meta' in requireElement(sanitized.fields, 0)).toBe(false)
 	})
 
-	it('has a hostile negative control that fails the clean-schema expectation without sanitation', () => {
+	it('has a hostile negative control that distinguishes raw display text from its projection', () => {
 		const hostile = createHostileSchema()
 		const sanitized = sanitizeSchema(hostile)
-		expect(hostile).not.toEqual(sanitized)
-		expect(JSON.stringify(hostile)).toContain('\\u001b')
-		expect(JSON.stringify(sanitized)).not.toContain('\\u001b')
+		const label = requireElement(hostile.fields, 0).label ?? ''
+		expect(label).not.toBe(sanitizeDisplayText(label))
+		expect(requireElement(sanitized.fields, 0).label).toBe(sanitizeDisplayText(label))
 	})
 })
 

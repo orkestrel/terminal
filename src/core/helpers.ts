@@ -156,11 +156,12 @@ export function sanitizeDisplayText(text: string): string {
  * Sanitize every terminal-readable string in a parsed form schema.
  *
  * @remarks
- * Names, labels, help, placeholders, masks, choices, string defaults, file accept entries, and
- * string rule operands pass through {@link sanitizeDisplayText}. Group references receive the
- * same projection as group names so the relation stays intact. Field metadata is removed because
- * terminal neither renders nor interprets it. Pattern sources are sanitized as text only and are
- * never compiled or executed here.
+ * Display strings pass through {@link sanitizeDisplayText}: labels, help, placeholders, masks,
+ * choice labels and help, file accept entries, and pattern sources. Identity and answer strings
+ * stay verbatim: schema, group, and field names, group references, choice values, and defaults.
+ * Rewriting those would sever the rendering copy from the authoritative form. Field metadata is
+ * removed because terminal neither renders nor interprets it. Pattern sources are sanitized as
+ * text only and are never compiled or executed here.
  *
  * @param schema - A schema already accepted by the Form package's `parseForm`
  * @returns A new schema with terminal-readable strings sanitized and field metadata omitted
@@ -168,12 +169,12 @@ export function sanitizeDisplayText(text: string): string {
  * @example
  * ```ts
  * sanitizeSchema({ fields: [{ control: 'text', name: 'na\u001bme', label: 'N\u0000ame' }] })
- * // { fields: [{ control: 'text', name: 'name', label: 'Name' }] }
+ * // { fields: [{ control: 'text', name: 'na\u001bme', label: 'Name' }] }
  * ```
  */
 export function sanitizeSchema(schema: FormSchema): FormSchema {
 	const groups = schema.groups?.map((group) => ({
-		name: sanitizeDisplayText(group.name),
+		name: group.name,
 		label: sanitizeDisplayText(group.label),
 		...(group.help !== undefined ? { help: sanitizeDisplayText(group.help) } : {}),
 	}))
@@ -185,21 +186,15 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 				? undefined
 				: {
 						...field.rule,
-						...(typeof field.rule.minimum === 'string'
-							? { minimum: sanitizeDisplayText(field.rule.minimum) }
-							: {}),
-						...(typeof field.rule.maximum === 'string'
-							? { maximum: sanitizeDisplayText(field.rule.maximum) }
-							: {}),
 						...(field.rule.pattern !== undefined
 							? { pattern: sanitizeDisplayText(field.rule.pattern) }
 							: {}),
 					}
 		const shared = {
-			name: sanitizeDisplayText(field.name),
+			name: field.name,
 			...(field.label !== undefined ? { label: sanitizeDisplayText(field.label) } : {}),
 			...(field.help !== undefined ? { help: sanitizeDisplayText(field.help) } : {}),
-			...(field.group !== undefined ? { group: sanitizeDisplayText(field.group) } : {}),
+			...(field.group !== undefined ? { group: field.group } : {}),
 			...(rule !== undefined ? { rule } : {}),
 		}
 
@@ -209,7 +204,6 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 				fields.push({
 					...field,
 					...shared,
-					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
 					...(field.placeholder !== undefined
 						? { placeholder: sanitizeDisplayText(field.placeholder) }
 						: {}),
@@ -241,7 +235,6 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 				fields.push({
 					...field,
 					...shared,
-					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
 				})
 				break
 			}
@@ -255,11 +248,10 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 					...shared,
 					choices: field.choices.map((choice) => ({
 						...choice,
-						value: sanitizeDisplayText(choice.value),
+						value: choice.value,
 						label: sanitizeDisplayText(choice.label),
 						...(choice.help !== undefined ? { help: sanitizeDisplayText(choice.help) } : {}),
 					})),
-					...(field.default !== undefined ? { default: sanitizeDisplayText(field.default) } : {}),
 				})
 				break
 			}
@@ -269,13 +261,10 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 					...shared,
 					choices: field.choices.map((choice) => ({
 						...choice,
-						value: sanitizeDisplayText(choice.value),
+						value: choice.value,
 						label: sanitizeDisplayText(choice.label),
 						...(choice.help !== undefined ? { help: sanitizeDisplayText(choice.help) } : {}),
 					})),
-					...(field.default !== undefined
-						? { default: field.default.map(sanitizeDisplayText) }
-						: {}),
 				})
 				break
 			}
@@ -291,7 +280,7 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 	}
 
 	return {
-		...(schema.name !== undefined ? { name: sanitizeDisplayText(schema.name) } : {}),
+		...(schema.name !== undefined ? { name: schema.name } : {}),
 		...(schema.label !== undefined ? { label: sanitizeDisplayText(schema.label) } : {}),
 		...(schema.help !== undefined ? { help: sanitizeDisplayText(schema.help) } : {}),
 		...(groups !== undefined ? { groups } : {}),
@@ -368,7 +357,7 @@ export function createInputState(
 	theme?: PromptThemeOptions,
 ) {
 	return {
-		message: field.label ?? field.name,
+		message: sanitizeDisplayText(field.label ?? field.name),
 		default: field.default ?? '',
 		styler,
 		theme: createPromptTheme(theme),
@@ -378,10 +367,9 @@ export function createInputState(
 
 /** Render a text-field key state as a styled view. */
 export function inputView(state: ReturnType<typeof createInputState>): string {
-	const shown =
-		state.value.length > 0
-			? state.styler.render(state.theme.roles.content, state.value)
-			: state.styler.render(state.theme.roles.hint, state.default)
+	const content = state.value.length > 0 ? state.value : state.default
+	const role = state.value.length > 0 ? state.theme.roles.content : state.theme.roles.hint
+	const shown = state.styler.render(role, sanitizeDisplayText(content))
 	return `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
 }
 
@@ -401,7 +389,7 @@ export function inputReduce(
 		const next = { ...state, value: answer }
 		return {
 			state: next,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer)}`,
+			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, sanitizeDisplayText(answer))}`,
 			status: 'submit',
 			value: answer,
 		}
@@ -429,8 +417,8 @@ export function createPasswordState(
 	theme?: PromptThemeOptions,
 ) {
 	return {
-		message: field.label ?? field.name,
-		mask: field.mask ?? DEFAULT_MASK,
+		message: sanitizeDisplayText(field.label ?? field.name),
+		mask: sanitizeDisplayText(field.mask ?? DEFAULT_MASK),
 		styler,
 		theme: createPromptTheme(theme),
 		value: '',
@@ -488,7 +476,7 @@ export function createConfirmState(
 	theme?: PromptThemeOptions,
 ) {
 	return {
-		message: field.label ?? field.name,
+		message: sanitizeDisplayText(field.label ?? field.name),
 		default: field.default ?? false,
 		styler,
 		theme: createPromptTheme(theme),
@@ -550,7 +538,7 @@ export function createSelectState(
 	const choices = [...field.choices]
 	const index = choices.findIndex((choice) => choice.value === field.default)
 	return {
-		message: field.label ?? field.name,
+		message: sanitizeDisplayText(field.label ?? field.name),
 		choices,
 		styler,
 		theme: createPromptTheme(theme),
@@ -637,7 +625,7 @@ export function createCheckboxState(
 		return indices
 	}, [])
 	return {
-		message: field.label ?? field.name,
+		message: sanitizeDisplayText(field.label ?? field.name),
 		choices,
 		styler,
 		theme: createPromptTheme(theme),
@@ -744,7 +732,7 @@ export function createEditorState(
 ) {
 	const lines: readonly string[] = []
 	return {
-		message: field.label ?? field.name,
+		message: sanitizeDisplayText(field.label ?? field.name),
 		default: field.default ?? '',
 		styler,
 		theme: createPromptTheme(theme),
