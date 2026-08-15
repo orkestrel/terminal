@@ -226,15 +226,15 @@ The client-side counterpart to the broker — connects to a remote broker's SSE 
 
 The multi-endpoint MANAGER — a named registry of `PromptInterface` brokers so several parties (agents, tools, humans) can `ask` prompts of each other by NAME, attributed with a `from` → `to` edge on every parked `PendingPrompt`, and guarded by a transitive DEADLOCK check across every in-flight ask ([`src/core`](../src/core)). Observable (§13); §9.1 accessors + §9.2 array-overload-first batch removal.
 
-| API                        | Kind      | Summary                                                                                                                                                       |
-| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TerminalOptions`          | interface | `add` / `createTerminalManager` per-endpoint options — `timeout?` / `timer?` / `cap?` (data-only).                                                            |
-| `TerminalManagerEventMap`  | type      | The manager's events (§13) — the name-attributed re-emission of every mounted broker's `pending` / `answer(to, id, value)` / `expire(to, id)`.                |
-| `TerminalManagerOptions`   | interface | `createTerminalManager` options — `store?` / `timeout?` / `timer?` / `cap?` / `on?` / `error?` (data-only).                                                   |
-| `TerminalAnswerError`      | type      | The rejection reason a `TerminalManagerInterface.answer` returns — an `AnswerError`, plus `'terminal'` (no such endpoint).                                    |
-| `TerminalManagerInterface` | interface | The registry — `emitter` / `count` data + `terminal` / `terminals` / `add` / `ask` / `pending` / `answer` / `open` / `save` / `remove` / `destroy`.           |
-| `TerminalManager`          | class     | The observable registry — mints/reuses named brokers, attributes `ask` edges, rejects `TARGET` / `DEADLOCK`, restores/persists via a store.                   |
-| `createTerminalManager`    | function  | Create the `TerminalManagerInterface` registry.                                                                                                               |
+| API                        | Kind      | Summary                                                                                                                                             |
+| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalOptions`          | interface | `add` / `createTerminalManager` per-endpoint options — `timeout?` / `timer?` / `cap?` (data-only).                                                  |
+| `TerminalManagerEventMap`  | type      | The manager's events (§13) — the name-attributed re-emission of every mounted broker's `pending` / `answer(to, id, value)` / `expire(to, id)`.      |
+| `TerminalManagerOptions`   | interface | `createTerminalManager` options — `store?` / `timeout?` / `timer?` / `cap?` / `on?` / `error?` (data-only).                                         |
+| `TerminalAnswerError`      | type      | The rejection reason a `TerminalManagerInterface.answer` returns — an `AnswerError`, plus `'terminal'` (no such endpoint).                          |
+| `TerminalManagerInterface` | interface | The registry — `emitter` / `count` data + `terminal` / `terminals` / `add` / `ask` / `pending` / `answer` / `open` / `save` / `remove` / `destroy`. |
+| `TerminalManager`          | class     | The observable registry — mints/reuses named brokers, attributes `ask` edges, rejects `TARGET` / `DEADLOCK`, restores/persists via a store.         |
+| `createTerminalManager`    | function  | Create the `TerminalManagerInterface` registry.                                                                                                     |
 
 ### The terminal store
 

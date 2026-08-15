@@ -798,7 +798,10 @@ export function editorView(state: EditorState): string {
 	)
 	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 	const committed = state.lines.map((line) => state.styler.render(state.theme.roles.content, line))
-	const body = [...committed, `${pointer} ${state.styler.render(state.theme.roles.content, state.current)}`]
+	const body = [
+		...committed,
+		`${pointer} ${state.styler.render(state.theme.roles.content, state.current)}`,
+	]
 	const view = [head, ...body].join('\n')
 	return state.error === undefined
 		? view
