@@ -1,37 +1,35 @@
-import type { Result } from '@orkestrel/contract'
+import type { JSONRecord, Result } from '@orkestrel/contract'
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
-import type { Style, StylerInterface } from '@orkestrel/console'
+import type { FieldError, FormInterface, FormValues } from '@orkestrel/form'
+import type { Style } from '@orkestrel/console'
 
-// The PURE, UNIVERSAL prompt core — a key decoder, a declarative validation engine, and
-// the six interactive prompts modelled as EVENT-FREE pure state machines. No `node:*`, no
-// TTY, no I/O: just types, functions, and immutable state. A keypress is decoded into a
-// `KeyEvent` ({@link parseKey}); a prompt is a `(state, key) → PromptStep` reducer that maps
-// the event to the next state plus a rendered, styled `view` and a `status`; declarative
-// rules compile into one `Validator` ({@link resolveValidation}). The server `Terminal`
-// driver (T-c) is the ONLY impure part — it owns raw-mode / readline / stdin, feeds bytes
-// through `parseKey` into these reducers, and writes the `view` to a sink. The view is
-// rendered through the shared console {@link StylerInterface} (AGENTS — one style engine).
+// The PURE, UNIVERSAL terminal core. `@orkestrel/form` owns every form concept — the schema, the
+// twelve controls, the rules, the values, and the settle-once `answer` promise — and this package
+// declares none of them a second time. What terminal owns is everything form has no opinion about:
+// a key decoder, a presentation theme, the headless broker that PARKS a live form until somebody
+// elsewhere answers it, the SSE bridge that carries one parked form to a machine with a keyboard,
+// and the manager that routes parked forms between named endpoints. The server `Terminal` driver
+// is the only impure part — it owns raw mode, stdin, and rendering, and it drives a form to
+// settlement through {@link TerminalInterface}.
 
 // === Key decoding
 
 /**
- * One decoded keypress — the universal, TTY-agnostic representation of a single key, the
- * output of {@link import('./helpers.js').parseKey}. A reducer reads `name` (and the
- * modifier flags) to decide its transition; the raw `sequence` is preserved so a printable
- * character round-trips and an unknown escape is never lost.
+ * One decoded keypress — the TTY-agnostic representation of a single key, the output of
+ * {@link import('./helpers.js').parseKey}. A driver reads `name` and the modifier flags to decide
+ * its transition; `sequence` is preserved so a printable character round-trips and an unknown
+ * escape is never lost.
  *
  * @remarks
- * - `name` — the canonical key name: a control / navigation key (`return`, `backspace`,
- *   `tab`, `escape`, `up` / `down` / `left` / `right`, `space`, `home`, `end`, `delete`),
- *   a named ctrl combo (`c` with `ctrl` true for ctrl-c, likewise `d` / `u` / `a` / `e`),
- *   or the printable character itself (`'a'`, `'7'`, `'?'`). An UNRECOGNIZED sequence
- *   yields `name: ''` (empty) — never a throw (the decoder is total).
- * - `sequence` — the exact input bytes as a string (a `Uint8Array` is decoded UTF-8). The
- *   driver writes this verbatim for a printable key; a reducer that needs the literal char
- *   reads it.
- * - `ctrl` / `meta` / `shift` — the modifier flags. `ctrl` is `true` for a C0 control byte
- *   (ctrl-c / ctrl-d / ctrl-u / ctrl-a / ctrl-e and the like); `meta` is `true` for an
- *   ESC-prefixed (Alt) sequence; `shift` is `true` for an uppercase-letter printable.
+ * - `name` — the canonical key name: a control or navigation key (`return`, `backspace`, `tab`,
+ *   `escape`, `up` / `down` / `left` / `right`, `space`, `home`, `end`, `delete`), a named ctrl
+ *   combo (`c` with `ctrl` true for ctrl-c, likewise `d` / `u` / `a` / `e`), or the printable
+ *   character itself (`'a'`, `'7'`, `'?'`). An unrecognized sequence yields `name: ''`; the decoder
+ *   is total and never throws.
+ * - `sequence` — the exact input bytes as a string (a `Uint8Array` is decoded UTF-8). The driver
+ *   writes this verbatim for a printable key.
+ * - `ctrl` / `meta` / `shift` — the modifier flags. `ctrl` is true for a C0 control byte, `meta`
+ *   for an ESC-prefixed (Alt) sequence, `shift` for an uppercase-letter printable.
  */
 export interface KeyEvent {
 	readonly name: string
@@ -41,86 +39,18 @@ export interface KeyEvent {
 	readonly shift: boolean
 }
 
-// === Validation
+// === Presentation
 
 /**
- * A single input validator — given the current input string, returns `true` when the input
- * is valid, or an error MESSAGE string when it is not. The atomic unit the validation engine
- * composes and the prompts apply on submit.
+ * One glyph slot a rendered field draws — the icon axis of a {@link PromptTheme}. A named value
+ * set, not a toggle, so it stays a union.
  *
  * @remarks
- * A `Validator` is total and pure — it never throws and never mutates. The `true | string`
- * shape (not `boolean`) is deliberate: an invalid result CARRIES its message, so a prompt
- * can render the exact reason. {@link import('./helpers.js').composeValidators} runs several
- * in order and returns the FIRST error (short-circuiting), so the most specific rule wins.
- */
-export type Validator = (input: string) => true | string
-
-/**
- * Declarative validation rules for a text prompt — each key toggles (or overrides) one
- * built-in check. {@link import('./helpers.js').resolveValidation} compiles a `ValidationRules`
- * (or a bare {@link Validator}) into ONE composed {@link Validator}.
- *
- * @remarks
- * Each rule is EITHER a primitive that turns on the built-in check, OR a {@link Validator}
- * that replaces it with custom logic:
- *
- * - `required` — `true` ⇒ input must be non-empty after trimming.
- * - `minimum` — a number ⇒ input must be at least that many characters.
- * - `maximum` — a number ⇒ input must be at most that many characters.
- * - `pattern` — a string ⇒ input must match that regex source.
- * - `email` — `true` ⇒ input must look like an email address.
- * - `url` — `true` ⇒ input must look like an HTTP(S) URL.
- * - `numeric` — `true` ⇒ input must be a number (integer or decimal).
- * - `integer` — `true` ⇒ input must be an integer.
- * - `alphanumeric` — `true` ⇒ input must contain only letters and digits.
- * - `custom` — an arbitrary {@link Validator} escape hatch.
- *
- * Rules compose in the fixed order above; the FIRST failing rule short-circuits and its
- * message is returned. A `false` / `undefined` rule is skipped.
- */
-export interface ValidationRules {
-	readonly required?: boolean | Validator
-	readonly minimum?: number | Validator
-	readonly maximum?: number | Validator
-	readonly pattern?: string | Validator
-	readonly email?: boolean | Validator
-	readonly url?: boolean | Validator
-	readonly numeric?: boolean | Validator
-	readonly integer?: boolean | Validator
-	readonly alphanumeric?: boolean | Validator
-	readonly custom?: Validator
-}
-
-// === Choices
-
-/** A choice item in a {@link SelectOptions} prompt — its displayed `name`, its resolved `value`, and an optional one-line `description`. */
-export interface PromptChoice {
-	readonly name: string
-	readonly value: string
-	readonly description?: string
-}
-
-/** A choice item in a {@link CheckboxOptions} prompt — a {@link PromptChoice} plus an optional initial `checked` state. */
-export interface CheckboxChoice {
-	readonly name: string
-	readonly value: string
-	readonly description?: string
-	readonly checked?: boolean
-}
-
-// === Prompt theme (the presentation vocabulary)
-
-/**
- * One glyph slot a prompt view renders — the icon axis of a {@link PromptTheme}. A named value
- * set (which marks a view can draw), not a toggle, so it stays a union.
- *
- * @remarks
- * - `question` — the leading mark on a prompt's message line.
- * - `pointer` — the cursor before the input / the focused choice row.
- * - `dot` / `selected` — an unfocused / focused row marker in a select list.
- * - `checked` / `unchecked` — a checked / unchecked box in a checkbox list.
- * - `success` / `error` — the mark on a resolved prompt's submit line / its validation error line.
+ * - `question` — the leading mark on a field's label line.
+ * - `pointer` — the cursor before the input or the focused choice row.
+ * - `dot` / `selected` — an unfocused / focused row marker in a choice list.
+ * - `checked` / `unchecked` — a checked / unchecked box in a multi-choice list.
+ * - `success` / `error` — the mark on a settled field's line / on its failure line.
  */
 export type PromptIcon =
 	| 'question'
@@ -133,23 +63,25 @@ export type PromptIcon =
 	| 'error'
 
 /**
- * One styling slot a prompt view renders through — the SEMANTIC axis of a {@link PromptTheme}.
- * A role says what a fragment MEANS; the theme decides what that meaning looks like, so a
- * consumer re-maps the styled fragments by naming roles rather than reimplementing a view.
+ * One styling slot a rendered field paints through — the semantic axis of a {@link PromptTheme}. A
+ * role says what a fragment MEANS; the theme decides what that meaning looks like, so a consumer
+ * re-maps styled output by naming roles rather than reimplementing a renderer.
  *
  * @remarks
- * - `question` — the leading question mark on an active prompt's line.
- * - `pointer` — the cursor before the input / the focused choice row.
- * - `message` — the prompt's own question text.
- * - `content` — the prompt's primary content: the typed value, the mask run, an unfocused choice
- *   label, a committed editor line, an in-progress editor line, or a fallback choice name. Its
- *   default is the EMPTY style, so an unthemed prompt renders this content as bare text.
- * - `success` / `error` — a resolved prompt's mark / a validation-error mark and its message.
- * - `selected` — a chosen value: the checked box, the focused select marker, the confirm default letter.
+ * - `question` — the leading mark on an active field's line.
+ * - `pointer` — the cursor before the input or the focused choice row.
+ * - `message` — the field's own label text.
+ * - `content` — the field's primary content: the typed value, the mask run, an unfocused choice
+ *   label, or a committed editor line. Its default is the EMPTY style, so unthemed content renders
+ *   as bare text.
+ * - `success` / `error` — a settled field's mark / a failure mark and its message.
+ * - `selected` — a chosen value: the checked box, the focused choice marker, the confirm default
+ *   letter.
  * - `focus` — the label of the row the cursor is on.
- * - `hint` — dim supplementary text: a default value, a key hint, a selection count, a committed answer.
- * - `muted` — a dim off-state mark: an unfocused select marker, an unchecked box, a fallback index.
- * - `description` — a choice's one-line description.
+ * - `hint` — dim supplementary text: a default value, a key hint, a selection count, a committed
+ *   answer.
+ * - `muted` — a dim off-state mark: an unfocused choice marker, an unchecked box, a fallback index.
+ * - `description` — a choice's one-line help text.
  */
 export type PromptRole =
 	| 'question'
@@ -165,17 +97,16 @@ export type PromptRole =
 	| 'description'
 
 /**
- * A prompt's resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console
- * {@link Style} for every {@link PromptRole}. Plain JSON data (no functions), so it crosses the wire
- * with the prompt it decorates. Built by {@link import('./helpers.js').createPromptTheme}; carried
- * resolved on every prompt state, so a view never reads a hardcoded glyph or color.
+ * A resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console {@link Style}
+ * for every {@link PromptRole}. Plain JSON data with no functions, so it crosses the wire with the
+ * form it decorates. Built by {@link import('./helpers.js').createPromptTheme}.
  *
  * @remarks
  * A role's value is the console module's own {@link Style} — the one style model the whole console
- * / terminal system shares — so a view paints a role through
- * {@link StylerInterface.render} and this package holds no second style vocabulary. A `Style`
- * carries a `foreground`, a `background`, and an attribute list, so a role can express a background
- * color, which the styler's accessor chain cannot name.
+ * and terminal system shares — so a renderer paints a role through
+ * {@link import('@orkestrel/console').StylerInterface} and this package holds no second style
+ * vocabulary. A `Style` carries a foreground, a background, and an attribute list, so a role can
+ * express a background color, which a styler's accessor chain cannot name.
  */
 export interface PromptTheme {
 	readonly icons: Readonly<Record<PromptIcon, string>>
@@ -183,8 +114,8 @@ export interface PromptTheme {
 }
 
 /**
- * The PARTIAL {@link PromptTheme} a prompt option bag carries — every icon and every role is
- * optional, and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
+ * The PARTIAL {@link PromptTheme} an option bag carries — every icon and every role is optional,
+ * and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
  * {@link import('./constants.js').DEFAULT_PROMPT_THEME} leaf by leaf. Supplying one icon or one
  * role leaves every other slot at its default.
  */
@@ -193,36 +124,30 @@ export interface PromptThemeOptions {
 	readonly roles?: Readonly<Partial<Record<PromptRole, Style>>>
 }
 
-// === Prompt step (the reducer output)
+// === Reducer output
 
 /**
- * The discriminant of a {@link PromptStep} — where the prompt stands after a key. `active`:
- * keep prompting (the input was consumed, or rejected by validation). `submit`: the prompt
- * resolved with its `value`. `cancel`: the user aborted (ctrl-c). Names its axis (the prompt's
- * progression), never `kind` (AGENTS §4.4).
+ * Where one field's reducer stands after a key. `active`: keep asking, because the key was
+ * consumed or the answer was refused. `submit`: the field resolved with its `value`. `cancel`: the
+ * user aborted with ctrl-c. Names its axis, never `kind`.
  */
 export type PromptStatus = 'active' | 'submit' | 'cancel'
 
 /**
- * The result of one reducer step — the next `state`, the rendered `view`, the `status`, and,
- * on `submit`, the resolved `value`. The whole contract between a pure prompt reducer and the
- * impure driver: the driver applies the next `state`, writes the `view`, and — when `status`
- * is `submit` — reads `value`.
+ * The result of one reducer step — the next `state`, the rendered `view`, the `status`, and, on
+ * `submit`, the resolved `value`. The whole contract between a pure reducer and the impure driver:
+ * the driver applies the next `state`, writes the `view`, and reads `value` on `submit`.
  *
- * @typeParam T - The prompt's resolved value type (`string` for input / password / select /
- *   editor, `boolean` for confirm, `readonly string[]` for checkbox).
- * @typeParam S - The prompt's concrete state shape ({@link InputState}, {@link SelectState}, …) —
- *   carried directly so `state` stays precisely typed with no union narrowing or assertion.
+ * @typeParam T - The value this field resolves to, as its control admits it.
+ * @typeParam S - The reducer's concrete state shape, carried directly so `state` stays precisely
+ *   typed with no union narrowing and no assertion.
  *
  * @remarks
- * - `state` — the next immutable prompt state (feed it to the next reduce call). On `submit` /
- *   `cancel` it is the final state.
- * - `view` — the styled string to render NOW (possibly MULTI-LINE for `select` / `checkbox`),
- *   built through the state's {@link StylerInterface}. On an invalid `submit` it carries the
- *   error; the driver re-renders it each step.
- * - `status` — the {@link PromptStatus}: `active` to continue, `submit` when resolved, `cancel`
- *   on abort.
- * - `value` — present ONLY on a `submit` step, carrying the prompt's resolved value.
+ * - `state` — the next immutable state; feed it to the next reduce call. On `submit` or `cancel` it
+ *   is the final state.
+ * - `view` — the styled string to render now, possibly multi-line. On a refused `submit` it carries
+ *   the failure; the driver re-renders it each step.
+ * - `value` — present ONLY on a `submit` step.
  */
 export interface PromptStep<T, S> {
 	readonly state: S
@@ -231,253 +156,27 @@ export interface PromptStep<T, S> {
 	readonly value?: T
 }
 
-// === Input prompt
-
-/** Options for a single-line text {@link import('./helpers.js').inputReduce} prompt. */
-export interface InputOptions {
-	readonly message: string
-	readonly default?: string
-	readonly validate?: Validator | ValidationRules
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of a text input prompt — its options, the resolved validator + styler +
- * theme, the accumulated `value`, and the current `error` (when the last submit failed validation).
- *
- * @remarks
- * Built by {@link import('./helpers.js').createInputState}; advanced by
- * {@link import('./helpers.js').inputReduce}. `value` accumulates printable characters and
- * shrinks on backspace; `error` holds the validation message shown in the view after a
- * rejected submit (cleared on the next keystroke).
- */
-export interface InputState {
-	readonly message: string
-	readonly default: string
-	readonly validator: Validator
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-	readonly value: string
-	readonly error?: string
-}
-
-// === Password prompt
-
-/** Options for a masked password {@link import('./helpers.js').passwordReduce} prompt. */
-export interface PasswordOptions {
-	readonly message: string
-	readonly mask?: string
-	readonly validate?: Validator | ValidationRules
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of a password prompt — like {@link InputState} but with a `mask`
- * character the view renders in place of each input character.
- *
- * @remarks
- * Built by {@link import('./helpers.js').createPasswordState}; advanced by
- * {@link import('./helpers.js').passwordReduce}. The `value` is the real (unmasked) input;
- * the view shows `mask` repeated `value.length` times.
- */
-export interface PasswordState {
-	readonly message: string
-	readonly mask: string
-	readonly validator: Validator
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-	readonly value: string
-	readonly error?: string
-}
-
-// === Confirm prompt
-
-/**
- * Options for a yes/no {@link import('./helpers.js').confirmReduce} confirmation prompt.
- *
- * @remarks
- * `hint` replaces the computed `(Y/n)` group in full, parentheses included, and is painted with
- * the theme's `hint` role. The accepted KEYS stay `y` / `n` / `enter` whatever the hint says, so a
- * hint that advertises other keys is the consumer's own contradiction.
- */
-export interface ConfirmOptions {
-	readonly message: string
-	readonly default?: boolean
-	readonly hint?: string
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of a confirm prompt — its message, the default answer, the optional hint
- * override, and the resolved styler + theme.
- *
- * @remarks
- * Built by {@link import('./helpers.js').createConfirmState}; advanced by
- * {@link import('./helpers.js').confirmReduce}. `y` / `Y` submits `true`, `n` / `N` submits
- * `false`, and `enter` takes the `default` (rendered with the active letter emphasized in the
- * `(Y/n)` hint, unless `hint` replaces that group).
- */
-export interface ConfirmState {
-	readonly message: string
-	readonly default: boolean
-	readonly hint?: string
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-}
-
-// === Select prompt
-
-/**
- * Options for a single-selection {@link import('./helpers.js').selectReduce} prompt.
- *
- * @remarks
- * `choices` accepts bare strings (used as both `name` and `value`) or full {@link PromptChoice}
- * objects; {@link import('./helpers.js').createSelectState} normalizes them. `default` pre-focuses
- * the choice whose `value` matches it. `hint` adds a key hint after the message — the list is
- * self-explanatory at a TTY, so there is no computed default; the server driver shows it on the
- * numbered fallback too.
- */
-export interface SelectOptions {
-	readonly message: string
-	readonly choices: ReadonlyArray<string | PromptChoice>
-	readonly default?: string
-	readonly hint?: string
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of a select prompt — the normalized choices, the optional hint, the
- * resolved styler + theme, and the `focused` index (the highlighted row).
- *
- * @remarks
- * Built by {@link import('./helpers.js').createSelectState}; advanced by
- * {@link import('./helpers.js').selectReduce}. `up` / `down` move `focused` (wrapping at the
- * ends); `return` submits the focused choice's `value`.
- */
-export interface SelectState {
-	readonly message: string
-	readonly choices: readonly PromptChoice[]
-	readonly hint?: string
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-	readonly focused: number
-}
-
-// === Checkbox prompt
-
-/**
- * Options for a multi-selection {@link import('./helpers.js').checkboxReduce} prompt.
- *
- * @remarks
- * `choices` accepts bare strings or full {@link CheckboxChoice} objects (with an optional
- * initial `checked`); {@link import('./helpers.js').createCheckboxState} normalizes them.
- * `min` / `max` gate submission — a submit with fewer than `min` or more than `max` selected
- * is rejected (the prompt stays active with the reason in the view). `hint` adds a key hint after
- * the message (no computed default) and reaches the server driver's numbered fallback too.
- */
-export interface CheckboxOptions {
-	readonly message: string
-	readonly choices: ReadonlyArray<string | CheckboxChoice>
-	readonly min?: number
-	readonly max?: number
-	readonly hint?: string
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of a checkbox prompt — the normalized choices, the optional hint, the
- * resolved styler + theme, the `focused` index, the set of `checked` indices, the optional
- * `min` / `max` gate, and the current `error`.
- *
- * @remarks
- * Built by {@link import('./helpers.js').createCheckboxState}; advanced by
- * {@link import('./helpers.js').checkboxReduce}. `up` / `down` move `focus` (wrapping); `space`
- * toggles the focused index in `checked`; `return` submits the checked values in choice order
- * (rejected, with `error`, when the count is outside `[min, max]`). `checked` is modelled as a
- * readonly index array (plain JSON data, copy-on-write — no `Set` to clone).
- */
-export interface CheckboxState {
-	readonly message: string
-	readonly choices: readonly CheckboxChoice[]
-	readonly hint?: string
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-	readonly focused: number
-	readonly checked: readonly number[]
-	readonly min?: number
-	readonly max?: number
-	readonly error?: string
-}
-
-// === Editor prompt
-
-/**
- * Options for a multi-line {@link import('./helpers.js').editorReduce} editor prompt (terminated
- * by ctrl-d).
- *
- * @remarks
- * `hint` replaces the computed `(Ctrl+D to finish)` group in full, parentheses included. The
- * finish KEY stays ctrl-d whatever the hint says.
- */
-export interface EditorOptions {
-	readonly message: string
-	readonly default?: string
-	readonly hint?: string
-	readonly validate?: Validator | ValidationRules
-	readonly styler?: StylerInterface
-	readonly theme?: PromptThemeOptions
-}
-
-/**
- * The immutable state of an editor prompt — the committed `lines`, the in-progress `current`
- * line, plus the resolved validator + styler + theme, the default, the optional hint override,
- * and the current `error`.
- *
- * @remarks
- * Built by {@link import('./helpers.js').createEditorState}; advanced by
- * {@link import('./helpers.js').editorReduce}. A printable key appends to `current`; `return`
- * commits `current` to `lines` and starts a fresh line; ctrl-d finishes, submitting
- * `lines + current` joined by newlines (or `default` when empty). The whole text is validated
- * on finish.
- */
-export interface EditorState {
-	readonly message: string
-	readonly default: string
-	readonly hint?: string
-	readonly validator: Validator
-	readonly styler: StylerInterface
-	readonly theme: PromptTheme
-	readonly lines: readonly string[]
-	readonly current: string
-	readonly error?: string
-}
-
-// === Prompt kind
-
-/**
- * The six prompt KINDS this core provides — the value family a higher-level broker (T-b)
- * dispatches on. Names the prompt axis; a named value set (not a toggle), so it stays a union.
- */
-export type PromptType = 'input' | 'password' | 'confirm' | 'select' | 'checkbox' | 'editor'
+// === Failure codes
 
 /**
  * The machine-readable condition carried by a {@link import('./errors.js').TerminalError} — the
- * axis a `catch` branches on. Names its axis (the failure condition), never `kind` (AGENTS §4.4).
+ * axis a `catch` branches on. Names its axis (the failure condition), never `kind`.
  *
  * @remarks
- * - `EXPIRE` — a parked broker prompt was not answered before its `timeout` (or the broker was
- *   `destroy`ed while it was still pending); the prompt's Promise rejects with this.
- * - `CANCEL` — the user aborted an interactive prompt (ctrl-c) at the server `Terminal` (T-c)
- *   driver; the awaited prompt call rejects with this so a caller can branch on `error.code`.
- * - `LIMIT` — a broker's optional `cap` on concurrently-parked prompts was already reached; the
- *   new call is rejected WITHOUT parking (never counted, never emitted, no timer armed).
- * - `DESTROYED` — a call reached an already-`destroy`ed {@link TerminalManagerInterface} (`add`
- *   at entry, or `open` whose `store` read resolved after a `destroy` happened in the gap).
+ * Every code here is terminal's own. A refusal that belongs to the form — a malformed schema, a
+ * value a control cannot hold, a write to a settled form — arrives as the dependency's own
+ * `FormError` and is never re-coded.
+ *
+ * - `EXPIRE` — a parked form was not answered before its `timeout`, or the broker was destroyed
+ *   while it was still parked. The broker abandons the form, so the caller's `answer` promise
+ *   rejects on the form's own lifecycle.
+ * - `CANCEL` — the user aborted at the server `Terminal` driver with ctrl-c.
+ * - `DRIVER` — the driver could not read the terminal it was given.
+ * - `DEADLOCK` — an endpoint was asked to answer its own question.
+ * - `TARGET` — the named endpoint cannot be reached.
+ * - `LIMIT` — the broker's optional `cap` on concurrently parked forms was already reached. The
+ *   new call is refused WITHOUT parking: no id, no `pending` event, no timer.
+ * - `DESTROYED` — a call reached an already-destroyed {@link TerminalManagerInterface}.
  */
 export type TerminalErrorCode =
 	| 'EXPIRE'
@@ -488,73 +187,61 @@ export type TerminalErrorCode =
 	| 'LIMIT'
 	| 'DESTROYED'
 
-// === The async prompt contract (T-b)
+// === The interactive driver
 
 /**
- * The shared ASYNC prompt contract — the six prompt forms as Promise-returning methods. The
- * ONE vocabulary BOTH the headless {@link PromptInterface} broker (this module) and the server
- * `Terminal` driver (T-c) implement, so a prompt issued through this surface resolves the same
- * way on every surface (local TTY, headless broker, remote bridge).
+ * The contract for asking a form of a human at a keyboard — one method, because a form is one
+ * question however many fields it holds. The server `Terminal` implements it against a real TTY;
+ * a {@link PromptClientInterface} holds one to answer forms parked elsewhere.
  *
  * @remarks
- * Each method takes the prompt's `*Options` and resolves to that form's value type:
- * - `input` / `password` / `select` / `editor` → a `string`
- * - `confirm` → a `boolean`
- * - `checkbox` → a `readonly string[]` (the checked values, in choice order)
+ * `ask` drives the form the caller passes: it walks the schema's fields in order, binds each
+ * keystroke through the form's own `fill`, submits, and returns the settled values. The returned
+ * promise is the form's `answer`, so a caller holding the form can await either one.
  *
- * This is a behavioral CONTRACT (the method surface), not an observable entity — the broker and
- * the driver add their own emitter / lifecycle on top. The {@link PromptClient} dispatches a
- * remote {@link PendingPrompt} to a LOCAL `PromptFormInterface` (so a human at this machine
- * answers a prompt parked elsewhere).
+ * A driver never owns the form's lifetime. To interrupt an active walk, destroy the form: it
+ * abandons, `answer` rejects, and the driver stops rendering on the form's `abandon` event. That
+ * is the only cancellation channel, which is why this contract needs no second method.
  */
-export interface PromptFormInterface {
-	input(options: InputOptions): Promise<string>
-	password(options: PasswordOptions): Promise<string>
-	confirm(options: ConfirmOptions): Promise<boolean>
-	select(options: SelectOptions): Promise<string>
-	checkbox(options: CheckboxOptions): Promise<readonly string[]>
-	editor(options: EditorOptions): Promise<string>
+export interface TerminalInterface {
+	ask(form: FormInterface): Promise<FormValues>
 }
 
-// === The headless prompt broker (T-b)
+// === The headless broker
 
 /**
- * The lifecycle status of a parked {@link PendingPrompt} — where a brokered prompt stands.
- * Names its axis (the pending prompt's progression), never `kind` (AGENTS §4.4).
+ * The lifecycle status of a parked {@link PendingForm} — where the TICKET stands, which is not
+ * where the form stands. A ticket is `pending` until somebody answers it; the form it carries has
+ * its own status, and the two are separate facts about separate entities.
  *
  * @remarks
- * - `pending` — parked, awaiting an {@link PromptInterface.answer} (the Promise is unresolved).
- * - `answered` — answered and accepted (the Promise resolved with the validated value).
- * - `expired` — timed out (or torn down by `destroy`) before an answer (the Promise rejected).
+ * - `pending` — parked, awaiting {@link PromptInterface.answer}.
+ * - `answered` — answered and accepted, so the parked form settled.
+ * - `expired` — timed out, or torn down by `destroy`, before an answer.
  */
-export type PendingPromptStatus = 'pending' | 'answered' | 'expired'
+export type PendingFormStatus = 'pending' | 'answered' | 'expired'
 
 /**
- * One prompt PARKED by the broker — an id-keyed, wire-safe record of a {@link PromptFormInterface}
- * call awaiting a remote answer. The value a `pending` listener receives and the broker serializes
- * over SSE to a {@link PromptClient}.
+ * One form PARKED by the broker — an id-keyed, wire-safe record of a live form awaiting a remote
+ * answer. The value a `pending` listener receives and the broker serializes over SSE to a
+ * {@link PromptClientInterface}.
  *
  * @remarks
- * - `id` — the unique id (minted via `crypto.randomUUID()`); the key for {@link PromptInterface.answer}.
- * - `form` — which prompt form was called ({@link PromptType}); the discriminant a client
- *   dispatches on (named for its axis — the prompt form — never `kind` / `type`).
- * - `message` — the prompt's question (lifted out of `options` for direct display).
- * - `options` — the WIRE-SAFE options (a `validate` FUNCTION dropped; the declarative
- *   {@link ValidationRules} data + `choices` / `default` / `mask` / `hint` / `theme` kept — see
- *   {@link import('./helpers.js').serializePromptOptions}). A client reconstructs the validator
- *   from the rules via {@link resolveValidation}.
- * - `status` — the current {@link PendingPromptStatus}.
- * - `time` — the creation timestamp (ms since epoch).
- * - `from` / `to` — the OPTIONAL attribution edge a {@link TerminalManagerInterface} stamps on a
- *   parked prompt (which endpoint asked, which endpoint must answer); absent for a bare broker
- *   {@link PromptInterface} used directly (no manager attribution).
+ * - `id` — the unique id, minted with `crypto.randomUUID()`; the key for
+ *   {@link PromptInterface.answer}.
+ * - `schema` — the parked form's schema projected to JSON by the dependency's own `serializeForm`.
+ *   Every `custom` validator is dropped on the way out, so an authoritative rule the wire cannot
+ *   carry stays server-side and is enforced when the answer comes back.
+ * - `status` — the ticket's {@link PendingFormStatus}.
+ * - `time` — the creation timestamp, ms since epoch.
+ * - `from` / `to` — the attribution edge a {@link TerminalManagerInterface} stamps on a parked
+ *   form: which endpoint asked, which endpoint must answer. Both absent for a bare broker used
+ *   directly.
  */
-export interface PendingPrompt {
+export interface PendingForm {
 	readonly id: string
-	readonly form: PromptType
-	readonly message: string
-	readonly options: Readonly<Record<string, unknown>>
-	readonly status: PendingPromptStatus
+	readonly schema: JSONRecord
+	readonly status: PendingFormStatus
 	readonly time: number
 	readonly from?: string
 	readonly to?: string
@@ -563,8 +250,8 @@ export interface PendingPrompt {
 /**
  * One injected timer — arms a deadline `callback` to fire after `ms`, returning a
  * {@link TimerCancel} that cancels it. The broker's timeout seam: the default wraps the host
- * `setTimeout` / `clearTimeout`; a test injects a deterministic timer that captures the callback
- * and fires it on demand (no real time, no global fake-timer patching).
+ * `setTimeout` and `clearTimeout`; a test injects a deterministic timer that captures the callback
+ * and fires it on demand, with no real time and no global patching.
  */
 export type TimerHandler = (callback: () => void, ms: number) => TimerCancel
 
@@ -572,49 +259,50 @@ export type TimerHandler = (callback: () => void, ms: number) => TimerCancel
 export type TimerCancel = () => void
 
 /**
- * One parked prompt's runtime state inside the broker — the wire-safe {@link PendingPrompt} record
- * it exposes, plus the live machinery that settles that prompt's Promise. `respond` is the per-form
- * gate-and-resolve closure: it validates + type-checks an answer and (on accept) resolves the parked
- * Promise, returning whether it accepted; it closes over the form's precisely-typed `resolve`, so no
- * per-form generic leaks into `answer`. `expire` rejects the parked Promise; `cancel` clears the
- * injected expiry timer ({@link TimerCancel}).
+ * One parked form's runtime state inside the broker — the live form, the wire-safe record the
+ * broker exposes, and the cancel for its expiry timer.
+ *
+ * @remarks
+ * `form` is the AUTHORITATIVE form the caller parked, not a copy: an answer fills and submits this
+ * one, so a `custom` rule that never crossed the wire still decides. Expiry destroys it, which
+ * abandons it and settles the caller's promise through the form's own lifecycle. `pending` is the
+ * wire record, whose `status` tracks the ticket.
  */
 export interface Parked {
-	readonly prompt: PendingPrompt
-	readonly respond: (value: unknown) => unknown
-	readonly expire: () => void
+	readonly form: FormInterface
+	readonly pending: PendingForm
 	readonly cancel: TimerCancel
 }
 
 /**
- * The broker's event map (AGENTS §13) — lean, errors `unknown`, no listener-error event.
+ * The broker's event map — lean, errors `unknown`, no listener-error event.
  *
  * @remarks
- * - `pending` — a prompt was parked (carries the wire-safe {@link PendingPrompt}); a transport
- *   forwards it to remote clients.
- * - `answer` — a parked prompt was answered (carries its `id` + the accepted `value`).
- * - `expire` — a parked prompt timed out (or was torn down) unanswered (carries its `id`).
+ * - `pending` — a form was parked; a transport forwards the wire record to remote clients.
+ * - `answer` — a parked form was answered and accepted, carrying its id and the settled values.
+ * - `expire` — a parked form timed out or was torn down unanswered, carrying its id.
  */
 export type PromptEventMap = {
-	readonly pending: readonly [prompt: PendingPrompt]
-	readonly answer: readonly [id: string, value: unknown]
+	readonly pending: readonly [form: PendingForm]
+	readonly answer: readonly [id: string, values: FormValues]
 	readonly expire: readonly [id: string]
 }
 
 /**
- * Options for {@link import('./factories.js').createPrompt} / the {@link PromptInterface} broker.
+ * Options for {@link import('./factories.js').createPrompt} and every {@link PromptInterface}
+ * broker, including one a {@link TerminalManagerInterface} mounts per endpoint.
  *
  * @remarks
- * - `on` — initial {@link PromptEventMap} listeners (AGENTS §8/§13).
- * - `error` — the emitter's listener-error handler (AGENTS §13).
- * - `timeout` — ms a parked prompt waits before it expires + its Promise rejects (default
+ * - `on` — initial {@link PromptEventMap} listeners.
+ * - `error` — the emitter's listener-error handler.
+ * - `timeout` — ms a parked form waits before it expires and is abandoned (default
  *   {@link import('./constants.js').DEFAULT_PROMPT_TIMEOUT_MS}).
- * - `timer` — the injected {@link TimerHandler} (default the host `setTimeout`); supply a
+ * - `timer` — the injected {@link TimerHandler}, default the host `setTimeout`; supply a
  *   deterministic timer to drive expiry in tests without real time.
- * - `cap` — the maximum number of prompts this broker will hold PARKED at once (default
- *   UNBOUNDED — no cap unless supplied). Once `count` reaches `cap`, a new park is rejected with
- *   a {@link import('./errors.js').TerminalError} (`code: 'LIMIT'`) WITHOUT parking, minting an
- *   id, emitting `pending`, or arming the expiry timer — the runaway-asker memory ceiling.
+ * - `cap` — the maximum number of forms this broker holds parked at once, default unbounded. Once
+ *   `count` reaches `cap` a new park is refused with a
+ *   {@link import('./errors.js').TerminalError} coded `LIMIT`, without parking, minting an id,
+ *   emitting `pending`, or arming a timer. The runaway-asker memory ceiling.
  */
 export interface PromptOptions {
 	readonly on?: EmitterHooks<PromptEventMap>
@@ -625,91 +313,72 @@ export interface PromptOptions {
 }
 
 /**
- * The union of a resolved prompt's value shapes — a `string` (`input` / `password` / `select` /
- * `editor`), a `boolean` (`confirm`), or a `readonly string[]` (`checkbox`, the checked values in
- * choice order). The type a {@link Ticket}'s `value` Promise resolves to.
- */
-export type PromptValue = string | boolean | readonly string[]
-
-/**
- * The union of every prompt form's options bag — the `options` a {@link ParkRequest} carries,
- * narrowed at the call site by the paired {@link PromptType}.
- */
-export type PromptFormOptions =
-	| InputOptions
-	| PasswordOptions
-	| ConfirmOptions
-	| SelectOptions
-	| CheckboxOptions
-	| EditorOptions
-
-/**
- * The request to {@link PromptInterface.park} a prompt directly — the general form the six
- * `PromptFormInterface` methods each wrap via a private `gateFor(form, options)` dispatch.
+ * The parking envelope — everything the broker needs about a park that the form itself does not
+ * say.
  *
  * @remarks
- * - `form` — which {@link PromptType} to park.
- * - `options` — that form's options bag ({@link PromptFormOptions}).
- * - `from` / `to` — set ONLY by a {@link TerminalManagerInterface} (the attribution edge); a
- *   direct broker caller leaves both `undefined`.
+ * `from` and `to` are the attribution edge, set ONLY by a {@link TerminalManagerInterface}: which
+ * endpoint asked, which endpoint must answer. A direct broker caller passes no request at all.
  */
 export interface ParkRequest {
-	readonly form: PromptType
-	readonly options: PromptFormOptions
 	readonly from?: string
 	readonly to?: string
 }
 
-/** The handle {@link PromptInterface.park} returns — the parked prompt's `id` plus the Promise that resolves (or rejects) with its {@link PromptValue}. */
-export interface Ticket {
-	readonly id: string
-	readonly value: Promise<PromptValue>
-}
-
-/** The rejection reason a bare {@link PromptInterface.answer} returns — `'unknown'` (no such parked prompt) or `'rejected'` (failed validation / type-check). */
-export type AnswerError = 'unknown' | 'rejected'
-
 /**
- * The headless prompt BROKER (observable §13) — implements {@link PromptFormInterface} by
- * PARKING each call as a {@link PendingPrompt} and returning a Promise that resolves when the
- * prompt is {@link answer}ed (or rejects on timeout). The local-TTY / headless / remote
- * tri-surface's headless arm: no terminal here — a transport forwards each `pending` to whoever
- * can answer, and {@link answer} resolves the parked Promise.
+ * Why {@link PromptInterface.answer} refused. Names its axis with `reason`.
  *
  * @remarks
- * - **Park-as-Promise.** Each `input` / `password` / … call mints an id, parks a
- *   {@link PendingPrompt}, emits `pending`, and returns an unresolved Promise. {@link park} is the
- *   general entry point the six form methods wrap.
- * - **Answer validates.** {@link answer} validates `value` against the prompt's resolved
- *   validator AND type-checks it to the prompt form before accepting; a bad answer is rejected
- *   (a {@link Result}<unknown, {@link AnswerError}> failure, the prompt stays `pending`).
- * - **Timeout → expire → reject.** An unanswered prompt expires after `timeout` ms — `expire`
- *   fires and the parked Promise rejects (a {@link import('./errors.js').TerminalError}). The
- *   timer is injectable for deterministic tests.
- * - **Accessors (§9.1).** `pending()` lists the parked prompts; `pending(id)` looks one up.
+ * - `unknown` — no form is parked under that id, or the one that was has already settled.
+ * - `rejected` — the authoritative form refused the values, and `errors` is exactly what it
+ *   reported. A client seeds its local form with the values it sent, applies each failure through
+ *   the form's `invalidate`, and asks again; the parked form stays parked until it accepts or
+ *   expires. This is the retry loop that makes a server-side `custom` rule enforceable, because
+ *   that rule never crossed the wire and the client could not have checked it.
  */
-export interface PromptInterface extends PromptFormInterface {
+export type AnswerError =
+	| { readonly reason: 'unknown' }
+	| { readonly reason: 'rejected'; readonly errors: readonly FieldError[] }
+
+/**
+ * The headless form BROKER — parks a live form until somebody elsewhere answers it. The headless
+ * arm of the local-TTY / headless / remote trio: there is no terminal here, so a transport forwards
+ * each `pending` record to whoever can answer, and {@link answer} drives the parked form to
+ * settlement.
+ *
+ * @remarks
+ * - **The form is the unit.** {@link park} takes a live form, mints an id, emits `pending`, and
+ *   returns the id. It wraps no promise, because the caller already holds one: the form's own
+ *   `answer`.
+ * - **The parked form is authoritative.** {@link answer} fills and submits THAT form, so every rule
+ *   it carries decides, including a `custom` validator the wire dropped. A refusal returns the
+ *   form's own errors and leaves the form parked.
+ * - **Timeout abandons.** An unanswered form is destroyed after `timeout` ms; `expire` fires and
+ *   the caller's promise rejects on the form's own lifecycle. The timer is injectable.
+ * - **Accessors.** `pending()` lists the parked records; `pending(id)` looks one up.
+ */
+export interface PromptInterface {
 	readonly emitter: EmitterInterface<PromptEventMap>
 	readonly count: number
-	park(request: ParkRequest): Ticket
-	pending(): readonly PendingPrompt[]
-	pending(id: string): PendingPrompt | undefined
-	answer(id: string, value: unknown): Result<unknown, AnswerError>
+	park(form: FormInterface, request?: ParkRequest): string
+	pending(): readonly PendingForm[]
+	pending(id: string): PendingForm | undefined
+	answer(id: string, values: FormValues): Result<FormValues, AnswerError>
 	destroy(): void
 }
 
-// === The SSE prompt bridge (T-b)
+// === The SSE bridge
 
 /**
- * A minimal `fetch` — the subset of the global `fetch` the {@link PromptClient} uses (open the
- * SSE stream, POST an answer). Injected so a test drives the client with a controlled
- * `Response` (a scripted SSE `ReadableStream`) instead of a real network.
+ * A minimal `fetch` — the subset of the global `fetch` a {@link PromptClientInterface} uses: open
+ * the SSE stream, POST an answer. Injected so a test drives the client with a scripted `Response`
+ * instead of a real network.
  */
 export type FetchHandler = (input: string, init?: FetchInit) => Promise<Response>
 
 /**
- * The request init the {@link PromptClient} passes to its {@link FetchHandler} — the `fetch`
- * `RequestInit` fields it actually sets (method / headers / body / abort signal).
+ * The request init a {@link PromptClientInterface} passes to its {@link FetchHandler} — the
+ * `RequestInit` fields it actually sets.
  */
 export interface FetchInit {
 	readonly method?: string
@@ -719,13 +388,15 @@ export interface FetchInit {
 }
 
 /**
- * The client's event map (AGENTS §13) — lean, errors `unknown`, no listener-error event.
+ * The client's event map — lean, errors `unknown`, no listener-error event.
  *
  * @remarks
  * - `connect` — the SSE stream opened.
- * - `disconnect` — the SSE stream closed (the server ended it, or {@link PromptClientInterface.disconnect}).
- * - `expire` — the remote broker signalled a parked prompt expired (carries its `id`).
- * - `error` — a connection / dispatch / POST fault (errors are `unknown`).
+ * - `disconnect` — the SSE stream closed, by the server or by
+ *   {@link PromptClientInterface.disconnect}.
+ * - `expire` — the remote broker signalled that a parked form expired, carrying its id. The client
+ *   destroys the local form rendering it, or drops it from the queue if it has not started.
+ * - `error` — a connection, render, or POST fault.
  */
 export type PromptClientEventMap = {
 	readonly connect: readonly []
@@ -735,27 +406,27 @@ export type PromptClientEventMap = {
 }
 
 /**
- * Options for {@link import('./factories.js').createPromptClient} / the {@link PromptClientInterface}.
+ * Options for {@link import('./factories.js').createPromptClient} and the
+ * {@link PromptClientInterface}.
  *
  * @remarks
- * - `url` — the remote broker's SSE endpoint (GET opens the stream; answers POST back to it).
- * - `terminal` — the LOCAL {@link PromptFormInterface} each remote prompt is dispatched to, so a
- *   human at THIS machine answers a prompt issued elsewhere.
- * - `token` — an optional auth token, sent as the
- *   {@link import('./constants.js').HEADER_TOKEN} header on every request.
- * - `reconnect` — whether to reconnect after the stream drops (default `true`).
+ * - `url` — the remote broker's SSE endpoint. A GET opens the stream; answers POST back to it.
+ * - `terminal` — the LOCAL {@link TerminalInterface} each remote form is driven through, so a human
+ *   at THIS machine answers a form parked elsewhere.
+ * - `token` — an optional auth token, sent as the {@link import('./constants.js').HEADER_TOKEN}
+ *   header on every request.
+ * - `reconnect` — whether to reconnect after the stream drops, default true.
  * - `delay` — ms to wait before each reconnect attempt (default
  *   {@link import('./constants.js').DEFAULT_RECONNECT_DELAY_MS}).
- * - `on` — initial {@link PromptClientEventMap} listeners (AGENTS §8/§13).
- * - `error` — the emitter's listener-error handler (AGENTS §13).
- * - `fetch` — the injected {@link FetchHandler} (default the global `fetch`); supply a scripted
- *   fetch to drive the client deterministically in tests.
- * - `timer` — the injected {@link TimerHandler} for the reconnect backoff (default the host
- *   `setTimeout`); supply a deterministic timer to drive reconnection without real time.
+ * - `on` — initial {@link PromptClientEventMap} listeners.
+ * - `error` — the emitter's listener-error handler.
+ * - `fetch` — the injected {@link FetchHandler}, default the global `fetch`.
+ * - `timer` — the injected {@link TimerHandler} for the reconnect backoff, default the host
+ *   `setTimeout`.
  */
 export interface PromptClientOptions {
 	readonly url: string
-	readonly terminal: PromptFormInterface
+	readonly terminal: TerminalInterface
 	readonly token?: string
 	readonly reconnect?: boolean
 	readonly delay?: number
@@ -766,17 +437,22 @@ export interface PromptClientOptions {
 }
 
 /**
- * The SSE prompt BRIDGE (observable §13) — the client-side counterpart to {@link PromptInterface}.
- * Connects to a remote broker's SSE endpoint, receives serialized {@link PendingPrompt}s,
- * dispatches EACH to a local {@link PromptFormInterface} terminal, and POSTs the answer back —
- * so a human at this machine answers prompts a broker parked elsewhere.
+ * The SSE form BRIDGE — the client-side counterpart to {@link PromptInterface}. It receives
+ * serialized {@link PendingForm} records from a remote broker, rebuilds each schema locally, drives
+ * it through a {@link TerminalInterface}, and POSTs the answer back, so a human at this machine
+ * answers forms a broker parked elsewhere.
  *
  * @remarks
- * - **Connect.** {@link connect} opens the SSE stream (via the injected `fetch` + the core
- *   `SSEParser`) and resolves when the stream ends; it reconnects with the `delay` backoff
- *   unless `reconnect` is `false` or the client was {@link destroy}ed.
- * - **Dispatch + answer.** Each decoded prompt is narrowed (§14) and dispatched to `terminal`;
- *   the resolved value POSTs back to `url`.
+ * - **Connect.** {@link connect} opens the SSE stream through the injected `fetch` and resolves
+ *   when the stream ends. It reconnects on the `delay` backoff unless `reconnect` is false or the
+ *   client was destroyed.
+ * - **Ingest, then render.** Ingestion never waits on a render. Each decoded record is narrowed,
+ *   its schema parsed and sanitized, and queued; one form is driven at a time while the stream
+ *   keeps reading, so an unanswered form never starves the connection.
+ * - **Never trust the wire.** Every rendered string is sanitized, and a `pattern` that arrived over
+ *   the wire is never executed locally. The authoritative form decides.
+ * - **Refusal retries.** A rejected answer comes back with the parked form's own errors; the client
+ *   applies them to the local form and asks again until the answer is accepted or the form expires.
  * - **`connected`** reflects whether the stream is currently open.
  */
 export interface PromptClientInterface {
@@ -788,41 +464,32 @@ export interface PromptClientInterface {
 	destroy(): void
 }
 
-// === The terminal manager (multi-endpoint broker registry)
-
-/** Options for {@link import('./factories.js').createTerminal} / a manager-owned {@link PromptInterface} broker — the per-endpoint `timeout` + injected `timer` + optional `cap` on concurrently-parked prompts. */
-export interface TerminalOptions {
-	readonly timeout?: number
-	readonly timer?: TimerHandler
-	readonly cap?: number
-}
+// === The terminal manager
 
 /**
- * The manager's event map (AGENTS §13) — the name-attributed re-emission of every mounted
- * broker's events, so a caller subscribes once for ALL endpoints instead of per-broker.
+ * The manager's event map — the name-attributed re-emission of every mounted broker's events, so a
+ * caller subscribes once for ALL endpoints instead of once per broker.
  *
  * @remarks
- * - `pending` — an endpoint parked a prompt (carries the {@link PendingPrompt}, itself carrying
- *   `from` / `to`).
- * - `answer` — an endpoint's parked prompt was answered (`to` names the endpoint).
- * - `expire` — an endpoint's parked prompt timed out (`to` names the endpoint).
+ * - `pending` — an endpoint parked a form; the record itself carries `from` and `to`.
+ * - `answer` — an endpoint's parked form was answered; `to` names the endpoint.
+ * - `expire` — an endpoint's parked form expired; `to` names the endpoint.
  */
 export type TerminalManagerEventMap = {
-	readonly pending: readonly [prompt: PendingPrompt]
-	readonly answer: readonly [to: string, id: string, value: unknown]
+	readonly pending: readonly [form: PendingForm]
+	readonly answer: readonly [to: string, id: string, values: FormValues]
 	readonly expire: readonly [to: string, id: string]
 }
 
 /**
- * Options for {@link import('./factories.js').createTerminalManager} / the
+ * Options for {@link import('./factories.js').createTerminalManager} and the
  * {@link TerminalManagerInterface}.
  *
  * @remarks
- * - `store` — the optional {@link TerminalStoreInterface} backing `open` / `save`.
- * - `timeout` / `timer` / `cap` — the manager-wide default for each endpoint's broker (overridable
- *   per {@link TerminalManagerInterface.add} call via {@link TerminalOptions}, exactly like
- *   `timeout` / `timer`).
- * - `on` / `error` — the manager's {@link EmitterHooks} + {@link EmitterErrorHandler} (AGENTS §13).
+ * - `store` — the optional {@link TerminalStoreInterface} backing `open` and `save`.
+ * - `timeout` / `timer` / `cap` — the manager-wide default for each endpoint's broker, overridable
+ *   per {@link TerminalManagerInterface.add} call.
+ * - `on` / `error` — the manager's own emitter hooks and listener-error handler.
  */
 export interface TerminalManagerOptions {
 	readonly store?: TerminalStoreInterface
@@ -833,28 +500,32 @@ export interface TerminalManagerOptions {
 	readonly error?: EmitterErrorHandler
 }
 
-/** The rejection reason a {@link TerminalManagerInterface.answer} call returns — an {@link AnswerError}, plus `'terminal'` (no such endpoint). */
-export type TerminalAnswerError = AnswerError | 'terminal'
+/**
+ * Why a {@link TerminalManagerInterface.answer} call refused — an {@link AnswerError} from the
+ * endpoint's own broker, or `terminal` when no endpoint is mounted under that name. One
+ * discriminant, `reason`, across both.
+ */
+export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
 
 /**
- * The multi-endpoint terminal MANAGER (§9.1/§9.2) — a registry of named {@link PromptInterface}
- * brokers (one per endpoint), so several parties (agents, tools, humans) can `ask` prompts of
- * each other by NAME, attributed with a `from` → `to` edge on every parked {@link PendingPrompt}.
+ * The multi-endpoint terminal MANAGER — a registry of named {@link PromptInterface} brokers, one
+ * per endpoint, so several parties (agents, tools, humans) can ask forms of each other BY NAME,
+ * attributed with a `from` → `to` edge on every parked record.
  *
  * @remarks
- * - **Accessors (§9.1).** `terminal(name)` looks up one endpoint's broker; `terminals()` lists
- *   every mounted endpoint name.
- * - **`add`** mints (or returns the existing) broker for `name` — idempotent, never clobbers a
- *   live endpoint.
- * - **`ask`** is the attributed convenience: parks a prompt from `from` to `to` (auto-`add`ing
- *   `to` if absent) and resolves with the typed value, precisely overloaded per {@link PromptType}.
- * - **`pending()`** lists every endpoint's parked prompts; `pending(to)` scopes to one endpoint.
+ * - **Accessors.** `terminal(name)` looks up one endpoint's broker; `terminals()` lists every
+ *   mounted endpoint name.
+ * - **`add`** mints, or returns, the broker for `name`. Idempotent; it never clobbers a live
+ *   endpoint.
+ * - **`ask`** is the attributed convenience: it parks `form` from `from` to `to`, adding `to` if it
+ *   is absent, and resolves with the settled values.
+ * - **`pending()`** lists every endpoint's parked records; `pending(to)` scopes to one endpoint.
  * - **`answer`** routes to the named endpoint's broker.
- * - **`open`** restores (or returns the live) broker for `name` from the `store`.
- * - **`save`** persists an endpoint's config snapshot to the `store` (`false` when there is no
- *   store, or `name` is unknown).
- * - **Batch `remove` (§9.2).** The array overload is declared FIRST — `remove(names)` removes each
- *   listed endpoint (`true` when any named terminal was removed); `remove(name)` removes one;
+ * - **`open`** restores, or returns the live, broker for `name` from the `store`.
+ * - **`save`** persists an endpoint's config snapshot; false when there is no store, or `name` is
+ *   unknown.
+ * - **Batch `remove`.** The array overload is declared FIRST: `remove(names)` removes each listed
+ *   endpoint and reports whether any named terminal was removed; `remove(name)` removes one;
  *   `remove()` removes every endpoint without destroying the manager.
  * - **`destroy`** tears down every broker, then the manager's own emitter.
  */
@@ -863,24 +534,11 @@ export interface TerminalManagerInterface {
 	readonly count: number
 	terminal(name: string): PromptInterface | undefined
 	terminals(): readonly string[]
-	add(name: string, options?: TerminalOptions): PromptInterface
-	ask(
-		from: string,
-		to: string,
-		form: 'input' | 'password' | 'editor',
-		options: InputOptions | PasswordOptions | EditorOptions,
-	): Promise<string>
-	ask(from: string, to: string, form: 'confirm', options: ConfirmOptions): Promise<boolean>
-	ask(from: string, to: string, form: 'select', options: SelectOptions): Promise<string>
-	ask(
-		from: string,
-		to: string,
-		form: 'checkbox',
-		options: CheckboxOptions,
-	): Promise<readonly string[]>
-	pending(): readonly PendingPrompt[]
-	pending(to: string): readonly PendingPrompt[]
-	answer(to: string, id: string, value: unknown): Result<unknown, TerminalAnswerError>
+	add(name: string, options?: PromptOptions): PromptInterface
+	ask(from: string, to: string, form: FormInterface): Promise<FormValues>
+	pending(): readonly PendingForm[]
+	pending(to: string): readonly PendingForm[]
+	answer(to: string, id: string, values: FormValues): Result<FormValues, TerminalAnswerError>
 	open(name: string): Promise<PromptInterface | undefined>
 	save(name: string): Promise<boolean>
 	remove(names: readonly string[]): boolean
@@ -889,32 +547,45 @@ export interface TerminalManagerInterface {
 	destroy(): void
 }
 
-// === Transport-neutral bridge wire seams
+// === Transport-neutral wire seam
 
-/** One SSE-shaped wire frame — the `event` name, its `data` payload (already JSON-stringified), and an optional `id`. The transport-neutral shape {@link import('./helpers.js').serializePending} / {@link import('./helpers.js').serializeExpire} / {@link import('./helpers.js').serializeShutdown} build, with no `http` dependency. */
+/**
+ * One SSE-shaped wire frame — the `event` name, its already-stringified `data` payload, and an
+ * optional `id`. The transport-neutral shape {@link import('./helpers.js').serializePending},
+ * {@link import('./helpers.js').serializeExpire}, and
+ * {@link import('./helpers.js').serializeShutdown} build, with no `http` dependency.
+ */
 export interface WireEvent {
 	readonly event: string
 	readonly data: string
 	readonly id?: string
 }
 
-// === Terminal store (config-only snapshot)
+// === Terminal store
 
-/** One endpoint's persisted CONFIG snapshot — `id` is the endpoint name; `timeout` its configured default. Parked Promises are process-bound and are never resurrected — `open` always restores an EMPTY broker. */
+/**
+ * One endpoint's persisted CONFIG snapshot — `id` is the endpoint name and `timeout` its configured
+ * default. Parked forms are process-bound and are never resurrected, so `open` always restores an
+ * EMPTY broker.
+ */
 export interface TerminalSnapshot {
 	readonly id: string
 	readonly timeout?: number
 }
 
-/** One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads/writes; `snapshot` is narrowed with {@link import('./validators.js').isTerminalSnapshot} on read. */
+/**
+ * One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads
+ * and writes. `snapshot` is narrowed with {@link import('./validators.js').isTerminalSnapshot} on
+ * read.
+ */
 export interface TerminalSnapshotRow {
 	readonly id: string
 	readonly snapshot: unknown
 }
 
 /**
- * The point-access persistence seam (AGENTS §5 — Stores) for a {@link TerminalManagerInterface}'s
- * endpoint configs. Every primitive is async; `delete` of an absent id is a no-op.
+ * The point-access persistence seam for a {@link TerminalManagerInterface}'s endpoint configs.
+ * Every primitive is async; deleting an absent id is a no-op.
  */
 export interface TerminalStoreInterface {
 	get(id: string): Promise<TerminalSnapshot | undefined>
