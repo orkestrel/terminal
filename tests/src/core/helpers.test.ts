@@ -58,10 +58,9 @@ import {
 	createManualTimer,
 	createPendingForm,
 	feedReducer,
-	requireElement,
 } from '../../setup.js'
 import { strip } from '@orkestrel/console'
-import { waitForDelay } from '@orkestrel/test'
+import { requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('parseKey', () => {
@@ -352,41 +351,49 @@ describe('schema sanitization', () => {
 
 		expect(sanitized.label).toBe('Form')
 		expect(sanitized.help).toBe('Form help')
-		expect(requireElement(sanitized.groups ?? [], 0)).toMatchObject({
+		expect(requireValue(sanitized.groups?.[0], 'Missing sanitized group')).toMatchObject({
 			label: 'Group',
 			help: 'Group help',
 		})
-		expect(requireElement(sanitized.fields, 0)).toMatchObject({
+		expect(requireValue(sanitized.fields[0], 'Missing sanitized text field')).toMatchObject({
 			label: 'Text',
 			help: 'Text help',
 			placeholder: 'placeholder',
 			rule: { pattern: 'pattern' },
 		})
-		expect(requireElement(sanitized.fields, 1)).toMatchObject({
+		expect(requireValue(sanitized.fields[1], 'Missing sanitized editor field')).toMatchObject({
 			label: 'Editor',
 			placeholder: 'editor placeholder',
 		})
-		expect(requireElement(sanitized.fields, 2)).toMatchObject({ mask: '*' })
-		expect(requireElement(sanitized.fields, 3)).toMatchObject({
+		expect(requireValue(sanitized.fields[2], 'Missing sanitized password field')).toMatchObject({
+			mask: '*',
+		})
+		expect(requireValue(sanitized.fields[3], 'Missing sanitized number field')).toMatchObject({
 			placeholder: 'number placeholder',
 		})
-		expect(requireElement(sanitized.fields, 9)).toMatchObject({
+		expect(requireValue(sanitized.fields[9], 'Missing sanitized select field')).toMatchObject({
 			choices: [{ label: 'One', help: 'One help' }],
 		})
-		expect(requireElement(sanitized.fields, 10)).toMatchObject({
+		expect(requireValue(sanitized.fields[10], 'Missing sanitized checkbox field')).toMatchObject({
 			choices: [{ label: 'Two', help: 'Two help' }],
 		})
-		expect(requireElement(sanitized.fields, 11)).toMatchObject({ accept: ['text/plain'] })
-		expect(requireElement(sanitized.fields, 4).rule).toEqual(requireElement(hostile.fields, 4).rule)
-		expect('meta' in requireElement(sanitized.fields, 0)).toBe(false)
+		expect(requireValue(sanitized.fields[11], 'Missing sanitized file field')).toMatchObject({
+			accept: ['text/plain'],
+		})
+		expect(requireValue(sanitized.fields[4], 'Missing sanitized date field').rule).toEqual(
+			requireValue(hostile.fields[4], 'Missing hostile date field').rule,
+		)
+		expect('meta' in requireValue(sanitized.fields[0], 'Missing sanitized text field')).toBe(false)
 	})
 
 	it('has a hostile negative control that distinguishes raw display text from its projection', () => {
 		const hostile = createHostileSchema()
 		const sanitized = sanitizeSchema(hostile)
-		const label = requireElement(hostile.fields, 0).label ?? ''
+		const label = requireValue(hostile.fields[0], 'Missing hostile text field').label ?? ''
 		expect(label).not.toBe(sanitizeDisplayText(label))
-		expect(requireElement(sanitized.fields, 0).label).toBe(sanitizeDisplayText(label))
+		expect(requireValue(sanitized.fields[0], 'Missing sanitized text field').label).toBe(
+			sanitizeDisplayText(label),
+		)
 	})
 })
 

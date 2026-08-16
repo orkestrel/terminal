@@ -1,20 +1,11 @@
 // P1: Every checked population must exist and be non-empty; absence fails instead of passing vacuously.
 // P2: Required items are checked strictly; extra items are ignored before their shape is read.
 
-import {
-	existsSync,
-	globSync,
-	mkdtempSync,
-	mkdirSync,
-	readFileSync,
-	realpathSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, globSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build, loadConfigFromFile } from 'vite'
+import { createScratch } from '@orkestrel/test/server'
 import * as configHelpers from '../configs/helpers.js'
 import configuration, { resolveWorkspacePath } from '../vite.config.js'
 import tsconfig from '../tsconfig.json' with { type: 'json' }
@@ -490,7 +481,7 @@ describe('configuration helpers', () => {
 	})
 
 	it('resolves contained workspace paths and refuses a real outside sibling', () => {
-		const outside = mkdtempSync(join(tmpdir(), 'orkestrel-config-outside-'))
+		const outside = createScratch({ prefix: 'orkestrel-config-outside-' })
 		try {
 			const importer = resolve(root, 'tests/config.test.ts')
 			expect(configHelpers.WORKSPACE_ROOT).toBe(realpathSync.native(root))
@@ -502,17 +493,18 @@ describe('configuration helpers', () => {
 			expect(configHelpers.sourceFallback(importer, pathToFileURL(importer).href)).toBe(importer)
 			expect(configHelpers.workspacePath(importer)).toBe('tests/config.test.ts')
 			expect(configHelpers.containedPath(root, importer)).toBe(true)
-			expect(configHelpers.containedPath(root, outside)).toBe(false)
-			expect(configHelpers.workspacePath(outside)).toBeUndefined()
-			expect(configHelpers.isOutsideWorkspacePath(outside)).toBe(true)
+			expect(configHelpers.containedPath(root, outside.path)).toBe(false)
+			expect(configHelpers.workspacePath(outside.path)).toBeUndefined()
+			expect(configHelpers.isOutsideWorkspacePath(outside.path)).toBe(true)
 			expect(configHelpers.isOutsideWorkspacePath('src/core/index.ts')).toBe(false)
 		} finally {
-			rmSync(outside, { recursive: true, force: true })
+			outside.destroy()
 		}
 	})
 
 	it('reads bounded files and resolves package roots from real manifests', () => {
-		const workspace = mkdtempSync(join(tmpdir(), 'orkestrel-config-package-'))
+		const scratch = createScratch({ prefix: 'orkestrel-config-package-' })
+		const workspace = scratch.path
 		try {
 			const packageRoot = resolve(workspace, 'node_modules/@sample/package')
 			const source = resolve(packageRoot, 'src/index.ts')
@@ -544,12 +536,13 @@ describe('configuration helpers', () => {
 				configHelpers.trustedPackageRootFor(source, new Set([realpathSync.native(packageRoot)])),
 			).toBe(realpathSync.native(packageRoot))
 		} finally {
-			rmSync(workspace, { recursive: true, force: true })
+			scratch.destroy()
 		}
 	})
 
 	it('classifies module boundaries and extracts static asset sources', async () => {
-		const workspace = mkdtempSync(join(tmpdir(), 'orkestrel-config-assets-'))
+		const scratch = createScratch({ prefix: 'orkestrel-config-assets-' })
+		const workspace = scratch.path
 		try {
 			const source = resolve(workspace, 'entry.ts')
 			const code =
@@ -573,7 +566,7 @@ describe('configuration helpers', () => {
 				configHelpers.environmentAssetSources(readFileSync(source, 'utf8'), source, true),
 			).resolves.toStrictEqual([])
 		} finally {
-			rmSync(workspace, { recursive: true, force: true })
+			scratch.destroy()
 		}
 	})
 
@@ -603,7 +596,8 @@ describe('configuration helpers', () => {
 		> = ['src/core', 'src/browser', 'src/server', 'app/core', 'app/browser', 'app/server']
 		const owner = environments.find((environment) => existsSync(resolve(root, environment)))
 		if (owner === undefined) throw new Error('The workspace carries no environment plugin target')
-		const workspace = mkdtempSync(join(resolve(root, owner), 'config-build-'))
+		const scratch = createScratch({ parent: resolve(root, owner), prefix: 'config-build-' })
+		const workspace = scratch.path
 		try {
 			const source = resolve(workspace, 'index.ts')
 			writeFileSync(source, 'export const control = true\n', 'utf8')
@@ -644,7 +638,7 @@ describe('configuration helpers', () => {
 			)
 			await expect(Reflect.apply(hook, context, ['@src/core', source])).resolves.toBeNull()
 		} finally {
-			rmSync(workspace, { recursive: true, force: true })
+			scratch.destroy()
 		}
 	})
 })

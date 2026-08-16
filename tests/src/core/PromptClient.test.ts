@@ -6,10 +6,9 @@ import {
 	createRecordingTerminal,
 	createSSEResponse,
 	recordEmitterEvents,
-	requireElement,
 } from '../../setup.js'
 import { HEADER_TOKEN, createPromptClient } from '@src/core'
-import { waitForDelay } from '@orkestrel/test'
+import { requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('PromptClient', () => {
@@ -46,11 +45,16 @@ describe('PromptClient', () => {
 		await waitForDelay()
 
 		expect(terminal.calls.count).toBe(1)
-		expect(requireElement(terminal.calls.calls, 0)[0].schema.fields[0]?.label).toBe('Name')
+		expect(
+			requireValue(terminal.calls.calls[0], 'Missing first terminal call')[0].schema.fields[0]
+				?.label,
+		).toBe('Name')
 		expect(posts).toHaveLength(1)
-		expect(requireElement(posts, 0).method).toBe('POST')
-		expect(requireElement(posts, 0).headers).toEqual({ 'Content-Type': 'application/json' })
-		expect(requireElement(posts, 0).body).toBe(
+		expect(requireValue(posts[0], 'Missing answer POST').method).toBe('POST')
+		expect(requireValue(posts[0], 'Missing answer POST').headers).toEqual({
+			'Content-Type': 'application/json',
+		})
+		expect(requireValue(posts[0], 'Missing answer POST').body).toBe(
 			JSON.stringify({ id: 'one', values: { name: 'Ada' } }),
 		)
 		client.destroy()
@@ -69,7 +73,8 @@ describe('PromptClient', () => {
 
 		await client.connect()
 		await waitForDelay()
-		const observed = requireElement(terminal.calls.calls, 0)[0].schema
+		const observed = requireValue(terminal.calls.calls[0], 'Missing hostile terminal call')[0]
+			.schema
 
 		expect(observed.name).toBe(schema.name)
 		expect(observed.groups?.map((group) => group.name)).toEqual(
@@ -89,8 +94,8 @@ describe('PromptClient', () => {
 			label: 'Group',
 			help: 'Group help',
 		})
-		const sourceText = requireElement(schema.fields, 0)
-		const sourceSelect = requireElement(schema.fields, 9)
+		const sourceText = requireValue(schema.fields[0], 'Missing hostile text field')
+		const sourceSelect = requireValue(schema.fields[9], 'Missing hostile select field')
 		if (sourceText.control !== 'text' || sourceSelect.control !== 'select') {
 			throw new Error('The hostile schema fixture changed control order')
 		}
@@ -104,7 +109,7 @@ describe('PromptClient', () => {
 			choices: [{ value: sourceSelect.choices[0]?.value, label: 'One', help: 'One help' }],
 			default: sourceSelect.default,
 		})
-		expect('meta' in requireElement(observed.fields, 0)).toBe(false)
+		expect('meta' in requireValue(observed.fields[0], 'Missing observed text field')).toBe(false)
 		client.destroy()
 	})
 
@@ -144,8 +149,8 @@ describe('PromptClient', () => {
 		await waitForDelay(10)
 
 		expect(terminal.calls.count).toBe(2)
-		const first = requireElement(terminal.calls.calls, 0)[0]
-		const second = requireElement(terminal.calls.calls, 1)[0]
+		const first = requireValue(terminal.calls.calls[0], 'Missing first terminal call')[0]
+		const second = requireValue(terminal.calls.calls[1], 'Missing second terminal call')[0]
 		expect(first.schema.fields[0]?.rule?.pattern).toBeUndefined()
 		expect(second.schema.fields[0]?.rule?.pattern).toBeUndefined()
 		expect(second.values).toEqual({ word: 'bad' })

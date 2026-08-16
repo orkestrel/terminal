@@ -1,6 +1,7 @@
-import { createManualTimer, recordEmitterEvents, requireElement } from '../../setup.js'
+import { createManualTimer, recordEmitterEvents } from '../../setup.js'
 import { createMemoryTerminalStore, createTerminalManager, isTerminalError } from '@src/core'
 import { createForm, isFormError } from '@orkestrel/form'
+import { requireValue } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 function createTextForm(name = 'answer') {
@@ -25,7 +26,7 @@ describe('TerminalManager', () => {
 		const events = recordEmitterEvents(manager.emitter, ['pending', 'answer'])
 		const form = createTextForm('name')
 		const answer = manager.ask('user', 'agent', form)
-		const pending = requireElement(manager.pending('agent'), 0)
+		const pending = requireValue(manager.pending('agent')[0], 'Missing pending form for agent')
 
 		expect(pending.from).toBe('user')
 		expect(pending.to).toBe('agent')
@@ -88,7 +89,7 @@ describe('TerminalManager', () => {
 			],
 		})
 		const settled = manager.ask('a', 'b', held)
-		const id = requireElement(manager.pending('b'), 0).id
+		const id = requireValue(manager.pending('b')[0], 'Missing pending form for b').id
 
 		expect(manager.answer('b', id, { word: 'no' }).success).toBe(false)
 		const blocked = createTextForm('blocked')
@@ -101,7 +102,7 @@ describe('TerminalManager', () => {
 		expect(await settled).toEqual({ word: 'yes' })
 		const reverse = createTextForm('reverse')
 		const reversed = manager.ask('b', 'a', reverse)
-		const reverseId = requireElement(manager.pending('a'), 0).id
+		const reverseId = requireValue(manager.pending('a')[0], 'Missing pending form for a').id
 		manager.answer('a', reverseId, { reverse: 'ok' })
 		expect(await reversed).toEqual({ reverse: 'ok' })
 		manager.destroy()
@@ -115,14 +116,16 @@ describe('TerminalManager', () => {
 		const held = createTextForm('held')
 		const abandoned = manager.ask('a', 'b', held).catch((error: unknown) => error)
 		const events = recordEmitterEvents(manager.emitter, ['expire'])
-		const id = requireElement(manager.pending('b'), 0).id
+		const id = requireValue(manager.pending('b')[0], 'Missing pending form for b').id
 
 		timer.flush()
 		expect(isFormError(await abandoned) && held.status).toBe('abandoned')
 		expect(events.expire.calls).toEqual([['b', id]])
 		const reverse = createTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
-		manager.answer('a', requireElement(manager.pending('a'), 0).id, { reverse: 'ok' })
+		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
+			reverse: 'ok',
+		})
 		expect(await answer).toEqual({ reverse: 'ok' })
 		manager.destroy()
 	})
@@ -138,7 +141,9 @@ describe('TerminalManager', () => {
 		expect(isFormError(await abandoned) && held.status).toBe('abandoned')
 		const reverse = createTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
-		manager.answer('a', requireElement(manager.pending('a'), 0).id, { reverse: 'ok' })
+		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
+			reverse: 'ok',
+		})
 		expect(await answer).toEqual({ reverse: 'ok' })
 		manager.destroy()
 	})
@@ -159,7 +164,7 @@ describe('TerminalManager', () => {
 		})
 		void form.answer.catch(() => undefined)
 		void manager.ask('user', 'agent', form)
-		const id = requireElement(manager.pending(), 0).id
+		const id = requireValue(manager.pending()[0], 'Missing pending form').id
 		expect(manager.answer('agent', id, {})).toEqual({
 			success: false,
 			error: {
@@ -232,7 +237,9 @@ describe('TerminalManager', () => {
 		expect(await manager.ask('a', 'b', form)).toEqual({ value: 'done' })
 		const reverse = createTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
-		manager.answer('a', requireElement(manager.pending('a'), 0).id, { reverse: 'ok' })
+		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
+			reverse: 'ok',
+		})
 		expect(await answer).toEqual({ reverse: 'ok' })
 		manager.destroy()
 	})

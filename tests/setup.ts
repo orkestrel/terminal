@@ -16,13 +16,6 @@ import { parseKey } from '@src/core'
 import { serializeForm } from '@orkestrel/form'
 import { createRecorder } from '@orkestrel/test'
 
-/** Require one indexed collection member. */
-export function requireElement<T>(values: readonly T[], index: number): T {
-	const value = values[index]
-	if (value === undefined) throw new Error(`Missing test element at index ${String(index)}`)
-	return value
-}
-
 /** Recorders keyed by the emitter events they observe. */
 export type EmitterRecorders<TMap extends EventMap, TName extends keyof TMap> = {
 	readonly [K in TName]: RecorderInterface<TMap[K]>

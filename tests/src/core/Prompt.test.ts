@@ -1,6 +1,7 @@
-import { createManualTimer, recordEmitterEvents, requireElement } from '../../setup.js'
+import { createManualTimer, recordEmitterEvents } from '../../setup.js'
 import { createPrompt, isTerminalError } from '@src/core'
 import { createForm, isFormError } from '@orkestrel/form'
+import { captureError, requireValue } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('Prompt', () => {
@@ -162,12 +163,7 @@ describe('Prompt', () => {
 		const refusal = refused.answer.catch((error: unknown) => error)
 		prompt.park(held)
 
-		let thrown: unknown
-		try {
-			prompt.park(refused)
-		} catch (error) {
-			thrown = error
-		}
+		const thrown = captureError(() => prompt.park(refused))
 
 		expect(isTerminalError(thrown) && thrown.code).toBe('LIMIT')
 		expect(isFormError(await refusal) && refused.status).toBe('abandoned')
@@ -213,10 +209,10 @@ describe('Prompt', () => {
 			prompt.park(form)
 		}
 
-		expect(requireElement(prompt.pending(), 0).schema).toEqual({
+		expect(requireValue(prompt.pending()[0], 'Missing first pending form').schema).toEqual({
 			fields: [{ control: 'text', name: 'first' }],
 		})
-		expect(requireElement(prompt.pending(), 1).schema).toEqual({
+		expect(requireValue(prompt.pending()[1], 'Missing second pending form').schema).toEqual({
 			fields: [{ control: 'text', name: 'second' }],
 		})
 		prompt.destroy()

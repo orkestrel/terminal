@@ -5,7 +5,6 @@ import {
 	createPendingForm,
 	createSSEResponse,
 	createTwelveControlSchema,
-	requireElement,
 } from '../../setup.js'
 import {
 	createFakeTTY,
@@ -16,7 +15,7 @@ import {
 } from '../../setupServer.js'
 import { createForm, isFormError } from '@orkestrel/form'
 import { strip } from '@orkestrel/console'
-import { waitForDelay } from '@orkestrel/test'
+import { requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('Terminal', () => {
@@ -196,10 +195,14 @@ describe('Terminal', () => {
 			JSON.stringify({ id: 'retry', values: { word: 'bad' } }),
 			JSON.stringify({ id: 'retry', values: { word: 'good' } }),
 		])
-		expect(requireElement(outputAtPost, 0)).not.toContain('Word: Use good')
-		expect(requireElement(outputAtPost, 1)).toContain('Word: Use good')
-		expect(requireElement(outputAtPost, 1)).not.toContain('\u0000')
-		expect(requireElement(outputAtPost, 1)).not.toContain('\u007f')
+		expect(requireValue(outputAtPost[0], 'Missing first answer output')).not.toContain(
+			'Word: Use good',
+		)
+		expect(requireValue(outputAtPost[1], 'Missing second answer output')).toContain(
+			'Word: Use good',
+		)
+		expect(requireValue(outputAtPost[1], 'Missing second answer output')).not.toContain('\u0000')
+		expect(requireValue(outputAtPost[1], 'Missing second answer output')).not.toContain('\u007f')
 		client.destroy()
 	})
 
