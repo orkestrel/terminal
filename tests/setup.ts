@@ -434,8 +434,3 @@ export const TERMINAL_STORE_SCENARIOS: readonly TerminalStoreScenario[] = Object
 		],
 	},
 ])
-
-/** Whether a repository-relative Vue SFC belongs to the private browser app. */
-export function isBrowserVuePath(path: string): boolean {
-	return path.replaceAll('\\', '/').startsWith('app/browser/')
-}

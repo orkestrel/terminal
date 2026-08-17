@@ -17,6 +17,7 @@ import { createTerminal } from '@src/server'
 import { createHostilePattern, createHostileText, createHostileWireSchema } from './setup.js'
 import { createFakeTTY, createScriptedTTY } from './setupServer.js'
 import { createForm, isFormValues, serializeForm } from '@orkestrel/form'
+import { createLoopback } from '@orkestrel/test/server'
 import { createServer } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -58,79 +59,70 @@ function createExpireHandler(clients: ReadonlySet<FixtureClient>): (id: string) 
  * lands every POST back through `prompt.answer` — the transport TU8 proves, built from the
  * package's own transport-neutral `serializePending` / `serializeExpire` wire seam.
  */
-function startFixtureServer(prompt: PromptInterface): Promise<FixtureServer> {
-	return new Promise((resolve, reject) => {
-		let posts = 0
-		let postWaiters: Array<(result: unknown) => void> = []
-		const clients = new Set<FixtureClient>()
-		const onPending = createPendingHandler(clients)
-		const onExpire = createExpireHandler(clients)
-		prompt.emitter.on('pending', onPending)
-		prompt.emitter.on('expire', onExpire)
+async function startFixtureServer(prompt: PromptInterface): Promise<FixtureServer> {
+	let posts = 0
+	let postWaiters: Array<(result: unknown) => void> = []
+	const clients = new Set<FixtureClient>()
+	const onPending = createPendingHandler(clients)
+	const onExpire = createExpireHandler(clients)
+	prompt.emitter.on('pending', onPending)
+	prompt.emitter.on('expire', onExpire)
 
-		const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
-			if (request.method === 'GET') {
-				response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-				for (const form of prompt.pending()) writeFrame(response, serializePending(form))
-				const client: FixtureClient = { response }
-				clients.add(client)
-				request.on('close', () => clients.delete(client))
-				return
-			}
-			if (request.method === 'POST') {
-				const chunks: Buffer[] = []
-				request.on('data', (chunk: Buffer) => chunks.push(chunk))
-				request.on('end', () => {
-					posts += 1
-					const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-					const id =
-						typeof parsed === 'object' && parsed !== null
-							? Object.getOwnPropertyDescriptor(parsed, 'id')?.value
-							: undefined
-					const values =
-						typeof parsed === 'object' && parsed !== null
-							? Object.getOwnPropertyDescriptor(parsed, 'values')?.value
-							: undefined
-					if (typeof id !== 'string' || !isFormValues(values)) {
-						response.writeHead(400)
-						response.end()
-						return
-					}
-					const result = prompt.answer(id, values)
-					response.writeHead(200, { 'Content-Type': 'application/json' })
-					response.end(JSON.stringify(result))
-					const waiters = postWaiters
-					postWaiters = []
-					for (const waiter of waiters) waiter(result)
-				})
-				return
-			}
-			response.writeHead(404)
-			response.end()
-		})
-
-		server.listen(0, '127.0.0.1', () => {
-			const address = server.address()
-			if (address === null || typeof address === 'string') {
-				reject(new Error('The fixture server carries no bound address'))
-				return
-			}
-			resolve({
-				get posts() {
-					return posts
-				},
-				url: `http://127.0.0.1:${String(address.port)}/prompts`,
-				post: () => new Promise((waiter) => postWaiters.push(waiter)),
-				close: () =>
-					new Promise<void>((finish) => {
-						prompt.emitter.off('pending', onPending)
-						prompt.emitter.off('expire', onExpire)
-						for (const client of clients) client.response.end()
-						server.close(() => finish())
-					}),
+	const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
+		if (request.method === 'GET') {
+			response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+			for (const form of prompt.pending()) writeFrame(response, serializePending(form))
+			const client: FixtureClient = { response }
+			clients.add(client)
+			request.on('close', () => clients.delete(client))
+			return
+		}
+		if (request.method === 'POST') {
+			const chunks: Buffer[] = []
+			request.on('data', (chunk: Buffer) => chunks.push(chunk))
+			request.on('end', () => {
+				posts += 1
+				const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+				const id =
+					typeof parsed === 'object' && parsed !== null
+						? Object.getOwnPropertyDescriptor(parsed, 'id')?.value
+						: undefined
+				const values =
+					typeof parsed === 'object' && parsed !== null
+						? Object.getOwnPropertyDescriptor(parsed, 'values')?.value
+						: undefined
+				if (typeof id !== 'string' || !isFormValues(values)) {
+					response.writeHead(400)
+					response.end()
+					return
+				}
+				const result = prompt.answer(id, values)
+				response.writeHead(200, { 'Content-Type': 'application/json' })
+				response.end(JSON.stringify(result))
+				const waiters = postWaiters
+				postWaiters = []
+				for (const waiter of waiters) waiter(result)
 			})
-		})
+			return
+		}
+		response.writeHead(404)
+		response.end()
 	})
+
+	const loopback = await createLoopback(server)
+	return {
+		get posts() {
+			return posts
+		},
+		url: `${loopback.url}/prompts`,
+		post: () => new Promise((waiter) => postWaiters.push(waiter)),
+		close: async () => {
+			prompt.emitter.off('pending', onPending)
+			prompt.emitter.off('expire', onExpire)
+			for (const client of clients) client.response.end()
+			await loopback.destroy()
+		},
+	}
 }
 
 /**
