@@ -154,6 +154,82 @@ describe('Prompt', () => {
 		expect(form.status).toBe('settled')
 	})
 
+	it('stops one parked form and removes it from pending', async () => {
+		const timer = createManualTimer()
+		const prompt = createPrompt({ timer: timer.handler })
+		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+		const answer = form.answer.catch((error: unknown) => error)
+		const id = prompt.park(form)
+
+		expect(prompt.stop(id)).toBe(true)
+		expect(isFormError(await answer) && form.status).toBe('abandoned')
+		expect(prompt.pending(id)).toBeUndefined()
+		expect(prompt.count).toBe(0)
+		expect(timer.pending).toBe(0)
+		prompt.destroy()
+	})
+
+	it('returns false when stopping an unknown id', () => {
+		const prompt = createPrompt()
+
+		expect(prompt.stop('missing')).toBe(false)
+		prompt.destroy()
+	})
+
+	it('stops every parked id in a partial batch and returns false', async () => {
+		const prompt = createPrompt()
+		const forms = ['first', 'second'].map((name) =>
+			createForm({ fields: [{ control: 'text', name }] }),
+		)
+		const answers = forms.map((form) => form.answer.catch((error: unknown) => error))
+		const ids = forms.map((form) => prompt.park(form))
+		const first = requireValue(ids[0], 'Missing first parked id')
+		const second = requireValue(ids[1], 'Missing second parked id')
+
+		expect(prompt.stop([first, 'missing', second])).toBe(false)
+		for (const error of await Promise.all(answers)) {
+			expect(isFormError(error)).toBe(true)
+		}
+		expect(prompt.pending()).toEqual([])
+		prompt.destroy()
+	})
+
+	it('emits expire when a parked form is stopped', () => {
+		const prompt = createPrompt()
+		const events = recordEmitterEvents(prompt.emitter, ['expire'])
+		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
+		void form.answer.catch(() => undefined)
+		const id = prompt.park(form)
+
+		expect(prompt.stop(id)).toBe(true)
+		expect(events.expire.calls).toEqual([[id]])
+		prompt.destroy()
+	})
+
+	it('stops every parked form without destroying the broker', async () => {
+		const prompt = createPrompt()
+		const held = ['first', 'second'].map((name) =>
+			createForm({ fields: [{ control: 'text', name }] }),
+		)
+		const abandoned = held.map((form) => form.answer.catch((error: unknown) => error))
+		for (const form of held) prompt.park(form)
+
+		expect(prompt.stop()).toBeUndefined()
+		for (const error of await Promise.all(abandoned)) {
+			expect(isFormError(error)).toBe(true)
+		}
+		expect(prompt.count).toBe(0)
+
+		const fresh = createForm({ fields: [{ control: 'text', name: 'fresh' }] })
+		const id = prompt.park(fresh)
+		expect(prompt.answer(id, { fresh: 'ready' })).toEqual({
+			success: true,
+			value: { fresh: 'ready' },
+		})
+		expect(await fresh.answer).toEqual({ fresh: 'ready' })
+		prompt.destroy()
+	})
+
 	it('refuses a park at cap without a ticket and abandons the refused form', async () => {
 		const timer = createManualTimer()
 		const prompt = createPrompt({ cap: 1, timer: timer.handler })

@@ -883,7 +883,7 @@ export function serializePending(form: PendingForm): WireEvent {
 	return { event: 'pending', data: JSON.stringify(form), id: form.id }
 }
 
-/** Serialize a parked prompt's expiry into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
+/** Serialize a parked prompt's expiry or release into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
 export function serializeExpire(id: string): WireEvent {
 	return { event: 'expire', data: JSON.stringify({ id }) }
 }

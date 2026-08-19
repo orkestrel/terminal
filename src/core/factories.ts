@@ -25,9 +25,9 @@ import { rawShape, stringShape } from '@orkestrel/contract'
  * @returns A {@link PromptInterface}
  *
  * @remarks
- * The caller awaits the parked form's own `answer`. Timeout or teardown destroys the form, so that
- * promise rejects with the Form package's `ABANDONED` error. Inject `options.timer` to drive
- * expiry without real time.
+ * The caller awaits the parked form's own `answer`. Timeout, `stop`, or teardown destroys the form,
+ * so that promise rejects with the Form package's `ABANDONED` error. Inject `options.timer` to
+ * drive expiry without real time.
  *
  * @example
  * ```ts

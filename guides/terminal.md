@@ -219,8 +219,8 @@ can answer, and `answer` drives the parked form to settlement ([`src/core`](../s
 
 | API                   | Kind      | Summary                                                                                                                                        |
 | --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PromptInterface`     | interface | The broker — `emitter` / `count` data plus `park` / `pending` / `answer` / `destroy`.                                                          |
-| `Prompt`              | class     | The observable broker — parks live forms, applies remote answers to the authoritative instance, abandons on timeout or teardown.               |
+| `PromptInterface`     | interface | The broker — `emitter` / `count` data plus `park` / `pending` / `answer` / `stop` / `destroy`.                                                 |
+| `Prompt`              | class     | The observable broker — parks live forms, applies remote answers to the authoritative instance, abandons on timeout, release, or teardown.     |
 | `createPrompt`        | function  | Create the `PromptInterface` broker.                                                                                                           |
 | `PromptOptions`       | interface | `createPrompt` options — `on` / `error` / `timeout` / `timer` / `cap` (data-only).                                                             |
 | `ParkRequest`         | interface | The parking envelope — `from` / `to`, the attribution edge a `TerminalManagerInterface` stamps; a direct caller passes no request (data-only). |
@@ -245,7 +245,7 @@ The `http`-free frame shape a consumer's own HTTP spine mounts the broker over
 | `WireEvent`         | interface | One SSE-shaped frame — the `event` name, its already-stringified `data`, and an optional `id` (data-only).   |
 | `isWireEvent`       | const     | Narrow an unknown value to a `WireEvent` — the guard a consumer's own transport applies to an inbound frame. |
 | `serializePending`  | function  | Build the `pending` frame for a parked form — `id` the form's own id.                                        |
-| `serializeExpire`   | function  | Build the `expire` frame for a parked form that timed out — `data` the JSON `{ id }` payload.                |
+| `serializeExpire`   | function  | Build the `expire` frame for a parked form that expired or was released — `data` the JSON `{ id }` payload.  |
 | `serializeShutdown` | function  | Build the `shutdown` frame a broker or manager sends when it is going away — no payload.                     |
 
 ### The SSE bridge
@@ -438,6 +438,7 @@ The headless broker.
 | `park`    | `string`                                              | Park a live form, mint its id, emit `pending`, and arm the expiry deadline. Returns the id; the caller already holds the promise. |
 | `pending` | `readonly PendingForm[]` / `PendingForm \| undefined` | List every parked record (`pending()`), or look one up by id (`pending(id)`).                                                     |
 | `answer`  | `Result<FormValues, AnswerError>`                     | Fill and submit the AUTHORITATIVE parked form. Accepted, it settles and the record is dropped; refused, the form stays parked.    |
+| `stop`    | `boolean` / `void`                                    | Release a batch (`stop(ids)`, array overload first), one id, or every parked form. The broker stays usable.                       |
 | `destroy` | `void`                                                | Tear down — abandon every parked form, cancel every deadline, then destroy the emitter. Idempotent.                               |
 
 #### `PromptClientInterface`
@@ -541,12 +542,14 @@ These invariants hold across `src/core`, `src/server`, and this guide.
    driver rejects `ask` with a `TerminalError` coded `CANCEL` and LEAVES THE FORM `editing`, with its
    own `answer` still pending for whoever owns it. A driver never owns a form's lifetime: to
    interrupt the FORM, destroy it, and the walk stops on its abandon.
-6. **Expiry abandons the form.** An unanswered form is destroyed after `timeout` ms through the
-   INJECTED timer; `expire` fires and the caller's promise rejects with form's own `ABANDONED`
-   error, not a `TerminalError`. `destroy()` abandons every still-parked form the same way. `park`
-   itself throws `TerminalError` — `EXPIRE` when the broker is already destroyed, `LIMIT` when `cap`
-   was already reached — and in both cases destroys the form it refused, without minting an id,
-   emitting `pending`, or arming a timer.
+6. **Expiry and release abandon the form.** An unanswered form is destroyed after `timeout` ms
+   through the INJECTED timer; `expire` fires and the caller's promise rejects with form's own
+   `ABANDONED` error, not a `TerminalError`. `stop(id)`, `stop(ids)`, and `stop()` use that same
+   `expired` status and `expire` event while leaving the broker usable. `destroy()` releases every
+   still-parked form the same way, then destroys the broker. `park` itself throws `TerminalError` —
+   `EXPIRE` when the broker is already destroyed, `LIMIT` when `cap` was already reached — and in
+   both cases destroys the form it refused, without minting an id, emitting `pending`, or arming a
+   timer.
 7. **Display is sanitized; identity and answers are not.** Every string a wire schema renders passes
    through `sanitizeDisplayText` — labels, help, placeholders, masks, choice labels and help, file
    accept entries, and pattern source text — which strips ANSI sequences, every C0 control, DEL, tab,

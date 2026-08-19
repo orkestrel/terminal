@@ -14,7 +14,7 @@ import type { FieldError, FormInterface, FormResult, FormValues } from '@orkestr
 import { DEFAULT_PROMPT_TIMEOUT_MS } from './constants.js'
 import { TerminalError } from './errors.js'
 import { defaultTimer } from './helpers.js'
-import { attempt } from '@orkestrel/contract'
+import { attempt, isArray } from '@orkestrel/contract'
 import { Emitter } from '@orkestrel/emitter'
 import { isFieldError, isFormError, serializeForm } from '@orkestrel/form'
 
@@ -25,7 +25,8 @@ import { isFieldError, isFormError, serializeForm } from '@orkestrel/form'
  * @remarks
  * A parked record carries one call to `serializeForm`. A failed fill or submit leaves the record
  * parked for another answer. A successful submit settles the form once, emits `answer`, and removes
- * the record. Timeout and teardown abandon every unsettled form through its own `destroy` method.
+ * the record. Timeout, `stop`, and teardown abandon unsettled forms through their own `destroy`
+ * method.
  *
  * @example
  * ```ts
@@ -110,6 +111,26 @@ export class Prompt implements PromptInterface {
 		}
 	}
 
+	stop(ids: readonly string[]): boolean
+	stop(id: string): boolean
+	stop(): void
+	stop(ids?: string | readonly string[]): boolean | void {
+		if (ids === undefined) {
+			for (const id of [...this.#parked.keys()]) this.#expire(id)
+			return
+		}
+		if (isArray(ids)) {
+			let stopped = true
+			for (const id of ids) {
+				const parked = this.#parked.get(id)
+				if (parked === undefined || parked.pending.status !== 'pending') stopped = false
+			}
+			for (const id of ids) this.#expire(id)
+			return stopped
+		}
+		return this.#expire(ids)
+	}
+
 	destroy(): void {
 		if (this.#destroyed) return
 		this.#destroyed = true
@@ -181,9 +202,9 @@ export class Prompt implements PromptInterface {
 		return field ?? form.schema.fields[0]?.name ?? form.schema.name ?? 'form'
 	}
 
-	#expire(id: string): void {
+	#expire(id: string): boolean {
 		const parked = this.#parked.get(id)
-		if (parked === undefined || parked.pending.status !== 'pending') return
+		if (parked === undefined || parked.pending.status !== 'pending') return false
 		parked.cancel()
 		const expired: Parked = {
 			...parked,
@@ -193,5 +214,6 @@ export class Prompt implements PromptInterface {
 		parked.form.destroy()
 		this.#emitter.emit('expire', id)
 		this.#parked.delete(id)
+		return true
 	}
 }

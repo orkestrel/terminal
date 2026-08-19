@@ -220,7 +220,7 @@ export interface TerminalInterface {
  * @remarks
  * - `pending` — parked, awaiting {@link PromptInterface.answer}.
  * - `answered` — answered and accepted, so the parked form settled.
- * - `expired` — timed out, or torn down by `destroy`, before an answer.
+ * - `expired` — timed out, released by `stop`, or torn down by `destroy`, before an answer.
  */
 export type PendingFormStatus = 'pending' | 'answered' | 'expired'
 
@@ -283,7 +283,7 @@ export interface Parked {
  * @remarks
  * - `pending` — a form was parked; a transport forwards the wire record to remote clients.
  * - `answer` — a parked form was answered and accepted, carrying its id and the settled values.
- * - `expire` — a parked form timed out or was torn down unanswered, carrying its id.
+ * - `expire` — a parked form timed out or was released unanswered, carrying its id.
  */
 export type PromptEventMap = {
 	readonly pending: readonly [form: PendingForm]
@@ -359,6 +359,19 @@ export type AnswerError =
  * - **Timeout abandons.** An unanswered form is destroyed after `timeout` ms; `expire` fires and
  *   the caller's promise rejects on the form's own lifecycle. The timer is injectable.
  * - **Accessors.** `pending()` lists the parked records; `pending(id)` looks one up.
+ * - **Batch stop.** The array overload is declared first: `stop(ids)` releases each listed parked
+ *   form and reports whether all ids were parked; `stop(id)` releases one; `stop()` releases every
+ *   parked form without destroying the broker. Release uses the existing expiry semantics.
+ *
+ * @example
+ * ```ts
+ * const prompt = createPrompt()
+ * const first = prompt.park(createForm({ fields: [{ control: 'text', name: 'first' }] }))
+ * const second = prompt.park(createForm({ fields: [{ control: 'text', name: 'second' }] }))
+ * prompt.stop(first) // true
+ * prompt.stop([second, 'missing']) // false; `second` was still released
+ * prompt.stop() // release every remaining form; the broker stays usable
+ * ```
  */
 export interface PromptInterface {
 	readonly emitter: EmitterInterface<PromptEventMap>
@@ -367,6 +380,9 @@ export interface PromptInterface {
 	pending(): readonly PendingForm[]
 	pending(id: string): PendingForm | undefined
 	answer(id: string, values: FormValues): Result<FormValues, AnswerError>
+	stop(ids: readonly string[]): boolean
+	stop(id: string): boolean
+	stop(): void
 	destroy(): void
 }
 
