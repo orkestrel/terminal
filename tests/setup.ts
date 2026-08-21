@@ -9,40 +9,10 @@ import type {
 	TimerCancel,
 	TimerHandler,
 } from '@src/core'
-import type { EventMap, EmitterInterface } from '@orkestrel/emitter'
 import type { FieldError, FormInterface, FormSchema, FormStatus, FormValues } from '@orkestrel/form'
-import type { RecorderInterface } from '@orkestrel/test'
 import { parseKey } from '@src/core'
 import { serializeForm } from '@orkestrel/form'
 import { createRecorder } from '@orkestrel/test'
-
-/** Recorders keyed by the emitter events they observe. */
-export type EmitterRecorders<TMap extends EventMap, TName extends keyof TMap> = {
-	readonly [K in TName]: RecorderInterface<TMap[K]>
-}
-
-/** Narrow a partly assembled event-recorder map after every requested event is present. */
-export function isTotal<TMap extends EventMap, TName extends keyof TMap>(
-	recorders: Partial<EmitterRecorders<TMap, TName>>,
-	events: readonly TName[],
-): recorders is EmitterRecorders<TMap, TName> {
-	return events.every((name) => recorders[name] !== undefined)
-}
-
-/** Attach one call recorder to each requested emitter event. */
-export function recordEmitterEvents<TMap extends EventMap, TName extends keyof TMap>(
-	emitter: EmitterInterface<TMap>,
-	events: readonly TName[],
-): EmitterRecorders<TMap, TName> {
-	const recorders: Partial<EmitterRecorders<TMap, TName>> = {}
-	for (const name of events) {
-		const recorder = createRecorder<TMap[typeof name]>()
-		emitter.on(name, recorder.handler)
-		recorders[name] = recorder
-	}
-	if (!isTotal(recorders, events)) throw new Error('An event recorder was not installed')
-	return recorders
-}
 
 /** A manually driven timer used at broker and reconnect boundaries. */
 export interface ManualTimerInterface {

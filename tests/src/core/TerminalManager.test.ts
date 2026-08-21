@@ -1,7 +1,8 @@
-import { createManualTimer, recordEmitterEvents } from '../../setup.js'
+import type { TerminalManagerEventMap } from '@src/core'
+import { createManualTimer } from '../../setup.js'
 import { createMemoryTerminalStore, createTerminalManager, isTerminalError } from '@src/core'
 import { createForm, isFormError } from '@orkestrel/form'
-import { requireValue } from '@orkestrel/test'
+import { createRecorders, requireValue } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 function createTextForm(name = 'answer') {
@@ -23,7 +24,10 @@ describe('TerminalManager', () => {
 	it('asks with one whole form, attributes the PendingForm, and routes accepted values', async () => {
 		const manager = createTerminalManager()
 		manager.add('agent')
-		const events = recordEmitterEvents(manager.emitter, ['pending', 'answer'])
+		const events = createRecorders<TerminalManagerEventMap, 'pending' | 'answer'>(manager.emitter, [
+			'pending',
+			'answer',
+		])
 		const form = createTextForm('name')
 		const answer = manager.ask('user', 'agent', form)
 		const pending = requireValue(manager.pending('agent')[0], 'Missing pending form for agent')
@@ -115,7 +119,7 @@ describe('TerminalManager', () => {
 		manager.add('b')
 		const held = createTextForm('held')
 		const abandoned = manager.ask('a', 'b', held).catch((error: unknown) => error)
-		const events = recordEmitterEvents(manager.emitter, ['expire'])
+		const events = createRecorders<TerminalManagerEventMap, 'expire'>(manager.emitter, ['expire'])
 		const id = requireValue(manager.pending('b')[0], 'Missing pending form for b').id
 
 		timer.flush()

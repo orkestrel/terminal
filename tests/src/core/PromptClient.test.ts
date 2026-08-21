@@ -1,14 +1,13 @@
-import type { FetchInit } from '@src/core'
+import type { FetchInit, PromptClientEventMap } from '@src/core'
 import {
 	createHostileWireSchema,
 	createJSONResponse,
 	createPendingForm,
 	createRecordingTerminal,
 	createSSEResponse,
-	recordEmitterEvents,
 } from '../../setup.js'
 import { HEADER_TOKEN, createPromptClient } from '@src/core'
-import { requireValue, waitForDelay } from '@orkestrel/test'
+import { createRecorders, requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('PromptClient', () => {
@@ -176,7 +175,10 @@ describe('PromptClient', () => {
 					{ event: 'expire', data: { id: 'active' } },
 				]),
 		})
-		const events = recordEmitterEvents(client.emitter, ['expire', 'error'])
+		const events = createRecorders<PromptClientEventMap, 'expire' | 'error'>(client.emitter, [
+			'expire',
+			'error',
+		])
 
 		await client.connect()
 		await waitForDelay()
@@ -201,7 +203,10 @@ describe('PromptClient', () => {
 					{ event: 'shutdown', data: '' },
 				]),
 		})
-		const events = recordEmitterEvents(client.emitter, ['connect', 'disconnect'])
+		const events = createRecorders<PromptClientEventMap, 'connect' | 'disconnect'>(client.emitter, [
+			'connect',
+			'disconnect',
+		])
 
 		await client.connect()
 		await waitForDelay()
@@ -228,7 +233,7 @@ describe('PromptClient', () => {
 					},
 				]),
 		})
-		const events = recordEmitterEvents(client.emitter, ['error'])
+		const events = createRecorders<PromptClientEventMap, 'error'>(client.emitter, ['error'])
 
 		await client.connect()
 
@@ -271,7 +276,7 @@ describe('PromptClient', () => {
 					? createJSONResponse({ success: 'yes' })
 					: createSSEResponse([{ event: 'pending', data: createPendingForm() }]),
 		})
-		const events = recordEmitterEvents(client.emitter, ['error'])
+		const events = createRecorders<PromptClientEventMap, 'error'>(client.emitter, ['error'])
 
 		await client.connect()
 		await waitForDelay()
@@ -297,7 +302,7 @@ describe('PromptClient', () => {
 					: createSSEResponse([{ event: 'pending', data: createPendingForm() }])
 			},
 		})
-		const events = recordEmitterEvents(client.emitter, ['error'])
+		const events = createRecorders<PromptClientEventMap, 'error'>(client.emitter, ['error'])
 
 		await client.connect()
 		await waitForDelay()

@@ -1,13 +1,14 @@
-import { createManualTimer, recordEmitterEvents } from '../../setup.js'
+import type { PromptEventMap } from '@src/core'
+import { createManualTimer } from '../../setup.js'
 import { createPrompt, isTerminalError } from '@src/core'
 import { createForm, isFormError } from '@orkestrel/form'
-import { captureError, requireValue } from '@orkestrel/test'
+import { captureError, createRecorders, requireValue } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('Prompt', () => {
 	it('parks a live form and emits its serialized schema with attribution', () => {
 		const prompt = createPrompt()
-		const recorded = recordEmitterEvents(prompt.emitter, ['pending'])
+		const recorded = createRecorders<PromptEventMap, 'pending'>(prompt.emitter, ['pending'])
 		const form = createForm({
 			name: 'profile',
 			fields: [
@@ -38,7 +39,7 @@ describe('Prompt', () => {
 
 	it('fills, submits, emits, and resolves the authoritative form on acceptance', async () => {
 		const prompt = createPrompt()
-		const events = recordEmitterEvents(prompt.emitter, ['answer'])
+		const events = createRecorders<PromptEventMap, 'answer'>(prompt.emitter, ['answer'])
 		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
 		const id = prompt.park(form)
 
@@ -128,7 +129,7 @@ describe('Prompt', () => {
 	it('expires through the injected timer and rejects the caller with Form ABANDONED', async () => {
 		const timer = createManualTimer()
 		const prompt = createPrompt({ timer: timer.handler, timeout: 20 })
-		const events = recordEmitterEvents(prompt.emitter, ['expire'])
+		const events = createRecorders<PromptEventMap, 'expire'>(prompt.emitter, ['expire'])
 		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
 		const answer = form.answer.catch((error: unknown) => error)
 		const id = prompt.park(form)
@@ -196,7 +197,7 @@ describe('Prompt', () => {
 
 	it('emits expire when a parked form is stopped', () => {
 		const prompt = createPrompt()
-		const events = recordEmitterEvents(prompt.emitter, ['expire'])
+		const events = createRecorders<PromptEventMap, 'expire'>(prompt.emitter, ['expire'])
 		const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
 		void form.answer.catch(() => undefined)
 		const id = prompt.park(form)
