@@ -73,21 +73,24 @@ export const SEQUENCE_NAMES: Readonly<Record<string, string>> = Object.freeze({
 })
 
 /**
- * The single control BYTE → key descriptor table {@link import('./helpers.js').parseKey}
- * consults for the one-byte keys. Each entry carries the canonical `name` and whether it is a
- * `ctrl` combination. The source of truth for the single-byte key decode; frozen.
+ * The control BYTE (or CRLF pair) → key descriptor table {@link import('./helpers.js').parseKey}
+ * consults for the one-byte keys and the two-byte CRLF Enter chunk. Each entry carries the
+ * canonical `name` and whether it is a `ctrl` combination. The source of truth for that decode;
+ * frozen.
  *
  * @remarks
- * `return` / `newline` map to `return` (one canonical Enter name); `delete` / `backspace` both
- * map to `backspace` (the two Backspace bytes); the Ctrl combos (`c` / `d` / `u` / `a` / `e`)
- * carry `ctrl: true` so a reducer can match `key.ctrl && key.name === 'c'`. `escape` / `tab` /
- * `space` are plain named keys.
+ * `return` / `newline` / `return + newline` all map to `return` (one canonical Enter name) — a
+ * terminal or a paste can deliver Enter as `\r`, `\n`, or the `\r\n` pair in one chunk;
+ * `delete` / `backspace` both map to `backspace` (the two Backspace bytes); the Ctrl combos
+ * (`c` / `d` / `u` / `a` / `e`) carry `ctrl: true` so a reducer can match
+ * `key.ctrl && key.name === 'c'`. `escape` / `tab` / `space` are plain named keys.
  */
 export const CONTROL_NAMES: Readonly<
 	Record<string, { readonly name: string; readonly ctrl: boolean }>
 > = Object.freeze({
 	[RETURN]: Object.freeze({ name: 'return', ctrl: false }),
 	[NEWLINE]: Object.freeze({ name: 'return', ctrl: false }),
+	[`${RETURN}${NEWLINE}`]: Object.freeze({ name: 'return', ctrl: false }),
 	[TAB]: Object.freeze({ name: 'tab', ctrl: false }),
 	[ESCAPE]: Object.freeze({ name: 'escape', ctrl: false }),
 	[BACKSPACE]: Object.freeze({ name: 'backspace', ctrl: false }),

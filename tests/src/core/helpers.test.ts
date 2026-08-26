@@ -76,6 +76,16 @@ describe('parseKey', () => {
 		}
 	})
 
+	it('decodes a CRLF chunk delivered as one Enter keypress', () => {
+		expect(parseKey(`${RETURN}${NEWLINE}`)).toEqual({
+			name: 'return',
+			sequence: `${RETURN}${NEWLINE}`,
+			ctrl: false,
+			meta: false,
+			shift: false,
+		})
+	})
+
 	it('decodes backspace, delete, space, and ctrl combinations', () => {
 		expect(parseKey(BACKSPACE).name).toBe('backspace')
 		expect(parseKey(DELETE).name).toBe('backspace')

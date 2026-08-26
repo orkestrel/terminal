@@ -40,15 +40,15 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
 
 /**
  * Decode one keypress's bytes into a {@link KeyEvent} — total, never throws. A `Uint8Array` is
- * read as UTF-8; the resulting string is matched against the known control bytes
- * ({@link CONTROL_NAMES}) and escape sequences ({@link SEQUENCE_NAMES}), falling back to a
+ * read as UTF-8; the resulting string is matched against the known control bytes and the CRLF
+ * pair ({@link CONTROL_NAMES}) and escape sequences ({@link SEQUENCE_NAMES}), falling back to a
  * single printable character. An unrecognized sequence yields `name: ''` with the raw `sequence`
  * preserved.
  *
  * @remarks
  * - **Single control byte.** A one-character control input (`return` / `backspace` / `tab` /
- *   `escape` / `space`, or a Ctrl combo `c` / `d` / `u` / `a` / `e`) is looked up in
- *   {@link CONTROL_NAMES}, carrying its `ctrl` flag.
+ *   `escape` / `space`, or a Ctrl combo `c` / `d` / `u` / `a` / `e`), or the two-byte `\r\n`
+ *   CRLF pair, is looked up in {@link CONTROL_NAMES}, carrying its `ctrl` flag.
  * - **Escape sequence.** A multi-byte ESC sequence (`up` / `down` / `left` / `right` in BOTH the
  *   `ESC[A` and `ESCOA` forms, plus `home` / `end` / `delete`) is looked up in
  *   {@link SEQUENCE_NAMES} and flagged `meta`.
@@ -64,6 +64,7 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
  * @example
  * ```ts
  * parseKey('\r')        // { name: 'return', sequence: '\r', ctrl: false, meta: false, shift: false }
+ * parseKey('\r\n')      // { name: 'return', sequence: '\r\n', ctrl: false, meta: false, shift: false }
  * parseKey('\x1b[A')    // { name: 'up', sequence: '\x1b[A', ctrl: false, meta: true, shift: false }
  * parseKey('A')         // { name: 'A', sequence: 'A', ctrl: false, meta: false, shift: true }
  * parseKey('\x03')      // { name: 'c', sequence: '\x03', ctrl: true, meta: false, shift: false }
@@ -78,7 +79,8 @@ export function parseKey(input: string | Uint8Array): KeyEvent {
 		return { name: sequenceName, sequence, ctrl: false, meta: true, shift: false }
 	}
 
-	// A known single control byte (return / backspace / tab / escape / space / a ctrl combo).
+	// A known single control byte (return / backspace / tab / escape / space / a ctrl combo),
+	// or the two-byte CRLF pair.
 	const control = CONTROL_NAMES[sequence]
 	if (control !== undefined) {
 		return { name: control.name, sequence, ctrl: control.ctrl, meta: false, shift: false }

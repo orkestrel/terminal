@@ -315,34 +315,34 @@ The decode tables, the default mask, the theme defaults, and the broker and SSE 
 ([`src/core`](../src/core)). UPPER_SNAKE, `Object.freeze`d data; every control byte is built through
 `String.fromCharCode`, so no raw control character appears in source.
 
-| API                          | Kind  | Summary                                                                                                                      |
-| ---------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `RETURN`                     | const | Carriage return (`\r`, U+000D) — Enter on most terminals.                                                                    |
-| `NEWLINE`                    | const | Line feed (`\n`, U+000A) — Enter on some terminals, and in pasted input.                                                     |
-| `TAB`                        | const | Tab (U+0009).                                                                                                                |
-| `ESCAPE`                     | const | Escape (U+001B) — the lone byte, and the lead byte of every CSI and SS3 sequence. Both modules export it as the same byte.   |
-| `BACKSPACE`                  | const | Backspace (U+0008) — Ctrl+H, and Backspace on some terminals.                                                                |
-| `DELETE`                     | const | Delete (U+007F) — the usual Backspace byte on a Unix TTY.                                                                    |
-| `SPACE`                      | const | Space (U+0020).                                                                                                              |
-| `CTRL_C`                     | const | Ctrl+C (U+0003) — cancel.                                                                                                    |
-| `CTRL_D`                     | const | Ctrl+D (U+0004) — the editor's finish key.                                                                                   |
-| `CTRL_U`                     | const | Ctrl+U (U+0015) — clear the current line.                                                                                    |
-| `CTRL_A`                     | const | Ctrl+A (U+0001) — move to start of line.                                                                                     |
-| `CTRL_E`                     | const | Ctrl+E (U+0005) — move to end of line.                                                                                       |
-| `KEY_CSI`                    | const | The Control Sequence Introducer lead (`ESC[`) — named so it never collides with console's own `CSI`.                         |
-| `KEY_SS3`                    | const | The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit.                                   |
-| `SEQUENCE_NAMES`             | const | The escape-SEQUENCE to key-NAME table `parseKey` consults — both forms of the arrows, plus home / end / delete.              |
-| `CONTROL_NAMES`              | const | The control-BYTE to key-descriptor table `parseKey` consults — each entry's canonical `name` and whether it is a ctrl combo. |
-| `DEFAULT_MASK`               | const | The glyph a password field renders each character as when it declares no `mask` — `*`.                                       |
-| `PROMPT_ICONS`               | const | The six terminal-owned glyphs `DEFAULT_PROMPT_THEME` is assembled from, beside console's own success and error marks.        |
-| `PROMPT_ROLES`               | const | Every `PromptRole` in one frozen list — the role axis's source of truth, walked when a partial theme is merged.              |
-| `DEFAULT_PROMPT_THEME`       | const | The theme every field renders with unless options supply another — the default glyphs and a `Style` per role.                |
-| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | How long the broker parks an unanswered form before abandoning it — 5 minutes.                                               |
-| `DEFAULT_RECONNECT_DELAY_MS` | const | How long the client waits before each reconnect attempt — 2 seconds.                                                         |
-| `SSE_EVENTS`                 | const | The `event:` names the broker emits and the client dispatches on — `pending` / `expire` / `shutdown`.                        |
-| `HEADER_TOKEN`               | const | The auth-token request header the client sends when a `token` is configured.                                                 |
-| `ACCEPT_EVENT_STREAM`        | const | The `Accept` header value that opens the broker's stream (`text/event-stream`).                                              |
-| `SSE_BUFFER_LIMIT`           | const | How many characters the client's SSE parser buffers before treating the stream as hostile — 1 MiB.                           |
+| API                          | Kind  | Summary                                                                                                                                     |
+| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RETURN`                     | const | Carriage return (`\r`, U+000D) — Enter on most terminals.                                                                                   |
+| `NEWLINE`                    | const | Line feed (`\n`, U+000A) — Enter on some terminals, and in pasted input.                                                                    |
+| `TAB`                        | const | Tab (U+0009).                                                                                                                               |
+| `ESCAPE`                     | const | Escape (U+001B) — the lone byte, and the lead byte of every CSI and SS3 sequence. Both modules export it as the same byte.                  |
+| `BACKSPACE`                  | const | Backspace (U+0008) — Ctrl+H, and Backspace on some terminals.                                                                               |
+| `DELETE`                     | const | Delete (U+007F) — the usual Backspace byte on a Unix TTY.                                                                                   |
+| `SPACE`                      | const | Space (U+0020).                                                                                                                             |
+| `CTRL_C`                     | const | Ctrl+C (U+0003) — cancel.                                                                                                                   |
+| `CTRL_D`                     | const | Ctrl+D (U+0004) — the editor's finish key.                                                                                                  |
+| `CTRL_U`                     | const | Ctrl+U (U+0015) — clear the current line.                                                                                                   |
+| `CTRL_A`                     | const | Ctrl+A (U+0001) — move to start of line.                                                                                                    |
+| `CTRL_E`                     | const | Ctrl+E (U+0005) — move to end of line.                                                                                                      |
+| `KEY_CSI`                    | const | The Control Sequence Introducer lead (`ESC[`) — named so it never collides with console's own `CSI`.                                        |
+| `KEY_SS3`                    | const | The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit.                                                  |
+| `SEQUENCE_NAMES`             | const | The escape-SEQUENCE to key-NAME table `parseKey` consults — both forms of the arrows, plus home / end / delete.                             |
+| `CONTROL_NAMES`              | const | The control-BYTE (or CRLF pair) to key-descriptor table `parseKey` consults — each entry's canonical `name` and whether it is a ctrl combo. |
+| `DEFAULT_MASK`               | const | The glyph a password field renders each character as when it declares no `mask` — `*`.                                                      |
+| `PROMPT_ICONS`               | const | The six terminal-owned glyphs `DEFAULT_PROMPT_THEME` is assembled from, beside console's own success and error marks.                       |
+| `PROMPT_ROLES`               | const | Every `PromptRole` in one frozen list — the role axis's source of truth, walked when a partial theme is merged.                             |
+| `DEFAULT_PROMPT_THEME`       | const | The theme every field renders with unless options supply another — the default glyphs and a `Style` per role.                               |
+| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | How long the broker parks an unanswered form before abandoning it — 5 minutes.                                                              |
+| `DEFAULT_RECONNECT_DELAY_MS` | const | How long the client waits before each reconnect attempt — 2 seconds.                                                                        |
+| `SSE_EVENTS`                 | const | The `event:` names the broker emits and the client dispatches on — `pending` / `expire` / `shutdown`.                                       |
+| `HEADER_TOKEN`               | const | The auth-token request header the client sends when a `token` is configured.                                                                |
+| `ACCEPT_EVENT_STREAM`        | const | The `Accept` header value that opens the broker's stream (`text/event-stream`).                                                             |
+| `SSE_BUFFER_LIMIT`           | const | How many characters the client's SSE parser buffers before treating the stream as hostile — 1 MiB.                                          |
 
 ### The server Terminal
 
