@@ -1,7 +1,7 @@
 import type { JSONRecord, Result } from '@orkestrel/contract'
 import type { EmitterErrorHandler, EmitterHooks, EmitterInterface } from '@orkestrel/emitter'
-import type { FieldError, FormInterface, FormValues } from '@orkestrel/form'
-import type { Style } from '@orkestrel/console'
+import type { FieldChoice, FieldError, FormInterface, FormValues } from '@orkestrel/form'
+import type { Style, StylerInterface } from '@orkestrel/console'
 
 // The PURE, UNIVERSAL terminal core. `@orkestrel/form` owns every form concept — the schema, the
 // twelve controls, the rules, the values, and the settle-once `answer` promise — and this package
@@ -122,6 +122,120 @@ export interface PromptTheme {
 export interface PromptThemeOptions {
 	readonly icons?: Readonly<Partial<Record<PromptIcon, string>>>
 	readonly roles?: Readonly<Partial<Record<PromptRole, Style>>>
+}
+
+// === Reducer state
+
+/**
+ * The immutable state a text field's reducer carries — built by
+ * {@link import('./helpers.js').createInputState}, rendered by
+ * {@link import('./helpers.js').inputView}, and advanced by
+ * {@link import('./helpers.js').inputReduce}.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `default` — the declared default a bare return submits.
+ * - `styler` — the console styler every role is painted through.
+ * - `theme` — the resolved {@link PromptTheme}.
+ * - `value` — the characters typed so far.
+ */
+export interface InputState {
+	readonly message: string
+	readonly default: string
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+	readonly value: string
+}
+
+/**
+ * The immutable state a password field's reducer carries — the text state with the mask glyph in
+ * place of a default, because a secret is never seeded from the schema.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `mask` — the glyph each typed character renders as.
+ * - `styler` / `theme` — the console styler and the resolved {@link PromptTheme}.
+ * - `value` — the characters typed so far, rendered only as the mask repeated.
+ */
+export interface PasswordState {
+	readonly message: string
+	readonly mask: string
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+	readonly value: string
+}
+
+/**
+ * The immutable state a confirm field's reducer carries. It holds no typed value, because the
+ * answer is the key itself.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `default` — the answer a bare return submits, and the letter the view capitalizes.
+ * - `styler` / `theme` — the console styler and the resolved {@link PromptTheme}.
+ */
+export interface ConfirmState {
+	readonly message: string
+	readonly default: boolean
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+}
+
+/**
+ * The immutable state a select field's reducer carries.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `choices` — the choices the list offers, in declared order.
+ * - `styler` / `theme` — the console styler and the resolved {@link PromptTheme}.
+ * - `focused` — the index the cursor sits on, pre-placed on the declared default.
+ */
+export interface SelectState {
+	readonly message: string
+	readonly choices: readonly FieldChoice[]
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+	readonly focused: number
+}
+
+/**
+ * The immutable state a checkbox field's reducer carries — the select state plus the ticked set.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `choices` — the choices the list offers, in declared order.
+ * - `styler` / `theme` — the console styler and the resolved {@link PromptTheme}.
+ * - `focused` — the index the cursor sits on.
+ * - `checked` — the ticked indices, in the order they were ticked; the reducer sorts them into
+ *   choice order when it submits.
+ */
+export interface CheckboxState {
+	readonly message: string
+	readonly choices: readonly FieldChoice[]
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+	readonly focused: number
+	readonly checked: readonly number[]
+}
+
+/**
+ * The immutable state an editor field's reducer carries — the committed lines and the line still
+ * being typed, kept apart so a return commits one without ending the field.
+ *
+ * @remarks
+ * - `message` — the sanitized label the header renders.
+ * - `default` — the text an empty finish falls back to.
+ * - `styler` / `theme` — the console styler and the resolved {@link PromptTheme}.
+ * - `lines` — the lines already committed with a return.
+ * - `current` — the line in progress.
+ */
+export interface EditorState {
+	readonly message: string
+	readonly default: string
+	readonly styler: StylerInterface
+	readonly theme: PromptTheme
+	readonly lines: readonly string[]
+	readonly current: string
 }
 
 // === Reducer output
@@ -536,15 +650,16 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
  *   mounted endpoint name.
  * - **`add`** mints, or returns, the broker for `name`. Idempotent; it never clobbers a live
  *   endpoint.
- * - **`ask`** is the attributed convenience: it parks `form` from `from` to `to`, adding `to` if it
- *   is absent, and resolves with the settled values.
+ * - **`ask`** is the attributed convenience: it parks `form` from `from` to `to` and resolves with
+ *   the settled values. It never mounts `to` — an unmounted target rejects with a
+ *   {@link import('./errors.js').TerminalError} coded `TARGET`, so `add` the endpoint first.
  * - **`pending()`** lists every endpoint's parked records; `pending(to)` scopes to one endpoint.
  * - **`answer`** routes to the named endpoint's broker.
  * - **`open`** restores, or returns the live, broker for `name` from the `store`.
  * - **`save`** persists an endpoint's config snapshot; false when there is no store, or `name` is
  *   unknown.
- * - **Batch `remove`.** The array overload is declared FIRST: `remove(names)` removes each listed
- *   endpoint and reports whether any named terminal was removed; `remove(name)` removes one;
+ * - **Batch `remove`.** The array overload is declared FIRST: `remove(names)` removes every listed
+ *   endpoint and reports true only when all of them were mounted; `remove(name)` removes one;
  *   `remove()` removes every endpoint without destroying the manager.
  * - **`destroy`** tears down every broker, then the manager's own emitter.
  */

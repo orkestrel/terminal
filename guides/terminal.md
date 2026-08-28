@@ -179,27 +179,33 @@ The pure `(state, key) → PromptStep` machines the driver feeds decoded keys in
 ([`src/core`](../src/core)). Each is total and copy-on-write, and each produces a CANDIDATE value
 only: the form validates, the form settles, and none of this code does either.
 
-| API                   | Kind     | Summary                                                                                                                                    |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `createInputState`    | function | Build the initial state for a `TextField` — the sanitized label, the declared default, the styler, and the resolved theme.                 |
-| `inputView`           | function | Render a text state — header, pointer, and the typed value (or the default shown as a hint).                                               |
-| `inputReduce`         | function | The text reducer — printable extends, backspace shrinks, ctrl-u clears, return submits (an empty line falling back to the default).        |
-| `createPasswordState` | function | Build the initial state for a `PasswordField` — like the text state, plus the mask glyph each character renders as.                        |
-| `passwordView`        | function | Render a password state — the value replaced by the mask repeated, so the real value is never echoed.                                      |
-| `passwordReduce`      | function | The password reducer — identical line editing to `inputReduce`, with a masked view and a masked committed line.                            |
-| `createConfirmState`  | function | Build the initial state for a `ConfirmField` — the sanitized label and the declared default answer.                                        |
-| `confirmView`         | function | Render a confirm state — the header plus the yes/no group, the DEFAULT letter capitalized and painted by the `selected` role.              |
-| `confirmReduce`       | function | The confirm reducer — `y` submits true, `n` submits false, return takes the default, any other key is ignored.                             |
-| `createSelectState`   | function | Build the initial state for a `SelectField` — the offered choices with the focus pre-placed on the declared default.                       |
-| `selectView`          | function | Render a select state — a MULTI-LINE view, one row per choice, the focused row marked and its help shown.                                  |
-| `selectReduce`        | function | The select reducer — up / down (and `k` / `j`) move the focus WRAPPING, return submits the focused choice's `value`.                       |
-| `createCheckboxState` | function | Build the initial state for a `CheckboxField` — the choices, with every value in the field's `default` list pre-checked.                   |
-| `checkboxView`        | function | Render a checkbox state — one box per choice plus the selected count.                                                                      |
-| `checkboxReduce`      | function | The checkbox reducer — space toggles the focused box, return submits the checked values in choice order; the form applies the count rules. |
-| `toggleIndex`         | function | Toggle one index in a readonly index list — copy-on-write, the primitive `checkboxReduce` calls.                                           |
-| `createEditorState`   | function | Build the initial state for an `EditorField` — committed lines empty, the declared default held for an empty finish.                       |
-| `editorView`          | function | Render an editor state — the finish hint, the committed lines, and the line in progress.                                                   |
-| `editorReduce`        | function | The editor reducer — return commits a line, ctrl-d finishes (joining the lines, falling back to the default when empty).                   |
+| API                   | Kind      | Summary                                                                                                                                    |
+| --------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `InputState`          | interface | One text field's reducer state — the sanitized label, the default, the styler, the theme, and the typed value (data-only).                 |
+| `createInputState`    | function  | Build the initial state for a `TextField` — the sanitized label, the declared default, the styler, and the resolved theme.                 |
+| `inputView`           | function  | Render a text state — header, pointer, and the typed value (or the default shown as a hint).                                               |
+| `inputReduce`         | function  | The text reducer — printable extends, backspace shrinks, ctrl-u clears, return submits (an empty line falling back to the default).        |
+| `PasswordState`       | interface | One password field's reducer state — the text state with the mask glyph in place of a default (data-only).                                 |
+| `createPasswordState` | function  | Build the initial state for a `PasswordField` — like the text state, plus the mask glyph each character renders as.                        |
+| `passwordView`        | function  | Render a password state — the value replaced by the mask repeated, so the real value is never echoed.                                      |
+| `passwordReduce`      | function  | The password reducer — identical line editing to `inputReduce`, with a masked view and a masked committed line.                            |
+| `ConfirmState`        | interface | One confirm field's reducer state — the label, the default answer, the styler, and the theme; no typed value (data-only).                  |
+| `createConfirmState`  | function  | Build the initial state for a `ConfirmField` — the sanitized label and the declared default answer.                                        |
+| `confirmView`         | function  | Render a confirm state — the header plus the yes/no group, the DEFAULT letter capitalized and painted by the `selected` role.              |
+| `confirmReduce`       | function  | The confirm reducer — `y` submits true, `n` submits false, return takes the default, any other key is ignored.                             |
+| `SelectState`         | interface | One select field's reducer state — the offered choices and the focused index (data-only).                                                  |
+| `createSelectState`   | function  | Build the initial state for a `SelectField` — the offered choices with the focus pre-placed on the declared default.                       |
+| `selectView`          | function  | Render a select state — a MULTI-LINE view, one row per choice, the focused row marked and its help shown.                                  |
+| `selectReduce`        | function  | The select reducer — up / down (and `k` / `j`) move the focus WRAPPING, return submits the focused choice's `value`.                       |
+| `CheckboxState`       | interface | One checkbox field's reducer state — the select state plus the ticked indices in tick order (data-only).                                   |
+| `createCheckboxState` | function  | Build the initial state for a `CheckboxField` — the choices, with every value in the field's `default` list pre-checked.                   |
+| `checkboxView`        | function  | Render a checkbox state — one box per choice plus the selected count.                                                                      |
+| `checkboxReduce`      | function  | The checkbox reducer — space toggles the focused box, return submits the checked values in choice order; the form applies the count rules. |
+| `toggleIndex`         | function  | Toggle one index in a readonly index list — copy-on-write, the primitive `checkboxReduce` calls.                                           |
+| `EditorState`         | interface | One editor field's reducer state — the committed lines and the line in progress, kept apart (data-only).                                   |
+| `createEditorState`   | function  | Build the initial state for an `EditorField` — committed lines empty, the declared default held for an empty finish.                       |
+| `editorView`          | function  | Render an editor state — the finish hint, the committed lines, and the line in progress.                                                   |
+| `editorReduce`        | function  | The editor reducer — return commits a line, ctrl-d finishes (joining the lines, falling back to the default when empty).                   |
 
 ### Untrusted display
 
@@ -415,11 +421,11 @@ call-signature members. Each interface's readonly data members stay in its Surfa
 not repeated here. Each implementing class implements its interface exactly, so each table is also
 the instance method surface of the class that implements it.
 
-A `*Options` / `*EventMap` / `PendingForm` / `Parked` / `KeyEvent` / `PromptStep` / `WireEvent` /
-`FetchInit` / `TerminalSnapshot` / `TerminalSnapshotRow` row is data with no behavior, and
-`PromptStatus` / `PendingFormStatus` / `TerminalErrorCode` / `AnswerError` / `TerminalAnswerError` /
-`TimerHandler` / `TimerCancel` / `FetchHandler` are unions or callable function types. None carries a
-method table.
+A `*Options` / `*EventMap` / `*State` / `PendingForm` / `Parked` / `KeyEvent` / `PromptStep` /
+`WireEvent` / `FetchInit` / `TerminalSnapshot` / `TerminalSnapshotRow` row is data with no behavior,
+and `PromptStatus` / `PendingFormStatus` / `TerminalErrorCode` / `AnswerError` /
+`TerminalAnswerError` / `TimerHandler` / `TimerCancel` / `FetchHandler` are unions or callable
+function types. None carries a method table.
 
 #### `TerminalInterface`
 
@@ -455,18 +461,18 @@ The SSE bridge.
 
 The multi-endpoint registry.
 
-| Method      | Returns                                   | Behavior                                                                                                         |
-| ----------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `terminal`  | `PromptInterface \| undefined`            | Look up one endpoint's broker by name.                                                                           |
-| `terminals` | `readonly string[]`                       | List every mounted endpoint name, in insertion order.                                                            |
-| `add`       | `PromptInterface`                         | Mint, or return the existing unchanged, broker for `name`. Idempotent; it never clobbers a live endpoint.        |
-| `ask`       | `Promise<FormValues>`                     | Park `form` from `from` to `to` and resolve with the settled values. Rejects `TARGET` or `DEADLOCK`.             |
-| `pending`   | `readonly PendingForm[]`                  | List every endpoint's parked records (`pending()`), or scope to one endpoint (`pending(to)`).                    |
-| `answer`    | `Result<FormValues, TerminalAnswerError>` | Route an answer to the named endpoint's broker; `{ reason: 'terminal' }` when no endpoint carries that name.     |
-| `open`      | `Promise<PromptInterface \| undefined>`   | Return the live broker for `name`, or restore an EMPTY one from the `store`. Parked forms are never resurrected. |
-| `save`      | `Promise<boolean>`                        | Persist an endpoint's config snapshot; false with no store, or an unknown name.                                  |
-| `remove`    | `boolean` / `void`                        | Remove a batch (`remove(names)`, the array overload declared FIRST), one endpoint, or every endpoint.            |
-| `destroy`   | `void`                                    | Tear down every broker, then the manager's own emitter.                                                          |
+| Method      | Returns                                   | Behavior                                                                                                                          |
+| ----------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `PromptInterface \| undefined`            | Look up one endpoint's broker by name.                                                                                            |
+| `terminals` | `readonly string[]`                       | List every mounted endpoint name, in insertion order.                                                                             |
+| `add`       | `PromptInterface`                         | Mint, or return the existing unchanged, broker for `name`. Idempotent; it never clobbers a live endpoint.                         |
+| `ask`       | `Promise<FormValues>`                     | Park `form` from `from` to `to` and resolve with the settled values. Rejects `TARGET` or `DEADLOCK`.                              |
+| `pending`   | `readonly PendingForm[]`                  | List every endpoint's parked records (`pending()`), or scope to one endpoint (`pending(to)`).                                     |
+| `answer`    | `Result<FormValues, TerminalAnswerError>` | Route an answer to the named endpoint's broker; `{ reason: 'terminal' }` when no endpoint carries that name.                      |
+| `open`      | `Promise<PromptInterface \| undefined>`   | Return the live broker for `name`, or restore an EMPTY one from the `store`. Parked forms are never resurrected.                  |
+| `save`      | `Promise<boolean>`                        | Persist an endpoint's config snapshot; false with no store, or an unknown name.                                                   |
+| `remove`    | `boolean` / `void`                        | Remove a batch (`remove(names)`, the array overload declared FIRST, true only when all succeed), one endpoint, or every endpoint. |
+| `destroy`   | `void`                                    | Tear down every broker, then the manager's own emitter.                                                                           |
 
 #### `TerminalStoreInterface`
 
@@ -972,7 +978,7 @@ await manager.save('agent') // persist the endpoint's configured timeout (needs 
 await manager.open('agent') // the live broker, or an EMPTY one restored from the store
 
 manager.add('bounded', { cap: 100 }) // refuse a 101st park with LIMIT instead of growing memory
-manager.remove(['agent']) // the array overload is declared FIRST
+manager.remove(['agent']) // the array overload is declared FIRST; true only when all succeed
 manager.remove() // remove every endpoint; the manager stays usable
 manager.destroy() // destroy every broker, then the manager's own emitter
 ```
@@ -1110,10 +1116,10 @@ numberedList(styler, theme, enabledChoices(choices)) // '  1) Admin' — the non
   acceptance, expiry and removal, durable `open` / `save`, every `remove` scope, and `destroy`.
 - [`tests/src/core/factories.test.ts`](../tests/src/core/factories.test.ts) — each core factory
   returns a working instance of its interface with its seams forwarded.
-- [`tests/src/core/MemoryTerminalStore.test.ts`](../tests/src/core/MemoryTerminalStore.test.ts) — the
-  shared store case matrix against the memory twin.
-- [`tests/src/core/DatabaseTerminalStore.test.ts`](../tests/src/core/DatabaseTerminalStore.test.ts) —
-  the same matrix against the one-table twin, plus the read-boundary guard on an off-shape row.
+- [`tests/src/core/stores/MemoryTerminalStore.test.ts`](../tests/src/core/stores/MemoryTerminalStore.test.ts)
+  — the shared store case matrix against the memory twin.
+- [`tests/src/core/stores/DatabaseTerminalStore.test.ts`](../tests/src/core/stores/DatabaseTerminalStore.test.ts)
+  — the same matrix against the one-table twin, plus the read-boundary guard on an off-shape row.
 - [`tests/src/server/Terminal.test.ts`](../tests/src/server/Terminal.test.ts) — the walk over a
   scripted TTY: all twelve controls settling one form, the blank line binding as absence, a refused
   value re-asked, an open select accepting a value outside its list, hidden / disabled / locked /

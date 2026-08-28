@@ -1,6 +1,7 @@
 import type { TerminalErrorCode } from './types.js'
 
-// AGENTS §12: a real error type, not a sentinel. Callers branch on the machine-readable
+// `.claude/rules/typescript.md` § Errors and outcomes: a real error type, not a sentinel. Callers
+// branch on the machine-readable
 // `error.code` rather than parsing the message, and the guard narrows with `instanceof`,
 // mirroring the agents-module errors.
 

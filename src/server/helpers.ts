@@ -23,7 +23,7 @@ import {
 
 /**
  * Whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` / `off`
- * `'data'` subscription methods. A total type guard (AGENTS §14): it NEVER throws and returns `false`
+ * `'data'` subscription methods. A total type guard: it NEVER throws and returns `false`
  * for anything off-shape, so it narrows the one unavoidable input boundary (the real `process.stdin`,
  * or a fake TTY a test injects) to the exact slice the driver reads — no `as`.
  *
@@ -49,7 +49,7 @@ export function isInputStream(value: unknown): value is InputStreamInterface {
 
 /**
  * Whether `value` is a usable {@link OutputStreamInterface} — a record with a callable `write`. A
- * total type guard (AGENTS §14): it NEVER throws and returns `false` for anything off-shape, so it
+ * total type guard: it NEVER throws and returns `false` for anything off-shape, so it
  * narrows the output boundary (the real `process.stdout`, or a recording fake a test injects) to the
  * one method the driver writes through — no `as`.
  *
@@ -66,7 +66,7 @@ export function isOutputStream(value: unknown): value is OutputStreamInterface {
 }
 
 /**
- * Whether `value` is a Node {@link NodeJS.ReadableStream} — a total structural guard (AGENTS §14)
+ * Whether `value` is a Node {@link NodeJS.ReadableStream} — a total structural guard
  * checking for the callable `read` / `pipe` / `on` that `node:readline`'s `createInterface` requires
  * as its `input`. The non-TTY fallback narrows the resolved input stream through this before handing
  * it to readline (never an `as`), so a real piped `process.stdin` (or a `PassThrough` a test injects)

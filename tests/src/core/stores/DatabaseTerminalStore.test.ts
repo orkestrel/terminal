@@ -2,10 +2,10 @@ import type { TerminalStoreInterface } from '@src/core'
 import { DatabaseTerminalStore } from '@src/core'
 import { createDatabase, createMemoryDriver } from '@orkestrel/database'
 import { rawShape, stringShape } from '@orkestrel/contract'
-import { TERMINAL_STORE_SCENARIOS } from '../../setup.js'
+import { TERMINAL_STORE_SCENARIOS } from '../../../setup.js'
 import { describe, expect, it } from 'vitest'
 
-// src/core/DatabaseTerminalStore.ts — the one-table twin behind the TerminalStoreInterface
+// src/core/stores/DatabaseTerminalStore.ts — the one-table twin behind the TerminalStoreInterface
 // persistence seam (get / set / delete, async, keyed by a snapshot's own id), exercised over a
 // real memory driver. The snapshot is CONFIG-ONLY (`id` + optional `timeout`) — no live broker
 // state ever crosses this seam. This file runs the shared contract matrix both twins satisfy,

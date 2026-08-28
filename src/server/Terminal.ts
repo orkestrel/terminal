@@ -136,7 +136,7 @@ export class Terminal implements TerminalInterface {
 				const result = form.submit()
 				if (result.success) return await form.answer
 				this.#report(form, result.error)
-				const again = this.#editable(form, result.error)
+				const again = this.#collectEditable(form, result.error)
 				// Nothing the walk can edit, or an input stream that has already ended: asking again would
 				// render the same fields and read the same answers forever, so abandon the form instead.
 				// The failures are on screen either way, so the reader sees what could not be answered.
@@ -166,10 +166,10 @@ export class Terminal implements TerminalInterface {
 			if (form.disabled.has(field.name)) continue
 			if (field.group !== group) {
 				group = field.group
-				if (group !== undefined) this.#group(form, group)
+				if (group !== undefined) this.#writeGroup(form, group)
 			}
 			if (field.locked === true) {
-				this.#locked(form, field)
+				this.#writeLocked(form, field)
 				continue
 			}
 			const raw = await this.#read(form, field)
@@ -179,7 +179,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/** Write a group's label as a section header, resolving the schema's declared label and falling back to the group's own name. */
-	#group(form: FormInterface, name: string): void {
+	#writeGroup(form: FormInterface, name: string): void {
 		const label = form.schema.groups?.find((group) => group.name === name)?.label ?? name
 		this.#output.write(
 			`${LINE_FEED}${groupHeader(this.#styler, this.#theme, sanitizeDisplayText(label))}${LINE_FEED}`,
@@ -187,7 +187,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/** Render a locked field read-only — its label, its mark, and the answer the form already holds. */
-	#locked(form: FormInterface, field: FormField): void {
+	#writeLocked(form: FormInterface, field: FormField): void {
 		const line = lockedLine(
 			this.#styler,
 			this.#theme,
@@ -199,13 +199,13 @@ export class Terminal implements TerminalInterface {
 
 	/** Read one field through the reducer its control names, resolving the raw answer the binding projects. */
 	#read(form: FormInterface, field: FormField): Promise<FieldValue | undefined> {
-		if (field.control === 'password') return this.#password(form, field)
+		if (field.control === 'password') return this.#askPassword(form, field)
 		if (field.control === 'confirm') return this.#confirm(form, field)
-		if (field.control === 'editor') return this.#editor(form, field)
+		if (field.control === 'editor') return this.#askEditor(form, field)
 		if (field.control === 'select') return this.#select(form, field)
 		if (field.control === 'checkbox') return this.#checkbox(form, field)
 		if (field.control === 'file') return this.#file(form, field)
-		return this.#text(form, field)
+		return this.#askText(form, field)
 	}
 
 	/**
@@ -223,7 +223,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/** The erroring fields the walk can ask again — every field the walk skips or renders read-only is excluded, because a second pass could not change its answer. */
-	#editable(form: FormInterface, errors: readonly FieldError[]): readonly FormField[] {
+	#collectEditable(form: FormInterface, errors: readonly FieldError[]): readonly FormField[] {
 		const fields: FormField[] = []
 		for (const error of errors) {
 			const field = form.field(error.field)
@@ -249,14 +249,14 @@ export class Terminal implements TerminalInterface {
 	// === The controls
 
 	/** Read a field as one line of text — `text` itself and the six controls a terminal has no widget for. */
-	#text(form: FormInterface, field: FormField): Promise<string> {
+	#askText(form: FormInterface, field: FormField): Promise<string> {
 		const state = createInputState(fieldToText(field), this.#styler, this.#theme)
 		if (rawCapable(this.#input)) return this.#drive(form, state, inputReduce)
 		return this.#line(form, state.message, state.default)
 	}
 
 	/** Read a secret — masked live in raw mode, and read without echo through readline on a stream that cannot enter it. */
-	#password(form: FormInterface, field: PasswordField): Promise<string> {
+	#askPassword(form: FormInterface, field: PasswordField): Promise<string> {
 		const state = createPasswordState(field, this.#styler, this.#theme)
 		if (rawCapable(this.#input)) return this.#drive(form, state, passwordReduce)
 		return this.#prompt(form, promptHeader(this.#styler, this.#theme, state.message))
@@ -280,7 +280,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/** Read text over many lines — ctrl-d finishes in raw mode, and end of input finishes on a piped stream. */
-	#editor(form: FormInterface, field: EditorField): Promise<string> {
+	#askEditor(form: FormInterface, field: EditorField): Promise<string> {
 		const state = createEditorState(field, this.#styler, this.#theme)
 		if (rawCapable(this.#input)) return this.#drive(form, state, editorReduce)
 		return this.#block(form, state.message, state.default)
@@ -294,7 +294,7 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #select(form: FormInterface, field: SelectField): Promise<FieldValue | undefined> {
 		const choices = enabledChoices(field.choices)
-		this.#unavailable(field.choices)
+		this.#writeUnavailable(field.choices)
 		if (field.open === true) {
 			if (choices.length > 0) {
 				const display = choices.map((choice) => ({
@@ -303,13 +303,13 @@ export class Terminal implements TerminalInterface {
 				}))
 				this.#output.write(`${suggestionLine(this.#styler, this.#theme, display)}${LINE_FEED}`)
 			}
-			return this.#text(form, field)
+			return this.#askText(form, field)
 		}
 		if (choices.length === 0) return undefined
 		const state = createSelectState({ ...field, choices }, this.#styler, this.#theme)
 		if (rawCapable(this.#input)) return this.#drive(form, state, selectReduce)
-		this.#list(state.message, choices)
-		const line = await this.#prompt(form, this.#hint(`${FALLBACK_SELECT_HINT}:`))
+		this.#writeList(state.message, choices)
+		const line = await this.#prompt(form, this.#formatHint(`${FALLBACK_SELECT_HINT}:`))
 		return choices[Number.parseInt(line.trim(), 10) - 1]?.value
 	}
 
@@ -320,11 +320,11 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #checkbox(form: FormInterface, field: CheckboxField): Promise<FieldValue> {
 		const choices = enabledChoices(field.choices)
-		this.#unavailable(field.choices)
+		this.#writeUnavailable(field.choices)
 		const state = createCheckboxState({ ...field, choices }, this.#styler, this.#theme)
 		if (rawCapable(this.#input)) return this.#drive(form, state, checkboxReduce)
-		this.#list(state.message, choices)
-		const line = await this.#prompt(form, this.#hint(`${FALLBACK_CHECKBOX_HINT}:`))
+		this.#writeList(state.message, choices)
+		const line = await this.#prompt(form, this.#formatHint(`${FALLBACK_CHECKBOX_HINT}:`))
 		return line
 			.split(',')
 			.map((part) => choices[Number.parseInt(part.trim(), 10) - 1]?.value)
@@ -337,10 +337,10 @@ export class Terminal implements TerminalInterface {
 	 * than an empty list, because the reader answered a blank line.
 	 */
 	async #file(form: FormInterface, field: FileField): Promise<FieldValue | undefined> {
-		if (field.multiple === true) this.#output.write(`${this.#hint(FILE_HINT)}${LINE_FEED}`)
+		if (field.multiple === true) this.#output.write(`${this.#formatHint(FILE_HINT)}${LINE_FEED}`)
 		const paths: string[] = []
 		for (;;) {
-			const entry = await this.#text(form, field)
+			const entry = await this.#askText(form, field)
 			if (entry.length === 0) break
 			paths.push(entry)
 			if (field.multiple !== true || this.#ended) break
@@ -349,21 +349,21 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/** Name the choices a field shows but refuses, above the list the walk drives. */
-	#unavailable(choices: readonly FieldChoice[]): void {
+	#writeUnavailable(choices: readonly FieldChoice[]): void {
 		const refused = disabledChoices(choices)
 		if (refused.length === 0) return
 		this.#output.write(`${unavailableLine(this.#styler, this.#theme, refused)}${LINE_FEED}`)
 	}
 
 	/** Write a field's header above its numbered choice list — the non-TTY presentation of a choice field. */
-	#list(message: string, choices: readonly FieldChoice[]): void {
+	#writeList(message: string, choices: readonly FieldChoice[]): void {
 		const header = promptHeader(this.#styler, this.#theme, message)
 		const list = numberedList(this.#styler, this.#theme, choices)
 		this.#output.write(`${header}${LINE_FEED}${list}${LINE_FEED}`)
 	}
 
 	/** Paint one line of supplementary instruction through the `hint` role. */
-	#hint(text: string): string {
+	#formatHint(text: string): string {
 		return this.#styler.render(this.#theme.roles.hint, text)
 	}
 
@@ -526,7 +526,7 @@ export class Terminal implements TerminalInterface {
 		const buffered = this.#queue.shift()
 		if (buffered !== undefined) return Promise.resolve(buffered)
 		if (this.#ended) return Promise.resolve(undefined)
-		this.#reader()
+		this.#startReader()
 		return new Promise<string | undefined>((resolve, reject) => {
 			this.#taker = resolve
 			void form.answer.catch((error: unknown) => {
@@ -543,9 +543,9 @@ export class Terminal implements TerminalInterface {
 	 * every line it read past the one it was asked for, so the walk holds a single reader and buffers
 	 * what arrives early. It is closed when the walk ends, so the process is free to exit.
 	 */
-	#reader(): void {
+	#startReader(): void {
 		if (this.#interface !== undefined) return
-		const rl = createInterface(this.#readline())
+		const rl = createInterface(this.#openReadline())
 		rl.on('line', (line) => this.#accept(line))
 		rl.on('close', () => this.#finish())
 		this.#interface = rl
@@ -593,7 +593,7 @@ export class Terminal implements TerminalInterface {
 	 * as a line decoder and nothing else: the walk writes every prompt itself, through the same output
 	 * every other line goes to, so nothing is written twice and a secret is never echoed.
 	 */
-	#readline(): { input: NodeJS.ReadableStream; terminal: boolean } {
+	#openReadline(): { input: NodeJS.ReadableStream; terminal: boolean } {
 		// Bind to a local first — a guard narrows a local, not a `#private` field access.
 		const input = this.#input
 		if (!isReadable(input))

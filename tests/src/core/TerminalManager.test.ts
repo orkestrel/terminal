@@ -204,9 +204,12 @@ describe('TerminalManager', () => {
 
 	it('supports batch and all removal without destroying the reusable manager', () => {
 		const manager = createTerminalManager()
-		for (const name of ['a', 'b', 'c']) manager.add(name)
-		expect(manager.remove(['a', 'missing'])).toBe(true)
-		expect(manager.remove(['missing'])).toBe(false)
+		for (const name of ['a', 'b', 'c', 'd']) manager.add(name)
+		expect(manager.remove(['a', 'b'])).toBe(true)
+		// A batch reports true only when every listed name was mounted, and it still removes the
+		// ones that were: `c` is gone even though `missing` was never there to remove.
+		expect(manager.remove(['c', 'missing'])).toBe(false)
+		expect(manager.terminals()).toEqual(['d'])
 		manager.remove()
 		expect(manager.terminals()).toEqual([])
 		expect(manager.add('fresh')).toBeDefined()

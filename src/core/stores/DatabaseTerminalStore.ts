@@ -1,6 +1,6 @@
-import type { TerminalSnapshot, TerminalSnapshotRow, TerminalStoreInterface } from './types.js'
+import type { TerminalSnapshot, TerminalSnapshotRow, TerminalStoreInterface } from '../types.js'
 import type { TableInterface } from '@orkestrel/database'
-import { isTerminalSnapshot } from './validators.js'
+import { isTerminalSnapshot } from '../validators.js'
 
 /**
  * A {@link TerminalStoreInterface} backed by one table of the `databases` layer — an endpoint's
@@ -13,7 +13,7 @@ import { isTerminalSnapshot } from './validators.js'
  * JSON, SQLite, IndexedDB) is chosen by whoever builds it (the factories), so a JSON / SQLite /
  * IndexedDB backend swaps in WITHOUT touching the manager — the same seam as
  * {@link import('./MemoryTerminalStore.js').MemoryTerminalStore}. The driver defaults to memory
- * ({@link import('./factories.js').createDatabaseTerminalStore} passes `createMemoryDriver()`), so
+ * ({@link import('../factories.js').createDatabaseTerminalStore} passes `createMemoryDriver()`), so
  * it ALSO works in memory out of the box; you opt into the durable plumbing by passing a JSON /
  * SQLite / IndexedDB driver.
  *
@@ -25,13 +25,13 @@ import { isTerminalSnapshot } from './validators.js'
  * - **`set(snapshot)` upserts under the snapshot's OWN `id`** (no separate id param) — it writes
  *   the row `{ id: snapshot.id, snapshot }`.
  * - **`get(id)` resolves the stored snapshot for an id**, narrowing the opaque JSON column back to
- *   a {@link TerminalSnapshot} ({@link import('./validators.js').isTerminalSnapshot} — the AGENTS §14
- *   boundary narrow for an untrusted storage read), or `undefined` if none is stored.
+ *   a {@link TerminalSnapshot} ({@link import('../validators.js').isTerminalSnapshot} — the total
+ *   guard that narrows an untrusted storage read), or `undefined` if none is stored.
  * - **`delete(id)` drops a snapshot by id**; an absent id is a no-op (no throw).
  *
  * There is NO idle-TTL / eviction — a persisted config lives until an explicit `delete`. The public
- * surface is EXACTLY `get` / `set` / `delete` — no extra members (the §22 method bijection with
- * {@link TerminalStoreInterface}). Hydration stays a caller concern: `open` always restores an EMPTY
+ * surface is EXACTLY `get` / `set` / `delete` — no extra members, so the class and
+ * {@link TerminalStoreInterface} carry the same methods. Hydration stays a caller concern: `open` always restores an EMPTY
  * broker — parked Promises are process-bound and never resurrected.
  *
  * @example
@@ -62,7 +62,7 @@ export class DatabaseTerminalStore implements TerminalStoreInterface {
 		const row = await this.#table.get(id)
 		if (row === undefined) return undefined
 		// The snapshot crosses back as an untrusted storage read (a structured clone / a JSON row),
-		// so narrow the opaque JSON column with the boundary guard rather than a cast (AGENTS §14);
+		// so narrow the opaque JSON column with the boundary guard rather than a cast;
 		// a malformed blob resolves `undefined`, never a broken config.
 		return isTerminalSnapshot(row.snapshot) ? row.snapshot : undefined
 	}

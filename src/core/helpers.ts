@@ -1,12 +1,18 @@
 import type {
+	CheckboxState,
+	ConfirmState,
+	EditorState,
 	FetchInit,
+	InputState,
 	KeyEvent,
+	PasswordState,
 	PendingForm,
 	PromptIcon,
 	PromptRole,
 	PromptStep,
 	PromptTheme,
 	PromptThemeOptions,
+	SelectState,
 	TimerCancel,
 	WireEvent,
 } from './types.js'
@@ -31,7 +37,7 @@ import {
 import { isString } from '@orkestrel/contract'
 import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/console'
 
-// The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested (AGENTS §5):
+// The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested:
 // the key decoder, schema sanitization, per-field view renderers, and the six `create*State`
 // factories + `*Reduce` reducers. No `node:*`, no I/O, no events. Form owns validation and
 // settlement; these reducers only turn keys into candidate field values.
@@ -202,7 +208,8 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 
 		switch (field.control) {
 			case 'text':
-			case 'editor': {
+			case 'editor':
+			case 'number': {
 				fields.push({
 					...field,
 					...shared,
@@ -220,43 +227,18 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 				})
 				break
 			}
-			case 'number': {
-				fields.push({
-					...field,
-					...shared,
-					...(field.placeholder !== undefined
-						? { placeholder: sanitizeDisplayText(field.placeholder) }
-						: {}),
-				})
-				break
-			}
 			case 'date':
 			case 'time':
 			case 'datetime':
-			case 'color': {
-				fields.push({
-					...field,
-					...shared,
-				})
-				break
-			}
+			case 'color':
 			case 'confirm': {
-				fields.push({ ...field, ...shared })
-				break
-			}
-			case 'select': {
 				fields.push({
 					...field,
 					...shared,
-					choices: field.choices.map((choice) => ({
-						...choice,
-						value: choice.value,
-						label: sanitizeDisplayText(choice.label),
-						...(choice.help !== undefined ? { help: sanitizeDisplayText(choice.help) } : {}),
-					})),
 				})
 				break
 			}
+			case 'select':
 			case 'checkbox': {
 				fields.push({
 					...field,
@@ -357,7 +339,7 @@ export function createInputState(
 	field: TextField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): InputState {
 	return {
 		message: sanitizeDisplayText(field.label ?? field.name),
 		default: field.default ?? '',
@@ -368,7 +350,7 @@ export function createInputState(
 }
 
 /** Render a text-field key state as a styled view. */
-export function inputView(state: ReturnType<typeof createInputState>): string {
+export function inputView(state: InputState): string {
 	const content = state.value.length > 0 ? state.value : state.default
 	const role = state.value.length > 0 ? state.theme.roles.content : state.theme.roles.hint
 	const shown = state.styler.render(role, sanitizeDisplayText(content))
@@ -380,10 +362,7 @@ export function inputView(state: ReturnType<typeof createInputState>): string {
  * reducer. Printable characters extend the value; backspace shrinks it; ctrl-u clears it; ctrl-c
  * cancels; return produces the candidate value, with an empty line falling back to the default.
  */
-export function inputReduce(
-	state: ReturnType<typeof createInputState>,
-	key: KeyEvent,
-): PromptStep<string, ReturnType<typeof createInputState>> {
+export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
 	if (key.ctrl && key.name === 'c') return { state, view: inputView(state), status: 'cancel' }
 
 	if (key.name === 'return') {
@@ -417,7 +396,7 @@ export function createPasswordState(
 	field: PasswordField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): PasswordState {
 	return {
 		message: sanitizeDisplayText(field.label ?? field.name),
 		mask: sanitizeDisplayText(field.mask ?? DEFAULT_MASK),
@@ -428,7 +407,7 @@ export function createPasswordState(
 }
 
 /** Render a password-field key state as a styled view. */
-export function passwordView(state: ReturnType<typeof createPasswordState>): string {
+export function passwordView(state: PasswordState): string {
 	const masked = state.styler.render(
 		state.theme.roles.content,
 		state.mask.repeat(state.value.length),
@@ -442,9 +421,9 @@ export function passwordView(state: ReturnType<typeof createPasswordState>): str
  * ctrl-u clears, ctrl-c cancels) but the view masks the value. Return produces the candidate value.
  */
 export function passwordReduce(
-	state: ReturnType<typeof createPasswordState>,
+	state: PasswordState,
 	key: KeyEvent,
-): PromptStep<string, ReturnType<typeof createPasswordState>> {
+): PromptStep<string, PasswordState> {
 	if (key.ctrl && key.name === 'c') return { state, view: passwordView(state), status: 'cancel' }
 
 	if (key.name === 'return') {
@@ -476,7 +455,7 @@ export function createConfirmState(
 	field: ConfirmField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): ConfirmState {
 	return {
 		message: sanitizeDisplayText(field.label ?? field.name),
 		default: field.default ?? false,
@@ -488,7 +467,7 @@ export function createConfirmState(
 /**
  * Render a confirm-field key state as a styled view. The selected role paints the default letter.
  */
-export function confirmView(state: ReturnType<typeof createConfirmState>): string {
+export function confirmView(state: ConfirmState): string {
 	const head = promptHeader(state.styler, state.theme, state.message)
 	const answer = state.default
 		? `${state.styler.render(state.theme.roles.selected, 'Y')}${state.styler.render(state.theme.roles.hint, '/n')}`
@@ -502,9 +481,9 @@ export function confirmView(state: ReturnType<typeof createConfirmState>): strin
  * the `default`, ctrl-c cancels; any other key is ignored (stays active).
  */
 export function confirmReduce(
-	state: ReturnType<typeof createConfirmState>,
+	state: ConfirmState,
 	key: KeyEvent,
-): PromptStep<boolean, ReturnType<typeof createConfirmState>> {
+): PromptStep<boolean, ConfirmState> {
 	if (key.ctrl && key.name === 'c') return { state, view: confirmView(state), status: 'cancel' }
 
 	let answer: boolean | undefined
@@ -536,7 +515,7 @@ export function createSelectState(
 	field: SelectField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): SelectState {
 	const choices = [...field.choices]
 	const index = choices.findIndex((choice) => choice.value === field.default)
 	return {
@@ -549,7 +528,7 @@ export function createSelectState(
 }
 
 /** Render a select-field key state as a multi-line styled view. */
-export function selectView(state: ReturnType<typeof createSelectState>): string {
+export function selectView(state: SelectState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const pointer = active
@@ -576,10 +555,7 @@ export function selectView(state: ReturnType<typeof createSelectState>): string 
  * focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer
  * guards against it); any other key is ignored.
  */
-export function selectReduce(
-	state: ReturnType<typeof createSelectState>,
-	key: KeyEvent,
-): PromptStep<string, ReturnType<typeof createSelectState>> {
+export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<string, SelectState> {
 	if (key.ctrl && key.name === 'c') return { state, view: selectView(state), status: 'cancel' }
 
 	const count = state.choices.length
@@ -620,7 +596,7 @@ export function createCheckboxState(
 	field: CheckboxField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): CheckboxState {
 	const choices = [...field.choices]
 	const checked: readonly number[] = choices.reduce<number[]>((indices, choice, index) => {
 		if (field.default?.includes(choice.value) === true) indices.push(index)
@@ -637,7 +613,7 @@ export function createCheckboxState(
 }
 
 /** Render a checkbox-field key state as a multi-line styled view. */
-export function checkboxView(state: ReturnType<typeof createCheckboxState>): string {
+export function checkboxView(state: CheckboxState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const ticked = state.checked.includes(index)
@@ -670,9 +646,9 @@ export function checkboxView(state: ReturnType<typeof createCheckboxState>): str
  * checked values in choice order; ctrl-c cancels. The form applies selection-count rules.
  */
 export function checkboxReduce(
-	state: ReturnType<typeof createCheckboxState>,
+	state: CheckboxState,
 	key: KeyEvent,
-): PromptStep<readonly string[], ReturnType<typeof createCheckboxState>> {
+): PromptStep<readonly string[], CheckboxState> {
 	if (key.ctrl && key.name === 'c') return { state, view: checkboxView(state), status: 'cancel' }
 
 	const count = state.choices.length
@@ -731,7 +707,7 @@ export function createEditorState(
 	field: EditorField,
 	styler: StylerInterface = createStyler(),
 	theme?: PromptThemeOptions,
-) {
+): EditorState {
 	const lines: readonly string[] = []
 	return {
 		message: sanitizeDisplayText(field.label ?? field.name),
@@ -746,7 +722,7 @@ export function createEditorState(
 /**
  * Render an editor-field key state as a multi-line styled view with its finish hint.
  */
-export function editorView(state: ReturnType<typeof createEditorState>): string {
+export function editorView(state: EditorState): string {
 	const head = hintedHeader(state.styler, state.theme, state.message, '(Ctrl+D to finish)')
 	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 	const committed = state.lines.map((line) => state.styler.render(state.theme.roles.content, line))
@@ -763,10 +739,7 @@ export function editorView(state: ReturnType<typeof createEditorState>): string 
  * current line and starts a fresh one; ctrl-d FINISHES (joining all lines, falling back to the
  * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
  */
-export function editorReduce(
-	state: ReturnType<typeof createEditorState>,
-	key: KeyEvent,
-): PromptStep<string, ReturnType<typeof createEditorState>> {
+export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
 	if (key.ctrl && key.name === 'c') return { state, view: editorView(state), status: 'cancel' }
 
 	if (key.ctrl && key.name === 'd') {
@@ -818,7 +791,7 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
 	return undefined
 }
 
-// === Broker + bridge wiring helpers (T-b)
+// === Broker + bridge wiring helpers
 
 /**
  * The default {@link import('./types.js').TimerHandler} — a thin host `setTimeout` / `clearTimeout`

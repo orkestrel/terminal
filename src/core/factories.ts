@@ -12,8 +12,8 @@ import type { DriverInterface, TableInterface } from '@orkestrel/database'
 import { Prompt } from './Prompt.js'
 import { PromptClient } from './PromptClient.js'
 import { TerminalManager } from './TerminalManager.js'
-import { MemoryTerminalStore } from './MemoryTerminalStore.js'
-import { DatabaseTerminalStore } from './DatabaseTerminalStore.js'
+import { MemoryTerminalStore } from './stores/MemoryTerminalStore.js'
+import { DatabaseTerminalStore } from './stores/DatabaseTerminalStore.js'
 import { createDatabase, createMemoryDriver } from '@orkestrel/database'
 import { rawShape, stringShape } from '@orkestrel/contract'
 
@@ -57,7 +57,7 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
  *   ends; it reconnects with the `delay` backoff unless `reconnect` is `false` / the client was
  *   `destroy`ed. Inject `options.fetch` (a scripted `fetch`) and `options.timer` to drive it
  *   deterministically in tests — no real network.
- * - **§14 wire narrowing.** Every decoded prompt is guard-narrowed before dispatch (never an `as`).
+ * - **Wire narrowing.** Every decoded prompt is guard-narrowed before dispatch (never an `as`).
  *
  * @example
  * ```ts

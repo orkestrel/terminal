@@ -37,7 +37,7 @@ import { isArray } from '@orkestrel/contract'
  * - **Durable open / save.** `open(name)` restores an EMPTY broker from the `store` (parked
  *   Promises are process-bound and never resurrected); `save(name)` persists the endpoint's
  *   configured `timeout`.
- * - **Removal.** `remove` drops one endpoint, a batch (§9.2, array overload FIRST), or every
+ * - **Removal.** `remove` drops one endpoint, a batch (the array overload declared FIRST), or every
  *   endpoint when called without an argument. It destroys each broker, which expires every form
  *   still parked on it. `destroy` is idempotent.
  *
@@ -94,7 +94,7 @@ export class TerminalManager implements TerminalManagerInterface {
 		return this.#terminals.size
 	}
 
-	// === Accessors (§9.1)
+	// === Accessors
 
 	terminal(name: string): PromptInterface | undefined {
 		return this.#terminals.get(name)
@@ -171,7 +171,7 @@ export class TerminalManager implements TerminalManagerInterface {
 		return form.answer
 	}
 
-	// === Pending accessors (§9.1)
+	// === Pending accessors
 
 	pending(): readonly PendingForm[]
 	pending(to: string): readonly PendingForm[]
@@ -220,7 +220,7 @@ export class TerminalManager implements TerminalManagerInterface {
 		return true
 	}
 
-	// === Removal (§9.2: the array overload FIRST)
+	// === Removal (the array overload declared FIRST)
 
 	remove(names: readonly string[]): boolean
 	remove(name: string): boolean
@@ -231,9 +231,9 @@ export class TerminalManager implements TerminalManagerInterface {
 			return
 		}
 		if (isArray(names)) {
-			let removed = false
+			let removed = true
 			for (const name of names) {
-				if (this.#removeOne(name)) removed = true
+				if (!this.#removeOne(name)) removed = false
 			}
 			return removed
 		}

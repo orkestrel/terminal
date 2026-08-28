@@ -191,7 +191,7 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 	}),
 })
 
-// === Broker + SSE-bridge defaults (T-b)
+// === Broker + SSE-bridge defaults
 
 /** How long (ms) the {@link import('./types.js').PromptInterface} broker parks an unanswered prompt before it expires — 5 minutes. */
 export const DEFAULT_PROMPT_TIMEOUT_MS = 300_000
