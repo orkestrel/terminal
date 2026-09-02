@@ -647,8 +647,9 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
  *
  * @remarks
  * - **Accessors.** `terminal(name)` looks up one endpoint's broker; `terminals()` lists every
- *   mounted broker, in insertion order. Neither accessor reports the names: an endpoint's name is
- *   the key a caller already holds to reach it.
+ *   mounted broker, in insertion order. `terminals()` returns brokers, not keys; a name is an
+ *   argument the `terminal`, `add`, `ask`, `pending`, `answer`, `open`, `save`, and `remove`
+ *   methods take.
  * - **`add`** mints, or returns, the broker for `name`. Idempotent; it never clobbers a live
  *   endpoint.
  * - **`ask`** is the attributed convenience: it parks `form` from `from` to `to` and resolves with

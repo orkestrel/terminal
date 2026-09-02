@@ -16,7 +16,7 @@ describe('TerminalManager', () => {
 		expect(manager.add('a', { cap: 1 })).toBe(first)
 		const second = manager.add('b')
 		expect(manager.count).toBe(2)
-		// The accessor lists the BROKERS, in insertion order — not the names the caller already holds.
+		// The accessor lists the BROKERS, in insertion order — not their names.
 		const mounted = manager.terminals()
 		expect(mounted).toHaveLength(2)
 		expect(mounted[0]).toBe(first)

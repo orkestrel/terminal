@@ -150,6 +150,13 @@ describe('input reducer', () => {
 		expect(inputReduce(initial, parseKey(CTRL_C)).status).toBe('cancel')
 	})
 
+	it('returns the same state for an undecoded key', () => {
+		const initial = createInputState({ control: 'text', name: 'name' })
+		const step = inputReduce(initial, parseKey(`${KEY_CSI}999~`))
+		expect(step.status).toBe('active')
+		expect(step.state).toEqual(initial)
+	})
+
 	it('renders labels, content, and a committed value', () => {
 		const initial = createInputState({ control: 'text', name: 'name', label: 'Name' })
 		expect(strip(renderInputView(initial))).toContain('? Name ›')
@@ -293,6 +300,10 @@ describe('editLine', () => {
 		expect(editLine('ab', parseKey(CTRL_U))).toBe('')
 		expect(editLine('ab', parseKey(`${KEY_CSI}A`))).toBeUndefined()
 	})
+
+	it('refuses an undecoded key that carries no name', () => {
+		expect(editLine('ab', parseKey(`${KEY_CSI}999~`))).toBeUndefined()
+	})
 })
 
 describe('presentation', () => {
@@ -309,7 +320,7 @@ describe('presentation', () => {
 		expect(Object.isFrozen(theme)).toBe(true)
 	})
 
-	it('renders the four shared line shapes', () => {
+	it('renders the question, hinted, and committed headers and the failure line', () => {
 		const state = createInputState({ control: 'text', name: 'name', label: 'Name' })
 		expect(strip(renderPromptHeader(state.styler, state.theme, 'Name'))).toBe('? Name')
 		expect(strip(renderHintedHeader(state.styler, state.theme, 'Name', 'hint'))).toBe('? Name hint')

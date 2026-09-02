@@ -158,8 +158,8 @@ total: no `node:*`, no I/O, and no input throws.
 
 ### Presentation
 
-A theme is DATA — a glyph per icon slot and a console `Style` per semantic role — plus the four
-shared line shapes every view is assembled from ([`src/core`](../src/core)).
+A theme is DATA — a glyph per icon slot and a console `Style` per semantic role — plus the shared
+line shapes every view is assembled from ([`src/core`](../src/core)).
 
 | API                  | Kind      | Summary                                                                                                                                                     |
 | -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -464,7 +464,7 @@ The multi-endpoint registry.
 | Method      | Returns                                   | Behavior                                                                                                                          |
 | ----------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `terminal`  | `PromptInterface \| undefined`            | Look up one endpoint's broker by name.                                                                                            |
-| `terminals` | `readonly PromptInterface[]`              | List every mounted endpoint's broker, in insertion order. A name is the key a caller already holds.                               |
+| `terminals` | `readonly PromptInterface[]`              | List every mounted broker, in insertion order.                                                                                    |
 | `add`       | `PromptInterface`                         | Mint, or return the existing unchanged, broker for `name`. Idempotent; it never clobbers a live endpoint.                         |
 | `ask`       | `Promise<FormValues>`                     | Park `form` from `from` to `to` and resolve with the settled values. Rejects `TARGET` or `DEADLOCK`.                              |
 | `pending`   | `readonly PendingForm[]`                  | List every endpoint's parked records (`pending()`), or scope to one endpoint (`pending(to)`).                                     |
@@ -954,7 +954,7 @@ import { createForm } from '@orkestrel/form'
 const manager = createTerminalManager()
 manager.add('agent') // mint, or return unchanged, the 'agent' endpoint's broker
 manager.add('user')
-manager.terminals() // both endpoints' PromptInterface brokers, in insertion order
+manager.terminals() // the 'agent' and 'user' brokers, in insertion order
 manager.terminal('agent') // that endpoint's PromptInterface, or undefined
 
 const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
