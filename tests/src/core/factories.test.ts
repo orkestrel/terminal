@@ -36,8 +36,11 @@ describe('core factories', () => {
 
 	it('createTerminalManager returns a working registry', () => {
 		const manager = createTerminalManager()
-		expect(manager.add('agent')).toBe(manager.terminal('agent'))
-		expect(manager.terminals()).toEqual(['agent'])
+		const broker = manager.add('agent')
+		expect(broker).toBe(manager.terminal('agent'))
+		const mounted = manager.terminals()
+		expect(mounted).toHaveLength(1)
+		expect(mounted[0]).toBe(broker)
 		manager.destroy()
 	})
 

@@ -24,15 +24,15 @@ import type { Style, StylerInterface } from '@orkestrel/console'
  * - `name` — the canonical key name: a control or navigation key (`return`, `backspace`, `tab`,
  *   `escape`, `up` / `down` / `left` / `right`, `space`, `home`, `end`, `delete`), a named ctrl
  *   combo (`c` with `ctrl` true for ctrl-c, likewise `d` / `u` / `a` / `e`), or the printable
- *   character itself (`'a'`, `'7'`, `'?'`). An unrecognized sequence yields `name: ''`; the decoder
- *   is total and never throws.
+ *   character itself (`'a'`, `'7'`, `'?'`). An unrecognized sequence carries NO `name` — absence,
+ *   never an empty string — and the decoder stays total and never throws.
  * - `sequence` — the exact input bytes as a string (a `Uint8Array` is decoded UTF-8). The driver
  *   writes this verbatim for a printable key.
  * - `ctrl` / `meta` / `shift` — the modifier flags. `ctrl` is true for a C0 control byte, `meta`
  *   for an ESC-prefixed (Alt) sequence, `shift` for an uppercase-letter printable.
  */
 export interface KeyEvent {
-	readonly name: string
+	readonly name?: string
 	readonly sequence: string
 	readonly ctrl: boolean
 	readonly meta: boolean
@@ -129,7 +129,7 @@ export interface PromptThemeOptions {
 /**
  * The immutable state a text field's reducer carries — built by
  * {@link import('./helpers.js').createInputState}, rendered by
- * {@link import('./helpers.js').inputView}, and advanced by
+ * {@link import('./helpers.js').renderInputView}, and advanced by
  * {@link import('./helpers.js').inputReduce}.
  *
  * @remarks
@@ -366,14 +366,14 @@ export interface PendingForm {
 
 /**
  * One injected timer — arms a deadline `callback` to fire after `ms`, returning a
- * {@link TimerCancel} that cancels it. The broker's timeout seam: the default wraps the host
+ * {@link TimerCancelFunction} that cancels it. The broker's timeout seam: the default wraps the host
  * `setTimeout` and `clearTimeout`; a test injects a deterministic timer that captures the callback
  * and fires it on demand, with no real time and no global patching.
  */
-export type TimerHandler = (callback: () => void, ms: number) => TimerCancel
+export type TimerHandler = (callback: () => void, ms: number) => TimerCancelFunction
 
-/** Cancel a pending {@link TimerHandler} deadline — idempotent, safe to call after the timer fired. */
-export type TimerCancel = () => void
+/** Cancels a pending {@link TimerHandler} deadline — idempotent, safe to call after the timer fired. */
+export type TimerCancelFunction = () => void
 
 /**
  * One parked form's runtime state inside the broker — the live form, the wire-safe record the
@@ -385,10 +385,10 @@ export type TimerCancel = () => void
  * abandons it and settles the caller's promise through the form's own lifecycle. `pending` is the
  * wire record, whose `status` tracks the ticket.
  */
-export interface Parked {
+export interface ParkedForm {
 	readonly form: FormInterface
 	readonly pending: PendingForm
-	readonly cancel: TimerCancel
+	readonly cancel: TimerCancelFunction
 }
 
 /**
@@ -647,7 +647,8 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
  *
  * @remarks
  * - **Accessors.** `terminal(name)` looks up one endpoint's broker; `terminals()` lists every
- *   mounted endpoint name.
+ *   mounted broker, in insertion order. Neither accessor reports the names: an endpoint's name is
+ *   the key a caller already holds to reach it.
  * - **`add`** mints, or returns, the broker for `name`. Idempotent; it never clobbers a live
  *   endpoint.
  * - **`ask`** is the attributed convenience: it parks `form` from `from` to `to` and resolves with
@@ -667,7 +668,7 @@ export interface TerminalManagerInterface {
 	readonly emitter: EmitterInterface<TerminalManagerEventMap>
 	readonly count: number
 	terminal(name: string): PromptInterface | undefined
-	terminals(): readonly string[]
+	terminals(): readonly PromptInterface[]
 	add(name: string, options?: PromptOptions): PromptInterface
 	ask(from: string, to: string, form: FormInterface): Promise<FormValues>
 	pending(): readonly PendingForm[]
@@ -687,7 +688,7 @@ export interface TerminalManagerInterface {
  * One SSE-shaped wire frame — the `event` name, its already-stringified `data` payload, and an
  * optional `id`. The transport-neutral shape {@link import('./helpers.js').serializePending},
  * {@link import('./helpers.js').serializeExpire}, and
- * {@link import('./helpers.js').serializeShutdown} build, with no `http` dependency.
+ * {@link import('./helpers.js').serializeDestroy} build, with no `http` dependency.
  */
 export interface WireEvent {
 	readonly event: string

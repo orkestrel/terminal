@@ -88,8 +88,8 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
 }
 
 /**
- * Whether an input stream can be driven in RAW mode — it both reports `isTTY === true` AND exposes a
- * callable `setRawMode`. The {@link import('./Terminal.js').Terminal} probes this to choose its path:
+ * Checks whether an input stream can be driven in RAW mode — it both reports `isTTY === true` AND
+ * exposes a callable `setRawMode`. The {@link import('./Terminal.js').Terminal} probes this to choose its path:
  * `true` ⇒ the interactive raw-mode prompts (arrow-key navigation, live re-render); `false` ⇒ the
  * `node:readline` line-input fallback (a piped / non-terminal stream cannot enter raw mode). Total —
  * never throws.
@@ -97,7 +97,7 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
  * @param input - The resolved {@link InputStreamInterface}
  * @returns `true` when the stream is a TTY with `setRawMode`
  */
-export function rawCapable(input: InputStreamInterface): boolean {
+export function supportsRawMode(input: InputStreamInterface): boolean {
 	return input.isTTY === true && typeof input.setRawMode === 'function'
 }
 
@@ -200,37 +200,41 @@ export function valueToText(value: FieldValue | undefined): string {
 }
 
 /**
- * The choices a `select` or `checkbox` field actually OFFERS — the form refuses a disabled choice's
- * value at every door, including a fill, so the walk never puts one in front of the cursor. Pair
- * with {@link disabledChoices} to tell the reader what was withheld.
+ * Returns the choices a `select` or `checkbox` field actually OFFERS — the form refuses a disabled
+ * choice's value at every door, including a fill, so the walk never puts one in front of the
+ * cursor. Pair with {@link filterDisabled} to tell the reader what was withheld.
  *
  * @param choices - The field's declared choices
  * @returns The choices the walk offers, in declared order
  */
-export function enabledChoices(choices: readonly FieldChoice[]): readonly FieldChoice[] {
+export function filterEnabled(choices: readonly FieldChoice[]): readonly FieldChoice[] {
 	return choices.filter((choice) => choice.disabled !== true)
 }
 
 /**
- * The choices a `select` or `checkbox` field SHOWS but refuses — the complement of
- * {@link enabledChoices}, rendered by {@link unavailableLine} above the list so a reader sees why a
- * declared choice is missing from it.
+ * Returns the choices a `select` or `checkbox` field SHOWS but refuses — the complement of
+ * {@link filterEnabled}, rendered by {@link renderUnavailableLine} above the list so a reader sees
+ * why a declared choice is missing from it.
  *
  * @param choices - The field's declared choices
  * @returns The refused choices, in declared order
  */
-export function disabledChoices(choices: readonly FieldChoice[]): readonly FieldChoice[] {
+export function filterDisabled(choices: readonly FieldChoice[]): readonly FieldChoice[] {
 	return choices.filter((choice) => choice.disabled === true)
 }
 
-/** The section header the walk writes when it enters a new field group, painted by the `message` role. */
-export function groupHeader(styler: StylerInterface, theme: PromptTheme, label: string): string {
+/** Renders the section header the walk writes when it enters a new field group, painted by the `message` role. */
+export function renderGroupHeader(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	label: string,
+): string {
 	return styler.render(theme.roles.message, label)
 }
 
 /**
- * The read-only line a LOCKED field renders — its label, the {@link LOCKED_MARK}, and the answer the
- * form already holds. The walk writes this instead of a prompt, because the field is still
+ * Renders the read-only line a LOCKED field shows — its label, the {@link LOCKED_MARK}, and the
+ * answer the form already holds. The walk writes this instead of a prompt, because the field is still
  * validated and still submitted but must not be edited here.
  *
  * @param styler - The console styler that renders each role
@@ -239,7 +243,7 @@ export function groupHeader(styler: StylerInterface, theme: PromptTheme, label: 
  * @param value - The held answer, from {@link valueToText}
  * @returns The rendered line, with no trailing space when there is nothing to show
  */
-export function lockedLine(
+export function renderLockedLine(
 	styler: StylerInterface,
 	theme: PromptTheme,
 	label: string,
@@ -249,8 +253,8 @@ export function lockedLine(
 	return value.length === 0 ? head : `${head} ${styler.render(theme.roles.content, value)}`
 }
 
-/** The line listing an OPEN select's offered values above its text prompt — a suggestion list, because an open select admits an answer the list does not offer. */
-export function suggestionLine(
+/** Renders the line listing an OPEN select's offered values above its text prompt — a suggestion list, because an open select admits an answer the list does not offer. */
+export function renderSuggestionLine(
 	styler: StylerInterface,
 	theme: PromptTheme,
 	choices: readonly FieldChoice[],
@@ -259,8 +263,8 @@ export function suggestionLine(
 	return styler.render(theme.roles.hint, `${SUGGESTION_LEAD}: ${values}`)
 }
 
-/** The line naming the choices a field shows but refuses, written above the list the walk drives. */
-export function unavailableLine(
+/** Renders the line naming the choices a field shows but refuses, written above the list the walk drives. */
+export function renderUnavailableLine(
 	styler: StylerInterface,
 	theme: PromptTheme,
 	choices: readonly FieldChoice[],
@@ -270,16 +274,16 @@ export function unavailableLine(
 }
 
 /**
- * The numbered choice list the non-TTY fallback prints — a piped stream cannot navigate with arrow
- * keys, so each offered choice is printed with the number the reader types back. One line per
- * choice, with no trailing newline.
+ * Renders the numbered choice list the non-TTY fallback prints — a piped stream cannot navigate
+ * with arrow keys, so each offered choice is printed with the number the reader types back. One
+ * line per choice, with no trailing newline.
  *
  * @param styler - The console styler that renders each role
  * @param theme - The resolved prompt theme
- * @param choices - The choices the walk offers, from {@link enabledChoices}
+ * @param choices - The choices the walk offers, from {@link filterEnabled}
  * @returns The rendered list
  */
-export function numberedList(
+export function renderNumberedList(
 	styler: StylerInterface,
 	theme: PromptTheme,
 	choices: readonly FieldChoice[],

@@ -73,7 +73,7 @@ describe('createSSEResponse', () => {
 		const events = [
 			{ event: 'pending', data: { id: 'one', status: 'pending' } },
 			{ event: 'expire', data: { id: 'one' } },
-			{ event: 'shutdown', data: '' },
+			{ event: 'destroy', data: '' },
 		]
 		const response = createSSEResponse(events)
 		expect(response.headers.get('Content-Type')).toBe(ACCEPT_EVENT_STREAM)
@@ -82,7 +82,7 @@ describe('createSSEResponse', () => {
 		const parser = createSSEParser()
 		const parsed = parser.parse(await response.text())
 
-		expect(parsed.map((one) => one.event)).toEqual(['pending', 'expire', 'shutdown'])
+		expect(parsed.map((one) => one.event)).toEqual(['pending', 'expire', 'destroy'])
 		expect(parsed.map((one): unknown => JSON.parse(one.data))).toEqual(
 			events.map((one) => one.data),
 		)
@@ -125,7 +125,7 @@ describe('feedReducer', () => {
 	})
 
 	it('decodes each raw key and threads the state through the fold', () => {
-		const step = feedReducer<string, readonly string[]>(
+		const step = feedReducer<string, ReadonlyArray<string | undefined>>(
 			(state, key) => ({
 				state: [...state, key.name],
 				view: key.sequence,

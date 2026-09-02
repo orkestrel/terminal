@@ -3,7 +3,7 @@ import type {
 	PromptClientEventMap,
 	PromptClientInterface,
 	PromptClientOptions,
-	TimerCancel,
+	TimerCancelFunction,
 	TimerHandler,
 } from './types.js'
 import type { EmitterInterface } from '@orkestrel/emitter'
@@ -40,12 +40,12 @@ import { createSSEParser } from '@orkestrel/sse'
  *   {@link disconnect} deliberately stopped it.
  * - **Ingest + render.** Each `pending` envelope passes through `isPendingForm`, Form's `parseForm`,
  *   and terminal's `sanitizeSchema`, then enters a serial render queue. The SSE reader never awaits
- *   that queue, so `expire` and `shutdown` remain live while a person is answering.
+ *   that queue, so `expire` and `destroy` remain live while a person is answering.
  * - **Safe local form.** The rendering copy omits every wire `pattern`, because Form compiles a
  *   pattern during local evaluation. The broker's parked form retains it and remains authoritative.
  * - **Refusal retry.** A structured `rejected` response seeds a new rendering form with the values
  *   just submitted, applies every {@link FieldError} through `invalidate`, and asks again. No retry
- *   counter truncates the loop; acceptance, expiry, and shutdown are its bounds.
+ *   counter truncates the loop; acceptance, expiry, and the broker's own teardown are its bounds.
  * - **Replay safety.** A replayed id is skipped while it is queued, rendering, or posting. Once an
  *   attempt ends, a later delivery of that id may be rendered again.
  *
@@ -68,7 +68,7 @@ export class PromptClient implements PromptClientInterface {
 	readonly #timer: TimerHandler
 	readonly #emitter: Emitter<PromptClientEventMap>
 	#controller: AbortController | undefined
-	#backoff: TimerCancel | undefined
+	#backoff: TimerCancelFunction | undefined
 	#wake: (() => void) | undefined
 	#connecting = false
 	#connected = false
@@ -201,7 +201,7 @@ export class PromptClient implements PromptClientInterface {
 			if (isRecord(parsed) && isString(parsed.id)) this.#expire(parsed.id)
 			return
 		}
-		if (event.event === SSE_EVENTS.shutdown) {
+		if (event.event === SSE_EVENTS.destroy) {
 			this.disconnect()
 			this.#interrupt()
 		}

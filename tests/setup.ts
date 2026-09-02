@@ -6,7 +6,7 @@ import type {
 	PromptStep,
 	TerminalInterface,
 	TerminalStoreInterface,
-	TimerCancel,
+	TimerCancelFunction,
 	TimerHandler,
 } from '@src/core'
 import type { FieldError, FormInterface, FormSchema, FormStatus, FormValues } from '@orkestrel/form'
@@ -25,7 +25,7 @@ export interface ManualTimerInterface {
 export function createManualTimer(): ManualTimerInterface {
 	let timers: Array<{ readonly callback: () => void; cancelled: boolean }> = []
 	return {
-		handler(callback: () => void): TimerCancel {
+		handler(callback: () => void): TimerCancelFunction {
 			const timer = { callback, cancelled: false }
 			timers.push(timer)
 			return () => {

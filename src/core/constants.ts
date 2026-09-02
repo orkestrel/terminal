@@ -206,12 +206,12 @@ export const DEFAULT_RECONNECT_DELAY_MS = 2_000
  * @remarks
  * - `pending` — a serialized {@link import('./types.js').PendingForm} to dispatch and answer.
  * - `expire` — an `{ id }` payload: the broker expired or released a parked prompt (the client drops it).
- * - `shutdown` — the broker is going away; the client disconnects (no auto-reconnect) but stays reusable.
+ * - `destroy` — the broker is going away; the client disconnects (no auto-reconnect) but stays reusable.
  */
 export const SSE_EVENTS = Object.freeze({
 	pending: 'pending',
 	expire: 'expire',
-	shutdown: 'shutdown',
+	destroy: 'destroy',
 })
 
 /** The auth-token request header the {@link import('./types.js').PromptClientInterface} sends. */

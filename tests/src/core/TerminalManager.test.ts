@@ -14,9 +14,13 @@ describe('TerminalManager', () => {
 		const manager = createTerminalManager()
 		const first = manager.add('a')
 		expect(manager.add('a', { cap: 1 })).toBe(first)
-		manager.add('b')
+		const second = manager.add('b')
 		expect(manager.count).toBe(2)
-		expect(manager.terminals()).toEqual(['a', 'b'])
+		// The accessor lists the BROKERS, in insertion order — not the names the caller already holds.
+		const mounted = manager.terminals()
+		expect(mounted).toHaveLength(2)
+		expect(mounted[0]).toBe(first)
+		expect(mounted[1]).toBe(second)
 		expect(manager.terminal('missing')).toBeUndefined()
 		manager.destroy()
 	})
@@ -204,12 +208,14 @@ describe('TerminalManager', () => {
 
 	it('supports batch and all removal without destroying the reusable manager', () => {
 		const manager = createTerminalManager()
-		for (const name of ['a', 'b', 'c', 'd']) manager.add(name)
+		const brokers = ['a', 'b', 'c', 'd'].map((name) => manager.add(name))
 		expect(manager.remove(['a', 'b'])).toBe(true)
 		// A batch reports true only when every listed name was mounted, and it still removes the
 		// ones that were: `c` is gone even though `missing` was never there to remove.
 		expect(manager.remove(['c', 'missing'])).toBe(false)
-		expect(manager.terminals()).toEqual(['d'])
+		const remaining = manager.terminals()
+		expect(remaining).toHaveLength(1)
+		expect(remaining[0]).toBe(brokers[3])
 		manager.remove()
 		expect(manager.terminals()).toEqual([])
 		expect(manager.add('fresh')).toBeDefined()

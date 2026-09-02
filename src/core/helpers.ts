@@ -13,7 +13,7 @@ import type {
 	PromptTheme,
 	PromptThemeOptions,
 	SelectState,
-	TimerCancel,
+	TimerCancelFunction,
 	WireEvent,
 } from './types.js'
 import type { Style, StylerInterface } from '@orkestrel/console'
@@ -45,10 +45,10 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
 // === Key decoding
 
 /**
- * Decode one keypress's bytes into a {@link KeyEvent} — total, never throws. A `Uint8Array` is
+ * Decodes one keypress's bytes into a {@link KeyEvent} — total, never throws. A `Uint8Array` is
  * read as UTF-8; the resulting string is matched against the known control bytes and the CRLF
  * pair ({@link CONTROL_NAMES}) and escape sequences ({@link SEQUENCE_NAMES}), falling back to a
- * single printable character. An unrecognized sequence yields `name: ''` with the raw `sequence`
+ * single printable character. An unrecognized sequence carries NO `name`, with the raw `sequence`
  * preserved.
  *
  * @remarks
@@ -61,8 +61,8 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
  * - **Printable character.** A single printable character becomes `name` = that character, with
  *   `shift` set when it is an uppercase letter. A multi-code-point printable (an emoji, a pasted
  *   run) keeps its first code point as the name and the whole input as `sequence`.
- * - **Unknown.** Anything else (an unrecognized escape, an empty input) yields `name: ''` —
- *   total, so the driver never crashes on a stray byte.
+ * - **Unknown.** Anything else (an unrecognized escape, an empty input) yields an event with NO
+ *   `name` — absence, never an empty string — total, so the driver never crashes on a stray byte.
  *
  * @param input - The raw keypress bytes, as a string or `Uint8Array`
  * @returns The decoded {@link KeyEvent}
@@ -99,8 +99,9 @@ export function parseKey(input: string | Uint8Array): KeyEvent {
 		return { name: first, sequence, ctrl: false, meta: false, shift: first !== first.toLowerCase() }
 	}
 
-	// Anything else (an unrecognized escape, an empty input) — total, never a throw.
-	return { name: '', sequence, ctrl: false, meta: false, shift: false }
+	// Anything else (an unrecognized escape, an empty input) — total, never a throw. The name is
+	// OMITTED rather than emptied, so a caller reads absence instead of a sentinel.
+	return { sequence, ctrl: false, meta: false, shift: false }
 }
 
 /** Whether a single character is a printable (non-control) character — used by {@link parseKey}'s char fallback. */
@@ -290,14 +291,18 @@ export function sanitizeThemeIcons(theme: PromptThemeOptions): PromptThemeOption
 
 // === Shared view helpers
 
-/** The styled prompt-message header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles. */
-export function promptHeader(styler: StylerInterface, theme: PromptTheme, message: string): string {
+/** Renders the styled question header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles. */
+export function renderPromptHeader(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	message: string,
+): string {
 	return `${styler.render(theme.roles.question, theme.icons.question)} ${styler.render(theme.roles.message, message)}`
 }
 
 /**
- * Render a prompt header followed by a key hint painted with the `hint` role, or the header alone
- * when no hint is supplied.
+ * Renders a question header followed by a key hint painted with the `hint` role, or the header
+ * alone when no hint is supplied.
  *
  * @param styler - The console styler that renders each role
  * @param theme - The resolved prompt theme
@@ -305,23 +310,31 @@ export function promptHeader(styler: StylerInterface, theme: PromptTheme, messag
  * @param hint - The optional key hint to append
  * @returns The rendered header with the optional hint
  */
-export function hintedHeader(
+export function renderHintedHeader(
 	styler: StylerInterface,
 	theme: PromptTheme,
 	message: string,
 	hint?: string,
 ): string {
-	const head = promptHeader(styler, theme, message)
+	const head = renderPromptHeader(styler, theme, message)
 	return hint === undefined ? head : `${head} ${styler.render(theme.roles.hint, hint)}`
 }
 
-/** The styled submit line (`✔ message`) — the committed header an interactive prompt shows once resolved, themed by the `success` + `message` roles. */
-export function submitHeader(styler: StylerInterface, theme: PromptTheme, message: string): string {
+/** Renders the styled submit line (`✔ message`) — the committed header an interactive prompt shows once resolved, themed by the `success` + `message` roles. */
+export function renderSubmitHeader(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	message: string,
+): string {
 	return `${styler.render(theme.roles.success, theme.icons.success)} ${styler.render(theme.roles.message, message)}`
 }
 
-/** The styled error line (`✖ message`) a form driver appends for a field failure. */
-export function errorLine(styler: StylerInterface, theme: PromptTheme, message: string): string {
+/** Renders the styled failure line (`✖ message`) a form driver appends for a refused field. */
+export function renderErrorLine(
+	styler: StylerInterface,
+	theme: PromptTheme,
+	message: string,
+): string {
 	return `${styler.render(theme.roles.error, theme.icons.error)} ${styler.render(theme.roles.error, message)}`
 }
 
@@ -349,12 +362,12 @@ export function createInputState(
 	}
 }
 
-/** Render a text-field key state as a styled view. */
-export function inputView(state: InputState): string {
+/** Renders a text-field key state as a styled view. */
+export function renderInputView(state: InputState): string {
 	const content = state.value.length > 0 ? state.value : state.default
 	const role = state.value.length > 0 ? state.theme.roles.content : state.theme.roles.hint
 	const shown = state.styler.render(role, sanitizeDisplayText(content))
-	return `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
+	return `${renderPromptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${shown}`
 }
 
 /**
@@ -363,23 +376,23 @@ export function inputView(state: InputState): string {
  * cancels; return produces the candidate value, with an empty line falling back to the default.
  */
 export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
-	if (key.ctrl && key.name === 'c') return { state, view: inputView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c') return { state, view: renderInputView(state), status: 'cancel' }
 
 	if (key.name === 'return') {
 		const answer = state.value.length > 0 ? state.value : state.default
 		const next = { ...state, value: answer }
 		return {
 			state: next,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, sanitizeDisplayText(answer))}`,
+			view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, sanitizeDisplayText(answer))}`,
 			status: 'submit',
 			value: answer,
 		}
 	}
 
 	const value = editLine(state.value, key)
-	if (value === undefined) return { state, view: inputView(state), status: 'active' }
+	if (value === undefined) return { state, view: renderInputView(state), status: 'active' }
 	const next = { ...state, value }
-	return { state: next, view: inputView(next), status: 'active' }
+	return { state: next, view: renderInputView(next), status: 'active' }
 }
 
 // === Password prompt
@@ -406,13 +419,13 @@ export function createPasswordState(
 	}
 }
 
-/** Render a password-field key state as a styled view. */
-export function passwordView(state: PasswordState): string {
+/** Renders a password-field key state as a styled view. */
+export function renderPasswordView(state: PasswordState): string {
 	const masked = state.styler.render(
 		state.theme.roles.content,
 		state.mask.repeat(state.value.length),
 	)
-	return `${promptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
+	return `${renderPromptHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)} ${masked}`
 }
 
 /**
@@ -424,21 +437,22 @@ export function passwordReduce(
 	state: PasswordState,
 	key: KeyEvent,
 ): PromptStep<string, PasswordState> {
-	if (key.ctrl && key.name === 'c') return { state, view: passwordView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c')
+		return { state, view: renderPasswordView(state), status: 'cancel' }
 
 	if (key.name === 'return') {
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, state.mask.repeat(state.value.length))}`,
+			view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, state.mask.repeat(state.value.length))}`,
 			status: 'submit',
 			value: state.value,
 		}
 	}
 
 	const value = editLine(state.value, key)
-	if (value === undefined) return { state, view: passwordView(state), status: 'active' }
+	if (value === undefined) return { state, view: renderPasswordView(state), status: 'active' }
 	const next = { ...state, value }
-	return { state: next, view: passwordView(next), status: 'active' }
+	return { state: next, view: renderPasswordView(next), status: 'active' }
 }
 
 // === Confirm prompt
@@ -465,10 +479,10 @@ export function createConfirmState(
 }
 
 /**
- * Render a confirm-field key state as a styled view. The selected role paints the default letter.
+ * Renders a confirm-field key state as a styled view. The selected role paints the default letter.
  */
-export function confirmView(state: ConfirmState): string {
-	const head = promptHeader(state.styler, state.theme, state.message)
+export function renderConfirmView(state: ConfirmState): string {
+	const head = renderPromptHeader(state.styler, state.theme, state.message)
 	const answer = state.default
 		? `${state.styler.render(state.theme.roles.selected, 'Y')}${state.styler.render(state.theme.roles.hint, '/n')}`
 		: `${state.styler.render(state.theme.roles.hint, 'y/')}${state.styler.render(state.theme.roles.selected, 'N')}`
@@ -484,18 +498,19 @@ export function confirmReduce(
 	state: ConfirmState,
 	key: KeyEvent,
 ): PromptStep<boolean, ConfirmState> {
-	if (key.ctrl && key.name === 'c') return { state, view: confirmView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c')
+		return { state, view: renderConfirmView(state), status: 'cancel' }
 
 	let answer: boolean | undefined
-	const choice = key.name.toLowerCase()
+	const choice = key.name?.toLowerCase()
 	if (key.name === 'return') answer = state.default
 	else if (choice === 'y') answer = true
 	else if (choice === 'n') answer = false
 
-	if (answer === undefined) return { state, view: confirmView(state), status: 'active' }
+	if (answer === undefined) return { state, view: renderConfirmView(state), status: 'active' }
 	return {
 		state,
-		view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer ? 'yes' : 'no')}`,
+		view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, answer ? 'yes' : 'no')}`,
 		status: 'submit',
 		value: answer,
 	}
@@ -527,8 +542,8 @@ export function createSelectState(
 	}
 }
 
-/** Render a select-field key state as a multi-line styled view. */
-export function selectView(state: SelectState): string {
+/** Renders a select-field key state as a multi-line styled view. */
+export function renderSelectView(state: SelectState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const pointer = active
@@ -546,7 +561,7 @@ export function selectView(state: SelectState): string {
 				: `  ${state.styler.render(state.theme.roles.description, choice.help)}`
 		return `${pointer} ${marker} ${label}${description}`
 	})
-	return [promptHeader(state.styler, state.theme, state.message), ...lines].join('\n')
+	return [renderPromptHeader(state.styler, state.theme, state.message), ...lines].join('\n')
 }
 
 /**
@@ -556,30 +571,31 @@ export function selectView(state: SelectState): string {
  * guards against it); any other key is ignored.
  */
 export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<string, SelectState> {
-	if (key.ctrl && key.name === 'c') return { state, view: selectView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c')
+		return { state, view: renderSelectView(state), status: 'cancel' }
 
 	const count = state.choices.length
-	if (count === 0) return { state, view: selectView(state), status: 'active' }
+	if (count === 0) return { state, view: renderSelectView(state), status: 'active' }
 
 	if (key.name === 'up' || key.name === 'k') {
 		const next = { ...state, focused: (state.focused - 1 + count) % count }
-		return { state: next, view: selectView(next), status: 'active' }
+		return { state: next, view: renderSelectView(next), status: 'active' }
 	}
 	if (key.name === 'down' || key.name === 'j') {
 		const next = { ...state, focused: (state.focused + 1) % count }
-		return { state: next, view: selectView(next), status: 'active' }
+		return { state: next, view: renderSelectView(next), status: 'active' }
 	}
 	if (key.name === 'return') {
 		const choice = state.choices[state.focused]
 		const value = choice?.value ?? ''
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, choice?.label ?? '')}`,
+			view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, choice?.label ?? '')}`,
 			status: 'submit',
 			value,
 		}
 	}
-	return { state, view: selectView(state), status: 'active' }
+	return { state, view: renderSelectView(state), status: 'active' }
 }
 
 // === Checkbox prompt
@@ -612,8 +628,8 @@ export function createCheckboxState(
 	}
 }
 
-/** Render a checkbox-field key state as a multi-line styled view. */
-export function checkboxView(state: CheckboxState): string {
+/** Renders a checkbox-field key state as a multi-line styled view. */
+export function renderCheckboxView(state: CheckboxState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
 		const ticked = state.checked.includes(index)
@@ -633,9 +649,11 @@ export function checkboxView(state: CheckboxState): string {
 		return `${pointer} ${box} ${label}${description}`
 	})
 	const summary = state.styler.render(state.theme.roles.hint, `${state.checked.length} selected`)
-	const body = [promptHeader(state.styler, state.theme, state.message), ...lines, summary].join(
-		'\n',
-	)
+	const body = [
+		renderPromptHeader(state.styler, state.theme, state.message),
+		...lines,
+		summary,
+	].join('\n')
 	return body
 }
 
@@ -649,7 +667,8 @@ export function checkboxReduce(
 	state: CheckboxState,
 	key: KeyEvent,
 ): PromptStep<readonly string[], CheckboxState> {
-	if (key.ctrl && key.name === 'c') return { state, view: checkboxView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c')
+		return { state, view: renderCheckboxView(state), status: 'cancel' }
 
 	const count = state.choices.length
 
@@ -658,16 +677,16 @@ export function checkboxReduce(
 			...state,
 			focused: (state.focused - 1 + count) % count,
 		}
-		return { state: next, view: checkboxView(next), status: 'active' }
+		return { state: next, view: renderCheckboxView(next), status: 'active' }
 	}
 	if ((key.name === 'down' || key.name === 'j') && count > 0) {
 		const next = { ...state, focused: (state.focused + 1) % count }
-		return { state: next, view: checkboxView(next), status: 'active' }
+		return { state: next, view: renderCheckboxView(next), status: 'active' }
 	}
 	if (key.name === 'space' && count > 0) {
 		const checked = toggleIndex(state.checked, state.focused)
 		const next = { ...state, checked }
-		return { state: next, view: checkboxView(next), status: 'active' }
+		return { state: next, view: renderCheckboxView(next), status: 'active' }
 	}
 	if (key.name === 'return') {
 		const ordered = [...state.checked].sort((a, b) => a - b)
@@ -680,12 +699,12 @@ export function checkboxReduce(
 			.join(', ')
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, summary)}`,
+			view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, summary)}`,
 			status: 'submit',
 			value: values,
 		}
 	}
-	return { state, view: checkboxView(state), status: 'active' }
+	return { state, view: renderCheckboxView(state), status: 'active' }
 }
 
 /** Toggle `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion list. */
@@ -720,10 +739,10 @@ export function createEditorState(
 }
 
 /**
- * Render an editor-field key state as a multi-line styled view with its finish hint.
+ * Renders an editor-field key state as a multi-line styled view with its finish hint.
  */
-export function editorView(state: EditorState): string {
-	const head = hintedHeader(state.styler, state.theme, state.message, '(Ctrl+D to finish)')
+export function renderEditorView(state: EditorState): string {
+	const head = renderHintedHeader(state.styler, state.theme, state.message, '(Ctrl+D to finish)')
 	const pointer = state.styler.render(state.theme.roles.pointer, state.theme.icons.pointer)
 	const committed = state.lines.map((line) => state.styler.render(state.theme.roles.content, line))
 	const body = [
@@ -740,7 +759,8 @@ export function editorView(state: EditorState): string {
  * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
  */
 export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
-	if (key.ctrl && key.name === 'c') return { state, view: editorView(state), status: 'cancel' }
+	if (key.ctrl && key.name === 'c')
+		return { state, view: renderEditorView(state), status: 'cancel' }
 
 	if (key.ctrl && key.name === 'd') {
 		const lines = state.current.length > 0 ? [...state.lines, state.current] : state.lines
@@ -748,7 +768,7 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 		const answer = joined.length > 0 ? joined : state.default
 		return {
 			state,
-			view: `${submitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, `${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
+			view: `${renderSubmitHeader(state.styler, state.theme, state.message)} ${state.styler.render(state.theme.roles.hint, `${String(lines.length)} line${lines.length === 1 ? '' : 's'}`)}`,
 			status: 'submit',
 			value: answer,
 		}
@@ -760,19 +780,19 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 			lines: [...state.lines, state.current],
 			current: '',
 		}
-		return { state: next, view: editorView(next), status: 'active' }
+		return { state: next, view: renderEditorView(next), status: 'active' }
 	}
 
 	const current = editLine(state.current, key)
-	if (current === undefined) return { state, view: editorView(state), status: 'active' }
+	if (current === undefined) return { state, view: renderEditorView(state), status: 'active' }
 	const next = { ...state, current }
-	return { state: next, view: editorView(next), status: 'active' }
+	return { state: next, view: renderEditorView(next), status: 'active' }
 }
 
 // === Shared reducer helpers
 
 /**
- * Apply a single line-editing {@link KeyEvent} to a text buffer — the editing shared by input /
+ * Applies a single line-editing {@link KeyEvent} to a text buffer — the editing shared by input /
  * password / editor. A printable key appends its character; `backspace` drops the last character;
  * `space` appends a space; ctrl-u clears the line. Returns the new buffer, or `undefined` when the
  * key does not edit the line (so the caller can leave the state untouched).
@@ -781,11 +801,17 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
 	if (key.ctrl && key.name === 'u') return ''
 	if (key.name === 'backspace') return value.slice(0, -1)
 	if (key.name === 'space') return `${value} `
-	// A printable key that is not a control / navigation key — `name` is the literal character. Count
-	// CODE POINTS (not UTF-16 units) so an astral printable (an emoji, a surrogate pair — `name.length`
-	// 2 but ONE code point) appends instead of being dropped, while a multi-char control name (`up`,
-	// `return`) is still rejected.
-	if (!key.ctrl && !key.meta && [...key.name].length === 1 && isPrintable(key.name)) {
+	// A printable key that is not a control / navigation key — `name` is the literal character, and an
+	// undecoded key carries none at all. Count CODE POINTS (not UTF-16 units) so an astral printable
+	// (an emoji, a surrogate pair — `name.length` 2 but ONE code point) appends instead of being
+	// dropped, while a multi-char control name (`up`, `return`) is still rejected.
+	if (
+		!key.ctrl &&
+		!key.meta &&
+		key.name !== undefined &&
+		[...key.name].length === 1 &&
+		isPrintable(key.name)
+	) {
 		return `${value}${key.sequence}`
 	}
 	return undefined
@@ -795,12 +821,12 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
 
 /**
  * The default {@link import('./types.js').TimerHandler} — a thin host `setTimeout` / `clearTimeout`
- * wrapper that arms `callback` after `ms` and returns a {@link TimerCancel}. The deadline seam
+ * wrapper that arms `callback` after `ms` and returns a {@link TimerCancelFunction}. The deadline seam
  * behind both the {@link import('./Prompt.js').Prompt} broker (its expiry) and the
  * {@link import('./PromptClient.js').PromptClient} (its reconnect backoff); a test injects a
  * deterministic timer instead, so neither entity touches real time.
  */
-export function defaultTimer(callback: () => void, ms: number): TimerCancel {
+export function defaultTimer(callback: () => void, ms: number): TimerCancelFunction {
 	const handle = setTimeout(callback, ms)
 	return () => clearTimeout(handle)
 }
@@ -863,7 +889,7 @@ export function serializeExpire(id: string): WireEvent {
 	return { event: 'expire', data: JSON.stringify({ id }) }
 }
 
-/** The {@link WireEvent} a broker/manager sends when it is going away — event `'shutdown'`, no payload. */
-export function serializeShutdown(): WireEvent {
-	return { event: 'shutdown', data: '' }
+/** Serializes the {@link WireEvent} a broker or manager sends when it is going away — event `'destroy'`, no payload. */
+export function serializeDestroy(): WireEvent {
+	return { event: 'destroy', data: '' }
 }

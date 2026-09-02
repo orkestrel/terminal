@@ -13,9 +13,7 @@ import {
 	RETURN,
 	SPACE,
 	checkboxReduce,
-	checkboxView,
 	confirmReduce,
-	confirmView,
 	createCheckboxState,
 	createConfirmState,
 	createEditorState,
@@ -26,11 +24,7 @@ import {
 	defaultTimer,
 	editLine,
 	editorReduce,
-	editorView,
-	errorLine,
-	hintedHeader,
 	inputReduce,
-	inputView,
 	isAbortError,
 	isInsecureRemote,
 	isPendingForm,
@@ -40,17 +34,23 @@ import {
 	isWireEvent,
 	parseKey,
 	passwordReduce,
-	passwordView,
-	promptHeader,
+	renderCheckboxView,
+	renderConfirmView,
+	renderEditorView,
+	renderErrorLine,
+	renderHintedHeader,
+	renderInputView,
+	renderPasswordView,
+	renderPromptHeader,
+	renderSelectView,
+	renderSubmitHeader,
 	sanitizeDisplayText,
 	sanitizeSchema,
 	sanitizeThemeIcons,
 	selectReduce,
-	selectView,
+	serializeDestroy,
 	serializeExpire,
 	serializePending,
-	serializeShutdown,
-	submitHeader,
 	toggleIndex,
 } from '@src/core'
 import {
@@ -109,9 +109,12 @@ describe('parseKey', () => {
 		})
 	})
 
-	it('is total for empty and unknown escape sequences', () => {
-		expect(parseKey('')).toEqual({ name: '', sequence: '', ctrl: false, meta: false, shift: false })
-		expect(parseKey(`${ESCAPE}[999~`)).toMatchObject({ name: '', sequence: `${ESCAPE}[999~` })
+	it('is total for empty and unknown escape sequences, naming neither', () => {
+		expect(parseKey('')).toEqual({ sequence: '', ctrl: false, meta: false, shift: false })
+		expect(parseKey('')).not.toHaveProperty('name')
+		const unknown = parseKey(`${ESCAPE}[999~`)
+		expect(unknown.sequence).toBe(`${ESCAPE}[999~`)
+		expect(unknown).not.toHaveProperty('name')
 	})
 })
 
@@ -149,7 +152,7 @@ describe('input reducer', () => {
 
 	it('renders labels, content, and a committed value', () => {
 		const initial = createInputState({ control: 'text', name: 'name', label: 'Name' })
-		expect(strip(inputView(initial))).toContain('? Name ›')
+		expect(strip(renderInputView(initial))).toContain('? Name ›')
 		expect(strip(feedReducer(inputReduce, initial, ['A', RETURN]).view)).toBe('✔ Name A')
 	})
 
@@ -158,7 +161,7 @@ describe('input reducer', () => {
 		const seed = 'se\u0000ed\u007f'
 		const initial = createInputState({ control: 'text', name, default: seed })
 
-		expect(strip(inputView(initial))).toBe('? name › seed')
+		expect(strip(renderInputView(initial))).toBe('? name › seed')
 		const submitted = inputReduce(initial, parseKey(RETURN))
 		expect(submitted.value).toBe(seed)
 		expect(strip(submitted.view)).toBe('✔ name seed')
@@ -175,8 +178,8 @@ describe('password reducer', () => {
 			mask: '•',
 		})
 		const typed = feedReducer(passwordReduce, initial, ['s', '3'])
-		expect(strip(passwordView(typed.state))).toContain('••')
-		expect(passwordView(typed.state)).not.toContain('s3')
+		expect(strip(renderPasswordView(typed.state))).toContain('••')
+		expect(renderPasswordView(typed.state)).not.toContain('s3')
 		const submitted = passwordReduce(typed.state, parseKey(RETURN))
 		expect(submitted.value).toBe('s3')
 		expect(submitted.view).not.toContain('s3')
@@ -200,7 +203,7 @@ describe('confirm reducer', () => {
 		const state = createConfirmState({ control: 'confirm', name: 'ready' })
 		expect(confirmReduce(state, parseKey('x')).status).toBe('active')
 		expect(confirmReduce(state, parseKey(CTRL_C)).status).toBe('cancel')
-		expect(strip(confirmView(state))).toContain('(y/N)')
+		expect(strip(renderConfirmView(state))).toContain('(y/N)')
 	})
 })
 
@@ -224,7 +227,7 @@ describe('select reducer', () => {
 	})
 
 	it('renders every label and help string', () => {
-		const view = strip(selectView(createSelectState(field)))
+		const view = strip(renderSelectView(createSelectState(field)))
 		expect(view).toContain('Admin')
 		expect(view).toContain('Viewer  Read only')
 	})
@@ -252,7 +255,7 @@ describe('checkbox reducer', () => {
 	})
 
 	it('renders boxes and the selection count', () => {
-		const view = strip(checkboxView(createCheckboxState(field)))
+		const view = strip(renderCheckboxView(createCheckboxState(field)))
 		expect(view).toContain('Read')
 		expect(view).toContain('Write')
 		expect(view).toContain('1 selected')
@@ -278,7 +281,7 @@ describe('editor reducer', () => {
 		const state = createEditorState({ control: 'editor', name: 'notes', default: 'seed' })
 		expect(editorReduce(state, parseKey(CTRL_D)).value).toBe('seed')
 		expect(editorReduce(state, parseKey(CTRL_C)).status).toBe('cancel')
-		expect(strip(editorView(state))).toContain('(Ctrl+D to finish)')
+		expect(strip(renderEditorView(state))).toContain('(Ctrl+D to finish)')
 	})
 })
 
@@ -308,10 +311,10 @@ describe('presentation', () => {
 
 	it('renders the four shared line shapes', () => {
 		const state = createInputState({ control: 'text', name: 'name', label: 'Name' })
-		expect(strip(promptHeader(state.styler, state.theme, 'Name'))).toBe('? Name')
-		expect(strip(hintedHeader(state.styler, state.theme, 'Name', 'hint'))).toBe('? Name hint')
-		expect(strip(submitHeader(state.styler, state.theme, 'Name'))).toBe('✔ Name')
-		expect(strip(errorLine(state.styler, state.theme, 'No'))).toBe('✖ No')
+		expect(strip(renderPromptHeader(state.styler, state.theme, 'Name'))).toBe('? Name')
+		expect(strip(renderHintedHeader(state.styler, state.theme, 'Name', 'hint'))).toBe('? Name hint')
+		expect(strip(renderSubmitHeader(state.styler, state.theme, 'Name'))).toBe('✔ Name')
+		expect(strip(renderErrorLine(state.styler, state.theme, 'No'))).toBe('✖ No')
 	})
 
 	it('sanitizes supplied theme glyphs only', () => {
@@ -426,7 +429,7 @@ describe('wire guards and serializers', () => {
 		expect(isTerminalSnapshot({ id: 'agent', timeout: '20' })).toBe(false)
 	})
 
-	it('serializes pending, expire, and shutdown frames exactly', () => {
+	it('serializes pending, expire, and destroy frames exactly', () => {
 		const pending = createPendingForm(undefined, { id: 'one' })
 		expect(serializePending(pending)).toEqual({
 			event: 'pending',
@@ -434,7 +437,7 @@ describe('wire guards and serializers', () => {
 			id: 'one',
 		})
 		expect(serializeExpire('one')).toEqual({ event: 'expire', data: '{"id":"one"}' })
-		expect(serializeShutdown()).toEqual({ event: 'shutdown', data: '' })
+		expect(serializeDestroy()).toEqual({ event: 'destroy', data: '' })
 	})
 })
 

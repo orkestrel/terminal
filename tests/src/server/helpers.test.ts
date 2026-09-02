@@ -3,21 +3,21 @@ import {
 	CARRIAGE_RETURN,
 	CLEAR_DOWN,
 	CSI_UP,
-	disabledChoices,
-	enabledChoices,
 	fieldToText,
-	groupHeader,
+	filterDisabled,
+	filterEnabled,
 	isInputStream,
 	isOutputStream,
 	isReadable,
 	lineCount,
-	lockedLine,
 	moveUp,
-	numberedList,
-	rawCapable,
 	redrawPrefix,
-	suggestionLine,
-	unavailableLine,
+	renderGroupHeader,
+	renderLockedLine,
+	renderNumberedList,
+	renderSuggestionLine,
+	renderUnavailableLine,
+	supportsRawMode,
 	valueToText,
 } from '@src/server'
 import { createPromptTheme } from '@src/core'
@@ -48,9 +48,9 @@ describe('stream guards', () => {
 	})
 
 	it('selects raw mode only for a TTY with setRawMode', () => {
-		expect(rawCapable({ on() {}, off() {}, isTTY: true, setRawMode() {} })).toBe(true)
-		expect(rawCapable({ on() {}, off() {}, isTTY: true })).toBe(false)
-		expect(rawCapable({ on() {}, off() {}, isTTY: false, setRawMode() {} })).toBe(false)
+		expect(supportsRawMode({ on() {}, off() {}, isTTY: true, setRawMode() {} })).toBe(true)
+		expect(supportsRawMode({ on() {}, off() {}, isTTY: true })).toBe(false)
+		expect(supportsRawMode({ on() {}, off() {}, isTTY: false, setRawMode() {} })).toBe(false)
 	})
 })
 
@@ -116,8 +116,8 @@ describe('field projections', () => {
 			{ value: 'b', label: 'B', disabled: true },
 			{ value: 'c', label: 'C' },
 		]
-		expect(enabledChoices(choices).map((choice) => choice.value)).toEqual(['a', 'c'])
-		expect(disabledChoices(choices).map((choice) => choice.value)).toEqual(['b'])
+		expect(filterEnabled(choices).map((choice) => choice.value)).toEqual(['a', 'c'])
+		expect(filterDisabled(choices).map((choice) => choice.value)).toEqual(['b'])
 	})
 })
 
@@ -130,17 +130,17 @@ describe('whole-form lines', () => {
 	]
 
 	it('renders group and locked lines', () => {
-		expect(strip(groupHeader(styler, theme, 'Identity'))).toBe('Identity')
-		expect(strip(lockedLine(styler, theme, 'Code', 'ABC'))).toBe('○ Code (locked) ABC')
-		expect(strip(lockedLine(styler, theme, 'Code', ''))).toBe('○ Code (locked)')
+		expect(strip(renderGroupHeader(styler, theme, 'Identity'))).toBe('Identity')
+		expect(strip(renderLockedLine(styler, theme, 'Code', 'ABC'))).toBe('○ Code (locked) ABC')
+		expect(strip(renderLockedLine(styler, theme, 'Code', ''))).toBe('○ Code (locked)')
 	})
 
 	it('renders open-select suggestions and unavailable choices', () => {
-		expect(strip(suggestionLine(styler, theme, choices))).toBe('Suggestions: admin, viewer')
-		expect(strip(unavailableLine(styler, theme, choices))).toBe('Unavailable: Admin, Viewer')
+		expect(strip(renderSuggestionLine(styler, theme, choices))).toBe('Suggestions: admin, viewer')
+		expect(strip(renderUnavailableLine(styler, theme, choices))).toBe('Unavailable: Admin, Viewer')
 	})
 
 	it('renders numbered choices with declared labels', () => {
-		expect(strip(numberedList(styler, theme, choices))).toBe('  1) Admin\n  2) Viewer')
+		expect(strip(renderNumberedList(styler, theme, choices))).toBe('  1) Admin\n  2) Viewer')
 	})
 })

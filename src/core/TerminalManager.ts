@@ -100,8 +100,8 @@ export class TerminalManager implements TerminalManagerInterface {
 		return this.#terminals.get(name)
 	}
 
-	terminals(): readonly string[] {
-		return [...this.#terminals.keys()]
+	terminals(): readonly PromptInterface[] {
+		return [...this.#terminals.values()]
 	}
 
 	// === Registry
@@ -140,7 +140,7 @@ export class TerminalManager implements TerminalManagerInterface {
 	ask(from: string, to: string, form: FormInterface): Promise<FormValues> {
 		const broker = this.#terminals.get(to)
 		if (broker === undefined) {
-			const known = this.terminals()
+			const known = [...this.#terminals.keys()]
 			return Promise.reject(
 				new TerminalError(
 					'TARGET',

@@ -1,6 +1,6 @@
 import type {
 	AnswerError,
-	Parked,
+	ParkedForm,
 	ParkRequest,
 	PendingForm,
 	PromptEventMap,
@@ -41,7 +41,7 @@ export class Prompt implements PromptInterface {
 	readonly #timeout: number
 	readonly #timer: TimerHandler
 	readonly #cap: number | undefined
-	readonly #parked = new Map<string, Parked>()
+	readonly #parked = new Map<string, ParkedForm>()
 	readonly #emitter: Emitter<PromptEventMap>
 	#destroyed = false
 
@@ -159,7 +159,7 @@ export class Prompt implements PromptInterface {
 		}
 
 		parked.cancel()
-		const answered: Parked = {
+		const answered: ParkedForm = {
 			...parked,
 			pending: { ...parked.pending, status: 'answered' },
 		}
@@ -206,7 +206,7 @@ export class Prompt implements PromptInterface {
 		const parked = this.#parked.get(id)
 		if (parked === undefined || parked.pending.status !== 'pending') return false
 		parked.cancel()
-		const expired: Parked = {
+		const expired: ParkedForm = {
 			...parked,
 			pending: { ...parked.pending, status: 'expired' },
 		}

@@ -190,7 +190,7 @@ describe('PromptClient', () => {
 		client.destroy()
 	})
 
-	it('shutdown interrupts the active render, disconnects once, and remains reusable', async () => {
+	it('a destroy frame interrupts the active render, disconnects once, and remains reusable', async () => {
 		const terminal = createRecordingTerminal({ defer: true })
 		const pending = createPendingForm(undefined, { id: 'active' })
 		const client = createPromptClient({
@@ -200,7 +200,7 @@ describe('PromptClient', () => {
 			fetch: async () =>
 				createSSEResponse([
 					{ event: 'pending', data: pending },
-					{ event: 'shutdown', data: '' },
+					{ event: 'destroy', data: '' },
 				]),
 		})
 		const events = createRecorders<PromptClientEventMap, 'connect' | 'disconnect'>(client.emitter, [
