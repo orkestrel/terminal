@@ -8,7 +8,7 @@
 import type { PromptThemeOptions } from '@src/core'
 
 /**
- * The minimal input-stream shape the driver reads — exactly the slice of a Node `tty.ReadStream` /
+ * Represents the minimal input-stream shape the driver reads — exactly the slice of a Node `tty.ReadStream` /
  * `process.stdin` it touches, and no more. A {@link TerminalOptions} `input` is narrowed to this
  * through {@link import('./helpers.js').isInputStream}, never an assertion, so a test drives a whole
  * form with a hand-built fake stream that emits scripted key chunks, never touches the real
@@ -36,7 +36,7 @@ export interface InputStreamInterface {
 }
 
 /**
- * The minimal output-stream shape the driver writes — exactly the slice of a Node `tty.WriteStream`
+ * Represents the minimal output-stream shape the driver writes — exactly the slice of a Node `tty.WriteStream`
  * / `process.stdout` it touches. A {@link TerminalOptions} `output` is narrowed to this through
  * {@link import('./helpers.js').isOutputStream}, never an assertion, so a test records every byte
  * the walk renders and asserts the rendered content with the ANSI stripped.
@@ -54,7 +54,7 @@ export interface OutputStreamInterface {
 }
 
 /**
- * Options for {@link import('./factories.js').createTerminal} — every member optional, so a bare
+ * Configures {@link import('./factories.js').createTerminal} — every member optional, so a bare
  * `createTerminal()` walks a form over the real `process.stdin` / `process.stdout` with the default
  * theme.
  *

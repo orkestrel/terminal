@@ -9,7 +9,7 @@ import {
 	recordOf,
 } from '@orkestrel/contract'
 
-/** Narrow an unknown value to a {@link PendingFormStatus}. */
+/** Narrows an unknown value to a {@link PendingFormStatus}. */
 export const isPendingFormStatus: Guard<PendingFormStatus> = literalOf(
 	'pending',
 	'answered',
@@ -17,14 +17,14 @@ export const isPendingFormStatus: Guard<PendingFormStatus> = literalOf(
 )
 
 /**
- * Narrow an unknown wire value to a {@link PendingForm} envelope.
+ * Narrows an unknown wire value to a {@link PendingForm} envelope.
  *
  * @remarks
  * This guard checks the transport record and proves only that `schema` is a record. The Form
  * package's `parseForm` owns the schema payload and its semantic audit.
  *
  * @param value - The decoded wire value to inspect
- * @returns Whether the value is a complete pending-form envelope
+ * @returns True if the value is a complete pending-form envelope; false otherwise
  */
 export function isPendingForm(value: unknown): value is PendingForm {
 	return recordOf(
@@ -41,17 +41,17 @@ export function isPendingForm(value: unknown): value is PendingForm {
 }
 
 /**
- * Narrow an unknown value to a transport-neutral {@link WireEvent}.
+ * Narrows an unknown value to a transport-neutral {@link WireEvent}.
  *
  * @param value - The candidate wire event
- * @returns Whether the value carries an event name, serialized data, and an optional id
+ * @returns True if the value carries an event name, serialized data, and an optional id; false otherwise
  */
 export const isWireEvent: Guard<WireEvent> = recordOf(
 	{ event: isString, data: isString, id: isString },
 	['id'],
 )
 
-/** Narrow an unknown value to a {@link TerminalSnapshot}. */
+/** Narrows an unknown value to a {@link TerminalSnapshot}. */
 export const isTerminalSnapshot: Guard<TerminalSnapshot> = recordOf(
 	{ id: isNonEmptyString, timeout: isNumber },
 	['timeout'],

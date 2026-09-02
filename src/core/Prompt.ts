@@ -19,7 +19,7 @@ import { Emitter } from '@orkestrel/emitter'
 import { isFieldError, isFormError, serializeForm } from '@orkestrel/form'
 
 /**
- * The headless form broker. It parks live forms, exposes their serialized schemas, and applies
+ * Implements the headless form broker. It parks live forms, exposes their serialized schemas, and applies
  * remote answers to the authoritative form.
  *
  * @remarks

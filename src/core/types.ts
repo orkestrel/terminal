@@ -15,7 +15,7 @@ import type { Style, StylerInterface } from '@orkestrel/console'
 // === Key decoding
 
 /**
- * One decoded keypress — the TTY-agnostic representation of a single key, the output of
+ * Represents one decoded keypress — the TTY-agnostic representation of a single key, the output of
  * {@link import('./helpers.js').parseKey}. A driver reads `name` and the modifier flags to decide
  * its transition; `sequence` is preserved so a printable character round-trips and an unknown
  * escape is never lost.
@@ -42,7 +42,7 @@ export interface KeyEvent {
 // === Presentation
 
 /**
- * One glyph slot a rendered field draws — the icon axis of a {@link PromptTheme}. A named value
+ * Names one glyph slot a rendered field draws — the icon axis of a {@link PromptTheme}. A named value
  * set, not a toggle, so it stays a union.
  *
  * @remarks
@@ -63,7 +63,7 @@ export type PromptIcon =
 	| 'error'
 
 /**
- * One styling slot a rendered field paints through — the semantic axis of a {@link PromptTheme}. A
+ * Names one styling slot a rendered field paints through — the semantic axis of a {@link PromptTheme}. A
  * role says what a fragment MEANS; the theme decides what that meaning looks like, so a consumer
  * re-maps styled output by naming roles rather than reimplementing a renderer.
  *
@@ -97,7 +97,7 @@ export type PromptRole =
 	| 'description'
 
 /**
- * A resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console {@link Style}
+ * Represents a resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console {@link Style}
  * for every {@link PromptRole}. Plain JSON data with no functions, so it crosses the wire with the
  * form it decorates. Built by {@link import('./helpers.js').createPromptTheme}.
  *
@@ -114,7 +114,7 @@ export interface PromptTheme {
 }
 
 /**
- * The PARTIAL {@link PromptTheme} an option bag carries — every icon and every role is optional,
+ * Represents the PARTIAL {@link PromptTheme} an option bag carries — every icon and every role is optional,
  * and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
  * {@link import('./constants.js').DEFAULT_PROMPT_THEME} leaf by leaf. Supplying one icon or one
  * role leaves every other slot at its default.
@@ -127,7 +127,7 @@ export interface PromptThemeOptions {
 // === Reducer state
 
 /**
- * The immutable state a text field's reducer carries — built by
+ * Represents the immutable state a text field's reducer carries — built by
  * {@link import('./helpers.js').createInputState}, rendered by
  * {@link import('./helpers.js').renderInputView}, and advanced by
  * {@link import('./helpers.js').inputReduce}.
@@ -148,7 +148,7 @@ export interface InputState {
 }
 
 /**
- * The immutable state a password field's reducer carries — the text state with the mask glyph in
+ * Represents the immutable state a password field's reducer carries — the text state with the mask glyph in
  * place of a default, because a secret is never seeded from the schema.
  *
  * @remarks
@@ -166,7 +166,7 @@ export interface PasswordState {
 }
 
 /**
- * The immutable state a confirm field's reducer carries. It holds no typed value, because the
+ * Represents the immutable state a confirm field's reducer carries. It holds no typed value, because the
  * answer is the key itself.
  *
  * @remarks
@@ -182,7 +182,7 @@ export interface ConfirmState {
 }
 
 /**
- * The immutable state a select field's reducer carries.
+ * Represents the immutable state a select field's reducer carries.
  *
  * @remarks
  * - `message` — the sanitized label the header renders.
@@ -199,7 +199,7 @@ export interface SelectState {
 }
 
 /**
- * The immutable state a checkbox field's reducer carries — the select state plus the ticked set.
+ * Represents the immutable state a checkbox field's reducer carries — the select state plus the ticked set.
  *
  * @remarks
  * - `message` — the sanitized label the header renders.
@@ -219,7 +219,7 @@ export interface CheckboxState {
 }
 
 /**
- * The immutable state an editor field's reducer carries — the committed lines and the line still
+ * Represents the immutable state an editor field's reducer carries — the committed lines and the line still
  * being typed, kept apart so a return commits one without ending the field.
  *
  * @remarks
@@ -241,14 +241,14 @@ export interface EditorState {
 // === Reducer output
 
 /**
- * Where one field's reducer stands after a key. `active`: keep asking, because the key was
+ * Names where one field's reducer stands after a key. `active`: keep asking, because the key was
  * consumed or the answer was refused. `submit`: the field resolved with its `value`. `cancel`: the
  * user aborted with ctrl-c. Names its axis, never `kind`.
  */
 export type PromptStatus = 'active' | 'submit' | 'cancel'
 
 /**
- * The result of one reducer step — the next `state`, the rendered `view`, the `status`, and, on
+ * Represents the result of one reducer step — the next `state`, the rendered `view`, the `status`, and, on
  * `submit`, the resolved `value`. The whole contract between a pure reducer and the impure driver:
  * the driver applies the next `state`, writes the `view`, and reads `value` on `submit`.
  *
@@ -273,7 +273,7 @@ export interface PromptStep<T, S> {
 // === Failure codes
 
 /**
- * The machine-readable condition carried by a {@link import('./errors.js').TerminalError} — the
+ * Names the machine-readable condition carried by a {@link import('./errors.js').TerminalError} — the
  * axis a `catch` branches on. Names its axis (the failure condition), never `kind`.
  *
  * @remarks
@@ -305,7 +305,7 @@ export type TerminalErrorCode =
 // === The interactive driver
 
 /**
- * The contract for asking a form of a human at a keyboard — one method, because a form is one
+ * Declares the contract for asking a form of a human at a keyboard — one method, because a form is one
  * question however many fields it holds. The server `Terminal` implements it against a real TTY;
  * a {@link PromptClientInterface} holds one to answer forms parked elsewhere.
  *
@@ -327,7 +327,7 @@ export interface TerminalInterface {
 // === The headless broker
 
 /**
- * The lifecycle status of a parked {@link PendingForm} — where the TICKET stands, which is not
+ * Names the lifecycle status of a parked {@link PendingForm} — where the TICKET stands, which is not
  * where the form stands. A ticket is `pending` until somebody answers it; the form it carries has
  * its own status, and the two are separate facts about separate entities.
  *
@@ -339,7 +339,7 @@ export interface TerminalInterface {
 export type PendingFormStatus = 'pending' | 'answered' | 'expired'
 
 /**
- * One form PARKED by the broker — an id-keyed, wire-safe record of a live form awaiting a remote
+ * Represents one form PARKED by the broker — an id-keyed, wire-safe record of a live form awaiting a remote
  * answer. The value a `pending` listener receives and the broker serializes over SSE to a
  * {@link PromptClientInterface}.
  *
@@ -365,7 +365,7 @@ export interface PendingForm {
 }
 
 /**
- * One injected timer — arms a deadline `callback` to fire after `ms`, returning a
+ * Represents one injected timer — arms a deadline `callback` to fire after `ms`, returning a
  * {@link TimerCancelFunction} that cancels it. The broker's timeout seam: the default wraps the host
  * `setTimeout` and `clearTimeout`; a test injects a deterministic timer that captures the callback
  * and fires it on demand, with no real time and no global patching.
@@ -376,7 +376,7 @@ export type TimerHandler = (callback: () => void, ms: number) => TimerCancelFunc
 export type TimerCancelFunction = () => void
 
 /**
- * One parked form's runtime state inside the broker — the live form, the wire-safe record the
+ * Represents one parked form's runtime state inside the broker — the live form, the wire-safe record the
  * broker exposes, and the cancel for its expiry timer.
  *
  * @remarks
@@ -392,7 +392,7 @@ export interface ParkedForm {
 }
 
 /**
- * The broker's event map — lean, errors `unknown`, no listener-error event.
+ * Declares the broker's event map — lean, errors `unknown`, no listener-error event.
  *
  * @remarks
  * - `pending` — a form was parked; a transport forwards the wire record to remote clients.
@@ -406,7 +406,7 @@ export type PromptEventMap = {
 }
 
 /**
- * Options for {@link import('./factories.js').createPrompt} and every {@link PromptInterface}
+ * Configures {@link import('./factories.js').createPrompt} and every {@link PromptInterface}
  * broker, including one a {@link TerminalManagerInterface} mounts per endpoint.
  *
  * @remarks
@@ -430,7 +430,7 @@ export interface PromptOptions {
 }
 
 /**
- * The parking envelope — everything the broker needs about a park that the form itself does not
+ * Represents the parking envelope — everything the broker needs about a park that the form itself does not
  * say.
  *
  * @remarks
@@ -443,7 +443,7 @@ export interface ParkRequest {
 }
 
 /**
- * Why {@link PromptInterface.answer} refused. Names its axis with `reason`.
+ * Explains why {@link PromptInterface.answer} refused. Names its axis with `reason`.
  *
  * @remarks
  * - `unknown` — no form is parked under that id, or the one that was has already settled.
@@ -458,7 +458,7 @@ export type AnswerError =
 	| { readonly reason: 'rejected'; readonly errors: readonly FieldError[] }
 
 /**
- * The headless form BROKER — parks a live form until somebody elsewhere answers it. The headless
+ * Declares the headless form BROKER — parks a live form until somebody elsewhere answers it. The headless
  * arm of the local-TTY / headless / remote trio: there is no terminal here, so a transport forwards
  * each `pending` record to whoever can answer, and {@link answer} drives the parked form to
  * settlement.
@@ -503,14 +503,14 @@ export interface PromptInterface {
 // === The SSE bridge
 
 /**
- * A minimal `fetch` — the subset of the global `fetch` a {@link PromptClientInterface} uses: open
+ * Represents a minimal `fetch` — the subset of the global `fetch` a {@link PromptClientInterface} uses: open
  * the SSE stream, POST an answer. Injected so a test drives the client with a scripted `Response`
  * instead of a real network.
  */
 export type FetchHandler = (input: string, init?: FetchInit) => Promise<Response>
 
 /**
- * The request init a {@link PromptClientInterface} passes to its {@link FetchHandler} — the
+ * Represents the request init a {@link PromptClientInterface} passes to its {@link FetchHandler} — the
  * `RequestInit` fields it actually sets.
  */
 export interface FetchInit {
@@ -521,7 +521,7 @@ export interface FetchInit {
 }
 
 /**
- * The client's event map — lean, errors `unknown`, no listener-error event.
+ * Declares the client's event map — lean, errors `unknown`, no listener-error event.
  *
  * @remarks
  * - `connect` — the SSE stream opened.
@@ -539,7 +539,7 @@ export type PromptClientEventMap = {
 }
 
 /**
- * Options for {@link import('./factories.js').createPromptClient} and the
+ * Configures {@link import('./factories.js').createPromptClient} and the
  * {@link PromptClientInterface}.
  *
  * @remarks
@@ -570,7 +570,7 @@ export interface PromptClientOptions {
 }
 
 /**
- * The SSE form BRIDGE — the client-side counterpart to {@link PromptInterface}. It receives
+ * Declares the SSE form BRIDGE — the client-side counterpart to {@link PromptInterface}. It receives
  * serialized {@link PendingForm} records from a remote broker, rebuilds each schema locally, drives
  * it through a {@link TerminalInterface}, and POSTs the answer back, so a human at this machine
  * answers forms a broker parked elsewhere.
@@ -600,7 +600,7 @@ export interface PromptClientInterface {
 // === The terminal manager
 
 /**
- * The manager's event map — the name-attributed re-emission of every mounted broker's events, so a
+ * Declares the manager's event map — the name-attributed re-emission of every mounted broker's events, so a
  * caller subscribes once for ALL endpoints instead of once per broker.
  *
  * @remarks
@@ -615,7 +615,7 @@ export type TerminalManagerEventMap = {
 }
 
 /**
- * Options for {@link import('./factories.js').createTerminalManager} and the
+ * Configures {@link import('./factories.js').createTerminalManager} and the
  * {@link TerminalManagerInterface}.
  *
  * @remarks
@@ -634,16 +634,16 @@ export interface TerminalManagerOptions {
 }
 
 /**
- * Why a {@link TerminalManagerInterface.answer} call refused — an {@link AnswerError} from the
+ * Explains why a {@link TerminalManagerInterface.answer} call refused — an {@link AnswerError} from the
  * endpoint's own broker, or `terminal` when no endpoint is mounted under that name. One
  * discriminant, `reason`, across both.
  */
 export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
 
 /**
- * The multi-endpoint terminal MANAGER — a registry of named {@link PromptInterface} brokers, one
- * per endpoint, so several parties (agents, tools, humans) can ask forms of each other BY NAME,
- * attributed with a `from` → `to` edge on every parked record.
+ * Declares a registry of named {@link PromptInterface} brokers, one per endpoint, so several
+ * parties (agents, tools, humans) can ask forms of each other BY NAME, attributed with a
+ * `from` → `to` edge on every parked record.
  *
  * @remarks
  * - **Accessors.** `terminal(name)` looks up one endpoint's broker; `terminals()` lists every
@@ -686,7 +686,7 @@ export interface TerminalManagerInterface {
 // === Transport-neutral wire seam
 
 /**
- * One SSE-shaped wire frame — the `event` name, its already-stringified `data` payload, and an
+ * Represents one SSE-shaped wire frame — the `event` name, its already-stringified `data` payload, and an
  * optional `id`. The transport-neutral shape {@link import('./helpers.js').serializePending},
  * {@link import('./helpers.js').serializeExpire}, and
  * {@link import('./helpers.js').serializeDestroy} build, with no `http` dependency.
@@ -700,7 +700,7 @@ export interface WireEvent {
 // === Terminal store
 
 /**
- * One endpoint's persisted CONFIG snapshot — `id` is the endpoint name and `timeout` its configured
+ * Represents one endpoint's persisted CONFIG snapshot — `id` is the endpoint name and `timeout` its configured
  * default. Parked forms are process-bound and are never resurrected, so `open` always restores an
  * EMPTY broker.
  */
@@ -710,7 +710,7 @@ export interface TerminalSnapshot {
 }
 
 /**
- * One opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads
+ * Represents one opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads
  * and writes. `snapshot` is narrowed with {@link import('./validators.js').isTerminalSnapshot} on
  * read.
  */
@@ -720,7 +720,7 @@ export interface TerminalSnapshotRow {
 }
 
 /**
- * The point-access persistence seam for a {@link TerminalManagerInterface}'s endpoint configs.
+ * Declares the point-access persistence seam for a {@link TerminalManagerInterface}'s endpoint configs.
  * Every primitive is async; deleting an absent id is a no-op.
  */
 export interface TerminalStoreInterface {

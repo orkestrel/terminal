@@ -3,7 +3,7 @@ import type { TerminalOptions } from './types.js'
 import { Terminal } from './Terminal.js'
 
 /**
- * Create the interactive terminal form driver — the local-keyboard arm of the terminal trio, beside
+ * Creates the interactive terminal form driver — the local-keyboard arm of the terminal trio, beside
  * the core headless `createPrompt` broker and the SSE `createPromptClient` bridge. Where the broker
  * PARKS a live form until somebody elsewhere answers it, a `Terminal` answers one HERE: it walks the
  * form's fields in schema order, drives each control's pure reducer over raw-mode stdin, binds every

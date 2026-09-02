@@ -6,7 +6,7 @@ import type { TerminalErrorCode } from './types.js'
 // mirroring the agents-module errors.
 
 /**
- * The error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an
+ * Represents the error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an
  * unusable driver stream, a manager routing fault, or a ctrl-c cancellation. A parked form's own
  * lifecycle failures reject through the form's `answer` with the form package's error, never with
  * this one.
@@ -17,9 +17,9 @@ import type { TerminalErrorCode } from './types.js'
  * a caught value with {@link isTerminalError} and branch on `error.code`.
  */
 export class TerminalError extends Error {
-	/** The machine-readable condition — see {@link TerminalErrorCode}. */
+	/** Holds the machine-readable condition — see {@link TerminalErrorCode}. */
 	readonly code: TerminalErrorCode
-	/** An optional context bag naming the offending values — see the class {@link TerminalError remarks}. */
+	/** Holds an optional context bag naming the offending values — see the class {@link TerminalError remarks}. */
 	readonly context?: Readonly<Record<string, unknown>>
 
 	constructor(
@@ -35,10 +35,10 @@ export class TerminalError extends Error {
 }
 
 /**
- * Narrow an unknown caught value to a {@link TerminalError}.
+ * Narrows an unknown caught value to a {@link TerminalError}.
  *
  * @param value - The value to test (typically a `catch` binding or a rejected prompt call)
- * @returns `true` when `value` is a {@link TerminalError}
+ * @returns True if `value` is a {@link TerminalError}; false otherwise
  *
  * @example
  * ```ts

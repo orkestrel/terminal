@@ -7,43 +7,43 @@ import { freezeStyle, STATUS_ICONS } from '@orkestrel/console'
 
 // === Control bytes (named, no raw control characters in source)
 
-/** Carriage return (`\r`, U+000D) — Enter on most terminals. */
+/** Names the carriage return byte (`\r`, U+000D) — Enter on most terminals. */
 export const RETURN = String.fromCharCode(13)
-/** Line feed (`\n`, U+000A) — Enter on some terminals / pasted input. */
+/** Names the line feed byte (`\n`, U+000A) — Enter on some terminals / pasted input. */
 export const NEWLINE = String.fromCharCode(10)
-/** Tab (`\t`, U+0009). */
+/** Names the tab byte (`\t`, U+0009). */
 export const TAB = String.fromCharCode(9)
-/** Escape (ESC, U+001B) — the lone byte, and the lead byte of every CSI / SS3 sequence. */
+/** Names the escape byte (ESC, U+001B) — the lone byte, and the lead byte of every CSI / SS3 sequence. */
 export const ESCAPE = String.fromCharCode(27)
-/** Backspace (BS, U+0008) — Ctrl+H / some terminals' Backspace. */
+/** Names the backspace byte (BS, U+0008) — Ctrl+H / some terminals' Backspace. */
 export const BACKSPACE = String.fromCharCode(8)
-/** Delete (DEL, U+007F) — the usual Backspace byte on a Unix TTY. */
+/** Names the delete byte (DEL, U+007F) — the usual Backspace byte on a Unix TTY. */
 export const DELETE = String.fromCharCode(127)
-/** Space (U+0020). */
+/** Names the space byte (U+0020). */
 export const SPACE = ' '
-/** Ctrl+C (ETX, U+0003) — interrupt / cancel. */
+/** Names the Ctrl+C byte (ETX, U+0003) — interrupt / cancel. */
 export const CTRL_C = String.fromCharCode(3)
-/** Ctrl+D (EOT, U+0004) — end-of-transmission / finish (the editor's commit key). */
+/** Names the Ctrl+D byte (EOT, U+0004) — end-of-transmission / finish (the editor's commit key). */
 export const CTRL_D = String.fromCharCode(4)
-/** Ctrl+U (NAK, U+0015) — clear the current line. */
+/** Names the Ctrl+U byte (NAK, U+0015) — clear the current line. */
 export const CTRL_U = String.fromCharCode(21)
-/** Ctrl+A (SOH, U+0001) — move to start of line. */
+/** Names the Ctrl+A byte (SOH, U+0001) — move to start of line. */
 export const CTRL_A = String.fromCharCode(1)
-/** Ctrl+E (ENQ, U+0005) — move to end of line. */
+/** Names the Ctrl+E byte (ENQ, U+0005) — move to end of line. */
 export const CTRL_E = String.fromCharCode(5)
 
 /**
- * The Control Sequence Introducer lead (`ESC[`) for the navigation keys — the prefix of the
+ * Names the Control Sequence Introducer lead (`ESC[`) for the navigation keys — the prefix of the
  * arrow / home / end / delete sequences {@link SEQUENCE_NAMES} is keyed by. Named `KEY_CSI`
  * (not `CSI`) so it never collides with the console module's SGR `CSI` (both barrel through
  * `@src/core`).
  */
 export const KEY_CSI = `${ESCAPE}[`
-/** The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`). */
+/** Names the Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`). */
 export const KEY_SS3 = `${ESCAPE}O`
 
 /**
- * The exact escape SEQUENCE → canonical key NAME table {@link import('./helpers.js').parseKey}
+ * Holds the exact escape SEQUENCE → canonical key NAME table {@link import('./helpers.js').parseKey}
  * consults for the navigation / editing keys. Covers BOTH the CSI form (`ESC[A`…) and the SS3
  * form (`ESCOA`…) of the four arrows, plus the `home` / `end` / `delete` CSI sequences (with
  * their numeric-tilde variants). The source of truth for the multi-byte key decode; frozen.
@@ -73,7 +73,7 @@ export const SEQUENCE_NAMES: Readonly<Record<string, string>> = Object.freeze({
 })
 
 /**
- * The control BYTE (or CRLF pair) → key descriptor table {@link import('./helpers.js').parseKey}
+ * Holds the control BYTE (or CRLF pair) → key descriptor table {@link import('./helpers.js').parseKey}
  * consults for the one-byte keys and the two-byte CRLF Enter chunk. Each entry carries the
  * canonical `name` and whether it is a `ctrl` combination. The source of truth for that decode;
  * frozen.
@@ -105,13 +105,13 @@ export const CONTROL_NAMES: Readonly<
 
 // === Prompt defaults
 
-/** The default mask glyph {@link import('./helpers.js').createPasswordState} uses — `*`. */
+/** Names the default mask glyph {@link import('./helpers.js').createPasswordState} uses — `*`. */
 export const DEFAULT_MASK = '*'
 
 // === Prompt-view icons
 
 /**
- * The six default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
+ * Holds the six default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
  * the default theme is assembled; a view reads its resolved theme and never this constant. Frozen.
  *
  * @remarks
@@ -132,7 +132,7 @@ export const PROMPT_ICONS = Object.freeze({
 // === The default prompt theme
 
 /**
- * Every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
+ * Holds every {@link import('./types.js').PromptRole}, in one frozen list — the role axis's source of
  * truth. {@link import('./helpers.js').createPromptTheme} walks it to merge a partial theme, and
  * a consumer building a complete role map reads it rather than retyping every name.
  */
@@ -151,7 +151,7 @@ export const PROMPT_ROLES: readonly PromptRole[] = Object.freeze([
 ])
 
 /**
- * The {@link import('./types.js').PromptTheme} every prompt renders with unless its options supply
+ * Holds the {@link import('./types.js').PromptTheme} every prompt renders with unless its options supply
  * another — the glyph set assembled from {@link PROMPT_ICONS} plus the console
  * {@link import('@orkestrel/console').STATUS_ICONS} `success` / `error` marks, and the console
  * {@link import('@orkestrel/console').Style} each role is painted with. Deeply frozen through the
@@ -193,14 +193,14 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 
 // === Broker + SSE-bridge defaults
 
-/** How long (ms) the {@link import('./types.js').PromptInterface} broker parks an unanswered prompt before it expires — 5 minutes. */
+/** Holds how long (ms) the {@link import('./types.js').PromptInterface} broker parks an unanswered prompt before it expires — 5 minutes. */
 export const DEFAULT_PROMPT_TIMEOUT_MS = 300_000
 
-/** How long (ms) the {@link import('./types.js').PromptClientInterface} waits before each reconnect attempt — 2 seconds. */
+/** Holds how long (ms) the {@link import('./types.js').PromptClientInterface} waits before each reconnect attempt — 2 seconds. */
 export const DEFAULT_RECONNECT_DELAY_MS = 2_000
 
 /**
- * The SSE `event:` names the broker emits and the {@link import('./types.js').PromptClientInterface}
+ * Holds the SSE `event:` names the broker emits and the {@link import('./types.js').PromptClientInterface}
  * dispatches on. Frozen; the source of truth for the wire event vocabulary.
  *
  * @remarks
@@ -214,14 +214,14 @@ export const SSE_EVENTS = Object.freeze({
 	destroy: 'destroy',
 })
 
-/** The auth-token request header the {@link import('./types.js').PromptClientInterface} sends. */
+/** Names the auth-token request header the {@link import('./types.js').PromptClientInterface} sends. */
 export const HEADER_TOKEN = 'x-orkestrel-token'
 
-/** The `Accept` header value that opens the broker's SSE stream. */
+/** Names the `Accept` header value that opens the broker's SSE stream. */
 export const ACCEPT_EVENT_STREAM = 'text/event-stream'
 
 /**
- * The maximum number of characters the {@link import('./types.js').PromptClientInterface} lets its
+ * Sets the maximum number of characters the {@link import('./types.js').PromptClientInterface} lets its
  * SSE parser buffer before treating the stream as hostile — 1 MiB, comfortably above any
  * legitimate prompt payload. Passed as the `limit` to `createSSEParser` so an unterminated
  * or oversized `data:` field cannot grow the buffer without bound (a memory-exhaustion guard).

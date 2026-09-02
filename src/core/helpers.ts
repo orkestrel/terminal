@@ -104,7 +104,7 @@ export function parseKey(input: string | Uint8Array): KeyEvent {
 	return { sequence, ctrl: false, meta: false, shift: false }
 }
 
-/** Whether a single character is a printable (non-control) character — used by {@link parseKey}'s char fallback. */
+/** Checks whether a single character is a printable (non-control) character — used by {@link parseKey}'s char fallback. */
 export function isPrintable(character: string): boolean {
 	if (character.length === 0) return false
 	const code = character.codePointAt(0)
@@ -116,7 +116,7 @@ export function isPrintable(character: string): boolean {
 // === Prompt theme
 
 /**
- * Build a complete {@link PromptTheme} by merging a partial one over
+ * Builds a complete {@link PromptTheme} by merging a partial one over
  * {@link DEFAULT_PROMPT_THEME}, leaf by leaf — each supplied icon replaces that glyph, each
  * supplied role replaces that {@link Style}, and everything else keeps its default. Each supplied
  * style is snapshotted through the console module's own
@@ -146,7 +146,7 @@ export function createPromptTheme(options?: PromptThemeOptions): PromptTheme {
 }
 
 /**
- * Sanitize text for one single-line display slot. Composes console's ANSI {@link strip} and C0
+ * Sanitizes text for one single-line display slot. Composes console's ANSI {@link strip} and C0
  * {@link stripControls} passes with removal of tab, line feed, and carriage return.
  *
  * @param text - The text to sanitize for a glyph or hint slot
@@ -162,7 +162,7 @@ export function sanitizeDisplayText(text: string): string {
 }
 
 /**
- * Sanitize every terminal-readable string in a parsed form schema.
+ * Sanitizes every terminal-readable string in a parsed form schema.
  *
  * @remarks
  * Display strings pass through {@link sanitizeDisplayText}: labels, help, placeholders, masks,
@@ -274,7 +274,7 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 }
 
 /**
- * Sanitize every glyph a wire-supplied {@link PromptThemeOptions} carries for a single-line display
+ * Sanitizes every glyph a wire-supplied {@link PromptThemeOptions} carries for a single-line display
  * slot. Only the icons need it: a role is guard-narrowed to a console {@link Style}, whose colors
  * and attributes are fixed name sets, so no role can carry a byte a terminal would act on.
  *
@@ -341,7 +341,7 @@ export function renderErrorLine(
 // === Input prompt
 
 /**
- * Build the initial text-field key state.
+ * Builds the initial text-field key state.
  *
  * @param field - The text field to render
  * @param styler - The styler used to render the view
@@ -371,7 +371,7 @@ export function renderInputView(state: InputState): string {
 }
 
 /**
- * Advance an input prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
+ * Advances an input prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the value; backspace shrinks it; ctrl-u clears it; ctrl-c
  * cancels; return produces the candidate value, with an empty line falling back to the default.
  */
@@ -398,7 +398,7 @@ export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string
 // === Password prompt
 
 /**
- * Build the initial password-field key state.
+ * Builds the initial password-field key state.
  *
  * @param field - The password field to render
  * @param styler - The styler used to render the view
@@ -429,7 +429,7 @@ export function renderPasswordView(state: PasswordState): string {
 }
 
 /**
- * Advance a password prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
+ * Advances a password prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Identical line-editing to {@link inputReduce} (printable extends, backspace shrinks,
  * ctrl-u clears, ctrl-c cancels) but the view masks the value. Return produces the candidate value.
  */
@@ -458,7 +458,7 @@ export function passwordReduce(
 // === Confirm prompt
 
 /**
- * Build the initial confirm-field key state.
+ * Builds the initial confirm-field key state.
  *
  * @param field - The confirm field to render
  * @param styler - The styler used to render the view
@@ -490,7 +490,7 @@ export function renderConfirmView(state: ConfirmState): string {
 }
 
 /**
- * Advance a confirm prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<boolean>`
+ * Advances a confirm prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<boolean>`
  * reducer. `y` / `Y` submits `true`, `n` / `N` submits `false`, return on an empty line submits
  * the `default`, ctrl-c cancels; any other key is ignored (stays active).
  */
@@ -519,7 +519,7 @@ export function confirmReduce(
 // === Select prompt
 
 /**
- * Build the initial select-field key state.
+ * Builds the initial select-field key state.
  *
  * @param field - The select field to render
  * @param styler - The styler used to render the view
@@ -565,7 +565,7 @@ export function renderSelectView(state: SelectState): string {
 }
 
 /**
- * Advance a select prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
+ * Advances a select prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. `up` / `down` (and `k` / `j`) move the focus, WRAPPING at the ends; return submits the
  * focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer
  * guards against it); any other key is ignored.
@@ -601,7 +601,7 @@ export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<stri
 // === Checkbox prompt
 
 /**
- * Build the initial checkbox-field key state.
+ * Builds the initial checkbox-field key state.
  *
  * @param field - The checkbox field to render
  * @param styler - The styler used to render the view
@@ -658,7 +658,7 @@ export function renderCheckboxView(state: CheckboxState): string {
 }
 
 /**
- * Advance a checkbox prompt by one {@link KeyEvent} — the pure
+ * Advances a checkbox prompt by one {@link KeyEvent} — the pure
  * `(state, key) → PromptStep<readonly string[]>` reducer. `up` / `down` (and `k` / `j`) move the
  * focus (wrapping); `space` toggles the focused index in the checked set; return submits the
  * checked values in choice order; ctrl-c cancels. The form applies selection-count rules.
@@ -707,7 +707,7 @@ export function checkboxReduce(
 	return { state, view: renderCheckboxView(state), status: 'active' }
 }
 
-/** Toggle `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion list. */
+/** Toggles `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion list. */
 export function toggleIndex(indices: readonly number[], index: number): readonly number[] {
 	return indices.includes(index) ? indices.filter((i) => i !== index) : [...indices, index]
 }
@@ -715,7 +715,7 @@ export function toggleIndex(indices: readonly number[], index: number): readonly
 // === Editor prompt
 
 /**
- * Build the initial editor-field key state.
+ * Builds the initial editor-field key state.
  *
  * @param field - The editor field to render
  * @param styler - The styler used to render the view
@@ -753,7 +753,7 @@ export function renderEditorView(state: EditorState): string {
 }
 
 /**
- * Advance an editor prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
+ * Advances an editor prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the current line; backspace shrinks it; return commits the
  * current line and starts a fresh one; ctrl-d FINISHES (joining all lines, falling back to the
  * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
@@ -820,7 +820,7 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
 // === Broker + bridge wiring helpers
 
 /**
- * The default {@link import('./types.js').TimerHandler} — a thin host `setTimeout` / `clearTimeout`
+ * Implements the default {@link import('./types.js').TimerHandler} — a thin host `setTimeout` / `clearTimeout`
  * wrapper that arms `callback` after `ms` and returns a {@link TimerCancelFunction}. The deadline seam
  * behind both the {@link import('./Prompt.js').Prompt} broker (its expiry) and the
  * {@link import('./PromptClient.js').PromptClient} (its reconnect backoff); a test injects a
@@ -831,13 +831,13 @@ export function defaultTimer(callback: () => void, ms: number): TimerCancelFunct
 	return () => clearTimeout(handle)
 }
 
-/** The default {@link import('./types.js').FetchHandler} — the global `fetch`, adapted to the minimal injected shape the {@link import('./PromptClient.js').PromptClient} uses. */
+/** Implements the default {@link import('./types.js').FetchHandler} — the global `fetch`, adapted to the minimal injected shape the {@link import('./PromptClient.js').PromptClient} uses. */
 export function globalFetch(input: string, init?: FetchInit): Promise<Response> {
 	return fetch(input, init)
 }
 
 /**
- * Whether a caught value is an `AbortError` — the {@link import('./PromptClient.js').PromptClient}
+ * Checks whether a caught value is an `AbortError` — the {@link import('./PromptClient.js').PromptClient}
  * distinguishes a deliberate `disconnect` / teardown (an aborted `fetch`) from a real fault, so it
  * exits its connect loop quietly instead of emitting `error` / reconnecting.
  */
@@ -846,7 +846,7 @@ export function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Whether `url` is an INSECURE remote endpoint — a plain `http://` URL whose host is NOT a
+ * Checks whether `url` is an INSECURE remote endpoint — a plain `http://` URL whose host is NOT a
  * loopback address. Pure string parsing (no `URL` global), so it stays total on malformed input.
  *
  * @remarks
@@ -855,7 +855,7 @@ export function isAbortError(error: unknown): boolean {
  * An `https://` URL (or any non-`http://` scheme) is never flagged.
  *
  * @param url - The candidate endpoint URL
- * @returns `true` when `url` is a non-loopback `http://` endpoint
+ * @returns True if `url` is a non-loopback `http://` endpoint; false otherwise
  *
  * @example
  * ```ts
@@ -879,12 +879,12 @@ export function isInsecureRemote(url: string): boolean {
 
 // === Terminal manager wire seams (transport-neutral, no http dependency)
 
-/** Serialize a parked {@link PendingForm} into a {@link WireEvent}. */
+/** Serializes a parked {@link PendingForm} into a {@link WireEvent}. */
 export function serializePending(form: PendingForm): WireEvent {
 	return { event: 'pending', data: JSON.stringify(form), id: form.id }
 }
 
-/** Serialize a parked prompt's expiry or release into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
+/** Serializes a parked prompt's expiry or release into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
 export function serializeExpire(id: string): WireEvent {
 	return { event: 'expire', data: JSON.stringify({ id }) }
 }

@@ -73,8 +73,8 @@ import {
 } from './helpers.js'
 
 /**
- * The interactive terminal form DRIVER — the {@link TerminalInterface} implementation for a human at
- * this machine's keyboard, and the only impure part of the terminal stack. {@link ask} walks one
+ * Implements {@link TerminalInterface} for a human at this machine's keyboard — the interactive form
+ * DRIVER, and the only impure part of the terminal stack. {@link ask} walks one
  * form's fields in schema order, feeds raw-mode stdin bytes through `parseKey` into the matching
  * pure reducer, renders each returned view in place, and binds every answer through the form's own
  * `fill`. It owns no form logic: the schema, the rules, the values, and the settlement all belong to
@@ -154,7 +154,7 @@ export class Terminal implements TerminalInterface {
 	// === The walk
 
 	/**
-	 * Ask `fields` in the order given, skipping what the walk must not touch and rendering what it
+	 * Asks `fields` in the order given, skipping what the walk must not touch and rendering what it
 	 * must not edit. Returns early the moment the form stops being editable, so an abandoned form
 	 * ends the walk between fields as well as under an active read.
 	 */
@@ -178,7 +178,7 @@ export class Terminal implements TerminalInterface {
 		}
 	}
 
-	/** Write a group's label as a section header, resolving the schema's declared label and falling back to the group's own name. */
+	/** Writes a group's label as a section header, resolving the schema's declared label and falling back to the group's own name. */
 	#writeGroup(form: FormInterface, name: string): void {
 		const label = form.schema.groups?.find((group) => group.name === name)?.label ?? name
 		this.#output.write(
@@ -186,7 +186,7 @@ export class Terminal implements TerminalInterface {
 		)
 	}
 
-	/** Render a locked field read-only — its label, its mark, and the answer the form already holds. */
+	/** Renders a locked field read-only — its label, its mark, and the answer the form already holds. */
 	#writeLocked(form: FormInterface, field: FormField): void {
 		const line = renderLockedLine(
 			this.#styler,
@@ -197,7 +197,7 @@ export class Terminal implements TerminalInterface {
 		this.#output.write(`${line}${LINE_FEED}`)
 	}
 
-	/** Read one field through the reducer its control names, resolving the raw answer the binding projects. */
+	/** Reads one field through the reducer its control names, resolving the raw answer the binding projects. */
 	#read(form: FormInterface, field: FormField): Promise<FieldValue | undefined> {
 		if (field.control === 'password') return this.#askPassword(form, field)
 		if (field.control === 'confirm') return this.#confirm(form, field)
@@ -209,7 +209,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Bind one raw answer to the form — the single binding, and the only place this driver writes a
+	 * Binds one raw answer to the form — the single binding, and the only place this driver writes a
 	 * value. `parseValue` coerces the raw answer to the control's own shape and `matchesAnswer`
 	 * projects a blank one to absence, which is what keeps `required` refusing a bare return. A raw
 	 * answer the control cannot hold binds as absence and invalidates the field, so the field comes
@@ -222,7 +222,7 @@ export class Terminal implements TerminalInterface {
 		if (value === undefined && matchesAnswer(raw)) form.invalidate(field.name, REFUSAL_MESSAGE)
 	}
 
-	/** The erroring fields the walk can ask again — every field the walk skips or renders read-only is excluded, because a second pass could not change its answer. */
+	/** Collects the erroring fields the walk can ask again — every field the walk skips or renders read-only is excluded, because a second pass could not change its answer. */
 	#collectEditable(form: FormInterface, errors: readonly FieldError[]): readonly FormField[] {
 		const fields: FormField[] = []
 		for (const error of errors) {
@@ -236,7 +236,7 @@ export class Terminal implements TerminalInterface {
 		return fields
 	}
 
-	/** Write every supplied failure against its field's label. */
+	/** Writes every supplied failure against its field's label. */
 	#report(form: FormInterface, errors: readonly FieldError[]): void {
 		for (const error of errors) {
 			const label = sanitizeDisplayText(form.field(error.field)?.label ?? error.field)
@@ -248,14 +248,14 @@ export class Terminal implements TerminalInterface {
 
 	// === The controls
 
-	/** Read a field as one line of text — `text` itself and the six controls a terminal has no widget for. */
+	/** Reads a field as one line of text — `text` itself and the six controls a terminal has no widget for. */
 	#askText(form: FormInterface, field: FormField): Promise<string> {
 		const state = createInputState(fieldToText(field), this.#styler, this.#theme)
 		if (supportsRawMode(this.#input)) return this.#drive(form, state, inputReduce)
 		return this.#line(form, state.message, state.default)
 	}
 
-	/** Read a secret — masked live in raw mode, and read without echo through readline on a stream that cannot enter it. */
+	/** Reads a secret — masked live in raw mode, and read without echo through readline on a stream that cannot enter it. */
 	#askPassword(form: FormInterface, field: PasswordField): Promise<string> {
 		const state = createPasswordState(field, this.#styler, this.#theme)
 		if (supportsRawMode(this.#input)) return this.#drive(form, state, passwordReduce)
@@ -263,7 +263,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Read a yes or no. The fallback accepts `y` / `yes` / `n` / `no` in any case and takes the
+	 * Reads a yes or no. The fallback accepts `y` / `yes` / `n` / `no` in any case and takes the
 	 * field's default for a bare line; anything else is returned as typed, so the binding refuses it
 	 * and the walk asks again rather than silently reading it as no.
 	 */
@@ -284,7 +284,7 @@ export class Terminal implements TerminalInterface {
 		return line.trim()
 	}
 
-	/** Read text over many lines — ctrl-d finishes in raw mode, and end of input finishes on a piped stream. */
+	/** Reads text over many lines — ctrl-d finishes in raw mode, and end of input finishes on a piped stream. */
 	#askEditor(form: FormInterface, field: EditorField): Promise<string> {
 		const state = createEditorState(field, this.#styler, this.#theme)
 		if (supportsRawMode(this.#input)) return this.#drive(form, state, editorReduce)
@@ -292,7 +292,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Read one choice. A disabled choice is named above the list and never offered, because the form
+	 * Reads one choice. A disabled choice is named above the list and never offered, because the form
 	 * refuses its value at every door. An open select is a suggestion list plus a typed line, since
 	 * `open` admits an answer the list does not offer; a closed select with nothing left to offer
 	 * resolves absence and lets the form's own rules report it.
@@ -321,7 +321,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Read any number of choices. Disabled choices are named above the list and never offered, so a
+	 * Reads any number of choices. Disabled choices are named above the list and never offered, so a
 	 * box the form would refuse can never be ticked. An empty answer is an answered "none of them",
 	 * which is what `matchesAnswer` says an empty list means.
 	 */
@@ -339,7 +339,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Read file paths — names only, because bytes never enter a form. A `multiple` field collects one
+	 * Reads file paths — names only, because bytes never enter a form. A `multiple` field collects one
 	 * path per line until a blank one, and a single field takes one. No path at all is absence rather
 	 * than an empty list, because the reader answered a blank line.
 	 */
@@ -355,21 +355,21 @@ export class Terminal implements TerminalInterface {
 		return paths.length > 0 ? paths : undefined
 	}
 
-	/** Name the choices a field shows but refuses, above the list the walk drives. */
+	/** Names the choices a field shows but refuses, above the list the walk drives. */
 	#writeUnavailable(choices: readonly FieldChoice[]): void {
 		const refused = filterDisabled(choices)
 		if (refused.length === 0) return
 		this.#output.write(`${renderUnavailableLine(this.#styler, this.#theme, refused)}${LINE_FEED}`)
 	}
 
-	/** Write a field's header above its numbered choice list — the non-TTY presentation of a choice field. */
+	/** Writes a field's header above its numbered choice list — the non-TTY presentation of a choice field. */
 	#writeList(message: string, choices: readonly FieldChoice[]): void {
 		const header = renderPromptHeader(this.#styler, this.#theme, message)
 		const list = renderNumberedList(this.#styler, this.#theme, choices)
 		this.#output.write(`${header}${LINE_FEED}${list}${LINE_FEED}`)
 	}
 
-	/** Paint one line of supplementary instruction through the `hint` role. */
+	/** Paints one line of supplementary instruction through the `hint` role. */
 	#formatHint(text: string): string {
 		return this.#styler.render(this.#theme.roles.hint, text)
 	}
@@ -377,7 +377,7 @@ export class Terminal implements TerminalInterface {
 	// === The raw-mode kernel
 
 	/**
-	 * The irreducible Node raw-mode primitive — the ONLY place raw mode is touched. Switches the input
+	 * Isolates the irreducible Node raw-mode primitive — the ONLY place raw mode is touched. Switches the input
 	 * into raw mode (each keypress delivered immediately, no echo), resumes its flow, and subscribes
 	 * `handler` to `'data'`. The paired {@link #leaveRaw} operation unsubscribes the exact handler,
 	 * leaves raw mode, and pauses the stream on submit, cancel, abandon, or throw.
@@ -399,7 +399,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Drive ONE field over raw-mode stdin — the generic engine every interactive control shares.
+	 * Drives ONE field over raw-mode stdin — the generic engine every interactive control shares.
 	 * Renders the reducer's initial view, enters raw mode once, and on each keypress runs `parseKey` →
 	 * `reduce` → an in-place re-render; on `submit` it cleans up and resolves the reducer's value, on
 	 * `cancel` (ctrl-c) it cleans up and rejects a {@link TerminalError} coded `CANCEL`. Abandoning
@@ -477,7 +477,7 @@ export class Terminal implements TerminalInterface {
 		}
 	}
 
-	/** End an active read that the form outlived — release raw mode exactly as a submit does, then fail the read with the form's own error. */
+	/** Ends an active read that the form outlived — releases raw mode exactly as a submit does, then fails the read with the form's own error. */
 	#interrupt(token: object, reject: (reason?: unknown) => void, error: unknown): void {
 		if (!this.#handlers.has(token)) return
 		this.#leaveRaw(token)
@@ -485,21 +485,21 @@ export class Terminal implements TerminalInterface {
 		reject(error)
 	}
 
-	/** Redraw a field view in place — climb over the previous view's `previousLines`, clear, and write the new view (the pure cursor-math is {@link redrawPrefix}). */
+	/** Redraws a field view in place — climbs over the previous view's `previousLines`, clears, and writes the new view (the pure cursor-math is {@link redrawPrefix}). */
 	#render(view: string, previousLines: number): void {
 		this.#output.write(`${redrawPrefix(previousLines)}${view}`)
 	}
 
 	// === Non-TTY fallbacks (node:readline line input)
 
-	/** Read one line for a text-shaped field, taking the field's default when the line is bare. */
+	/** Reads one line for a text-shaped field, taking the field's default when the line is bare. */
 	async #line(form: FormInterface, message: string, seed: string): Promise<string> {
 		const answer = await this.#prompt(form, renderPromptHeader(this.#styler, this.#theme, message))
 		return answer.length > 0 ? answer : seed
 	}
 
 	/**
-	 * Read a whole block for an `editor` field — a piped stream has no ctrl-d keypress, so end of
+	 * Reads a whole block for an `editor` field — a piped stream has no ctrl-d keypress, so end of
 	 * input is the terminator. It drains every remaining line, which is why nothing after an `editor`
 	 * field can be asked on the same stream.
 	 */
@@ -516,7 +516,7 @@ export class Terminal implements TerminalInterface {
 		return text.length > 0 ? text : seed
 	}
 
-	/** Write one field's header and read back the line the reader answers it with, or `''` once the stream has ended. */
+	/** Writes one field's header and reads back the line the reader answers it with, or `''` once the stream has ended. */
 	async #prompt(form: FormInterface, header: string): Promise<string> {
 		this.#output.write(`${header} `)
 		const line = await this.#next(form)
@@ -524,7 +524,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Take the next line the input carries — from the buffer when the reader has already read ahead,
+	 * Takes the next line the input carries — from the buffer when the reader has already read ahead,
 	 * and otherwise by waiting for one. It resolves ABSENCE once the stream has ended, so a walk over
 	 * an exhausted stream settles instead of waiting forever, and it rejects when the form is
 	 * abandoned, so an unanswerable read ends with the form rather than outliving it.
@@ -545,7 +545,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Open the walk's ONE readline interface, or keep the open one. A whole form is many questions
+	 * Opens the walk's ONE readline interface, or keeps the open one. A whole form is many questions
 	 * over one stream, and an interface reads ahead: a fresh interface per question would swallow
 	 * every line it read past the one it was asked for, so the walk holds a single reader and buffers
 	 * what arrives early. It is closed when the walk ends, so the process is free to exit.
@@ -558,7 +558,7 @@ export class Terminal implements TerminalInterface {
 		this.#interface = rl
 	}
 
-	/** Hand a line to whoever is waiting for it, or buffer it for the next question. */
+	/** Hands a line to whoever is waiting for it, or buffers it for the next question. */
 	#accept(line: string): void {
 		const taker = this.#taker
 		if (taker === undefined) {
@@ -569,7 +569,7 @@ export class Terminal implements TerminalInterface {
 		taker(line)
 	}
 
-	/** Record that no further line can arrive and release whoever was waiting for one. */
+	/** Records that no further line can arrive and releases whoever was waiting for one. */
 	#finish(): void {
 		this.#ended = true
 		const taker = this.#taker
@@ -578,7 +578,7 @@ export class Terminal implements TerminalInterface {
 		taker(undefined)
 	}
 
-	/** Close the walk's reader and release a waiting question — the walk is over, so the stream must stop holding the process open. */
+	/** Closes the walk's reader and releases a waiting question — the walk is over, so the stream must stop holding the process open. */
 	#close(): void {
 		const taker = this.#taker
 		this.#taker = undefined
@@ -593,7 +593,7 @@ export class Terminal implements TerminalInterface {
 	}
 
 	/**
-	 * Narrow the resolved input to the `node:readline` `createInterface` boundary, never an assertion.
+	 * Narrows the resolved input to the `node:readline` `createInterface` boundary, never an assertion.
 	 * The fallback only runs on a real piped `process.stdin` (or a `PassThrough` a test injects), both
 	 * genuine readables; a minimal non-readable fake reaching here means the walk was driven with a
 	 * stream it cannot use, which fails loudly rather than silently. `terminal: false` leaves readline

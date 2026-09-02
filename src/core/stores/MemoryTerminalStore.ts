@@ -1,7 +1,7 @@
 import type { TerminalSnapshot, TerminalStoreInterface } from '../types.js'
 
 /**
- * The in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of
+ * Implements the in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of
  * {@link TerminalSnapshot}s keyed by endpoint id, the DEFAULT store
  * {@link import('../factories.js').createMemoryTerminalStore} builds. The EXACT twin of
  * {@link import('./DatabaseTerminalStore.js').DatabaseTerminalStore}.

@@ -31,7 +31,7 @@ import { createForm, isFieldError, parseForm } from '@orkestrel/form'
 import { createSSEParser } from '@orkestrel/sse'
 
 /**
- * The SSE form bridge. It ingests serialized forms from a remote broker, renders them through a
+ * Implements the SSE form bridge. It ingests serialized forms from a remote broker, renders them through a
  * local terminal, and posts answers back without blocking the event stream.
  *
  * @remarks

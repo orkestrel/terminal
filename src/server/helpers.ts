@@ -22,7 +22,7 @@ import {
 } from './constants.js'
 
 /**
- * Whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` / `off`
+ * Checks whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` / `off`
  * `'data'` subscription methods. A total type guard: it NEVER throws and returns `false`
  * for anything off-shape, so it narrows the one unavoidable input boundary (the real `process.stdin`,
  * or a fake TTY a test injects) to the exact slice the driver reads — no `as`.
@@ -34,7 +34,7 @@ import {
  * fallback rather than raw mode.
  *
  * @param value - Any value crossing the boundary (a process stream, an injected fake, `unknown`)
- * @returns `true` when `value` has callable `on` and `off`
+ * @returns True if `value` has callable `on` and `off`; false otherwise
  */
 export function isInputStream(value: unknown): value is InputStreamInterface {
 	return (
@@ -48,13 +48,13 @@ export function isInputStream(value: unknown): value is InputStreamInterface {
 }
 
 /**
- * Whether `value` is a usable {@link OutputStreamInterface} — a record with a callable `write`. A
+ * Checks whether `value` is a usable {@link OutputStreamInterface} — a record with a callable `write`. A
  * total type guard: it NEVER throws and returns `false` for anything off-shape, so it
  * narrows the output boundary (the real `process.stdout`, or a recording fake a test injects) to the
  * one method the driver writes through — no `as`.
  *
  * @param value - Any value crossing the boundary (a process stream, an injected fake, `unknown`)
- * @returns `true` when `value` has a callable `write`
+ * @returns True if `value` has a callable `write`; false otherwise
  */
 export function isOutputStream(value: unknown): value is OutputStreamInterface {
 	return (
@@ -66,7 +66,7 @@ export function isOutputStream(value: unknown): value is OutputStreamInterface {
 }
 
 /**
- * Whether `value` is a Node {@link NodeJS.ReadableStream} — a total structural guard
+ * Checks whether `value` is a Node {@link NodeJS.ReadableStream} — a total structural guard
  * checking for the callable `read` / `pipe` / `on` that `node:readline`'s `createInterface` requires
  * as its `input`. The non-TTY fallback narrows the resolved input stream through this before handing
  * it to readline (never an `as`), so a real piped `process.stdin` (or a `PassThrough` a test injects)
@@ -74,7 +74,7 @@ export function isOutputStream(value: unknown): value is OutputStreamInterface {
  * isn't a full readable.
  *
  * @param value - The resolved input stream (or any value crossing the boundary)
- * @returns `true` when `value` has the readable methods readline needs
+ * @returns True if `value` has the readable methods readline needs; false otherwise
  */
 export function isReadable(value: unknown): value is NodeJS.ReadableStream {
 	return (
@@ -95,14 +95,14 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
  * never throws.
  *
  * @param input - The resolved {@link InputStreamInterface}
- * @returns `true` when the stream is a TTY with `setRawMode`
+ * @returns True if the stream is a TTY with `setRawMode`; false otherwise
  */
 export function supportsRawMode(input: InputStreamInterface): boolean {
 	return input.isTTY === true && typeof input.setRawMode === 'function'
 }
 
 /**
- * The number of terminal LINES a rendered prompt `view` occupies — one more than its newline count
+ * Counts the terminal LINES a rendered prompt `view` occupies — one more than its newline count
  * (a view with no newline is a single line; N newlines span N+1 lines). The basis of the in-place
  * re-render: the driver records the line count of the view it just wrote so the next redraw knows how
  * far up to move the cursor before overwriting. Total; an empty string is one (empty) line.
@@ -119,7 +119,7 @@ export function lineCount(view: string): number {
 }
 
 /**
- * The cursor-UP control sequence that moves the cursor up `count` lines (`ESC[{count}A`) — or the
+ * Returns the cursor-UP control sequence that moves the cursor up `count` lines (`ESC[{count}A`) — or the
  * empty string when `count` is zero or negative (no movement needed, and `ESC[0A` is a wasted write).
  * The pure step the in-place re-render uses to climb back over the previous view before clearing it.
  * Total.
@@ -133,7 +133,7 @@ export function moveUp(count: number): string {
 }
 
 /**
- * The full reposition-and-clear prefix to write BEFORE re-rendering a prompt view in place — given
+ * Returns the full reposition-and-clear prefix to write BEFORE re-rendering a prompt view in place — given
  * the line count of the PREVIOUS view, it moves the cursor up over those lines, returns it to column
  * 0, and erases everything from there to the end of the screen, so the next view is drawn on a clean
  * region (no orphaned rows from a taller previous view). Pure; the driver writes this immediately
@@ -154,7 +154,7 @@ export function redrawPrefix(previousLines: number): string {
 }
 
 /**
- * Project any field the walk reads as a LINE OF TEXT into the {@link TextField} the text reducer
+ * Projects any field the walk reads as a LINE OF TEXT into the {@link TextField} the text reducer
  * takes — `text` itself, and the six controls a terminal has no widget for: `number`, `date`,
  * `time`, `datetime`, `color`, and one `file` entry. The label carries that control's format cue
  * from {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
@@ -184,7 +184,7 @@ export function fieldToText(field: FormField): TextField {
 }
 
 /**
- * Project one held answer into the text a read-only line shows — a scalar as itself, a boolean as
+ * Projects one held answer into the text a read-only line shows — a scalar as itself, a boolean as
  * `yes` / `no` (the word the confirm reducer commits), and a list joined by commas. Absence renders
  * as nothing, because a locked field nobody has answered has nothing to show.
  *

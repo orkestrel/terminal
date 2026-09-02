@@ -18,7 +18,7 @@ import { createDatabase, createMemoryDriver } from '@orkestrel/database'
 import { rawShape, stringShape } from '@orkestrel/contract'
 
 /**
- * Create the headless {@link PromptInterface} broker. It parks live forms and applies remote
+ * Creates the headless {@link PromptInterface} broker. It parks live forms and applies remote
  * answers to the authoritative instances.
  *
  * @param options - See {@link PromptOptions}
@@ -45,7 +45,7 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
 }
 
 /**
- * Create the SSE prompt {@link PromptClientInterface} BRIDGE — it connects to a remote broker's SSE
+ * Creates the SSE prompt {@link PromptClientInterface} BRIDGE — it connects to a remote broker's SSE
  * endpoint, dispatches each received form to a local {@link import('./types.js').TerminalInterface},
  * and POSTs the answer back. Universal — `fetch` / SSE are web-standard.
  *
@@ -72,7 +72,7 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
 }
 
 /**
- * Create the multi-endpoint {@link TerminalManager} — a named registry of
+ * Creates the multi-endpoint {@link TerminalManager} — a named registry of
  * {@link PromptInterface} brokers so several parties can `ask` prompts of each other by name,
  * with a transitive DEADLOCK check across every in-flight ask.
  *
@@ -92,7 +92,7 @@ export function createTerminalManager(options?: TerminalManagerOptions): Termina
 }
 
 /**
- * Create the in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of endpoint
+ * Creates the in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of endpoint
  * config snapshots, the default store backing a {@link TerminalManagerInterface}'s `open` / `save`.
  *
  * @returns A {@link TerminalStoreInterface}
@@ -109,7 +109,7 @@ export function createMemoryTerminalStore(): TerminalStoreInterface {
 }
 
 /**
- * Create a {@link TerminalStoreInterface} backed by one table of the `databases` layer — the
+ * Creates a {@link TerminalStoreInterface} backed by one table of the `databases` layer — the
  * driver-pluggable twin of {@link createMemoryTerminalStore}, storing each endpoint's config
  * snapshot as one opaque JSON column.
  *
