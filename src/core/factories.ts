@@ -31,7 +31,7 @@ import { rawShape, stringShape } from '@orkestrel/contract'
  *
  * @example
  * ```ts
- * import { createPrompt } from '@src/core'
+ * import { createPrompt } from '@orkestrel/terminal'
  * import { createForm } from '@orkestrel/form'
  *
  * const prompt = createPrompt()
@@ -61,7 +61,7 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
  *
  * @example
  * ```ts
- * import { createPromptClient } from '@src/core'
+ * import { createPromptClient } from '@orkestrel/terminal'
  *
  * const client = createPromptClient({ url: 'http://host/prompts', terminal })
  * await client.connect()
@@ -81,7 +81,7 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
  *
  * @example
  * ```ts
- * import { createTerminalManager } from '@src/core'
+ * import { createTerminalManager } from '@orkestrel/terminal'
  *
  * const manager = createTerminalManager()
  * manager.add('agent')
@@ -99,7 +99,7 @@ export function createTerminalManager(options?: TerminalManagerOptions): Termina
  *
  * @example
  * ```ts
- * import { createMemoryTerminalStore } from '@src/core'
+ * import { createMemoryTerminalStore } from '@orkestrel/terminal'
  *
  * const store = createMemoryTerminalStore()
  * ```
@@ -118,7 +118,7 @@ export function createMemoryTerminalStore(): TerminalStoreInterface {
  *
  * @example
  * ```ts
- * import { createDatabaseTerminalStore } from '@src/core'
+ * import { createDatabaseTerminalStore } from '@orkestrel/terminal'
  *
  * const store = createDatabaseTerminalStore() // in-memory by default
  * ```

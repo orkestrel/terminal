@@ -24,7 +24,7 @@ import type { TerminalSnapshot, TerminalStoreInterface } from '../types.js'
  *
  * @example
  * ```ts
- * import { createMemoryTerminalStore } from '@src/core'
+ * import { createMemoryTerminalStore } from '@orkestrel/terminal'
  *
  * const store = createMemoryTerminalStore()
  * await store.set({ id: 'shell', timeout: 5000 })   // persist a config
@@ -35,18 +35,34 @@ import type { TerminalSnapshot, TerminalStoreInterface } from '../types.js'
 export class MemoryTerminalStore implements TerminalStoreInterface {
 	readonly #snapshots = new Map<string, TerminalSnapshot>()
 
+	/**
+	 * Resolves the persisted snapshot for `id`.
+	 *
+	 * @param id - The endpoint name the snapshot is keyed by
+	 * @returns The stored snapshot, or `undefined` when none is held
+	 */
 	get(id: string): Promise<TerminalSnapshot | undefined> {
 		return Promise.resolve(this.#snapshots.get(id))
 	}
 
+	/**
+	 * Inserts or replaces under the snapshot's OWN `id` (no separate id param).
+	 *
+	 * @param snapshot - The config snapshot to persist, carrying its own `id`
+	 * @returns A promise that settles once the snapshot is held
+	 */
 	set(snapshot: TerminalSnapshot): Promise<void> {
-		// Insert / replace under the snapshot's OWN id (no separate id param).
 		this.#snapshots.set(snapshot.id, snapshot)
 		return Promise.resolve()
 	}
 
+	/**
+	 * Drops a snapshot by id; an absent id is a no-op (no throw).
+	 *
+	 * @param id - The endpoint name to drop
+	 * @returns A promise that settles once the snapshot is gone
+	 */
 	delete(id: string): Promise<void> {
-		// Drop by id; `Map.delete` of an absent id is already a no-op (no throw).
 		this.#snapshots.delete(id)
 		return Promise.resolve()
 	}

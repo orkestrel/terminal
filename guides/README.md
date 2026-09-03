@@ -1,7 +1,7 @@
 # Guides
 
 A dual-axis index into this repository's guides — by concept, and by
-directory (AGENTS §22).
+directory.
 
 ## By concept
 
@@ -24,25 +24,21 @@ against a real TTY. The end-to-end proof that they compose lives in
 
 ## Dependency reference
 
-`@orkestrel/form` owns the form itself — the schema, the twelve controls, the
-rules, the values, and the settle-once `answer` promise — and terminal
-declares none of it a second time. Its guide is not mirrored here: form is
-not published yet, so this repository pins it as a committed tarball
-(`file:vendor/orkestrel-form-0.0.1.tgz`) and there is no released guide to
-mirror. Read the installed package's own guide at
-[github.com/orkestrel/form](https://github.com/orkestrel/form) for form's
-laws, and read [`terminal.md`](terminal.md) for what terminal adds around
-them. The pin, its two standing conditions, and the five-step re-pin recipe
-are recorded in [`terminal.md`](terminal.md).
+[`form.md`](form.md) is a byte-identical mirror of the guide for
+`@orkestrel/form` — a runtime dependency, and the owner of the form itself:
+the schema, the controls, the rules, the values, and the settle-once `answer`
+promise, none of which terminal declares a second time. It documents **that
+package's** surface, not anything sourced in this repo; it is kept here so a
+reader of this package can see the primitive it is built from without leaving
+this guide set. Read [`terminal.md`](terminal.md) for what terminal adds
+around it.
 
 [`console.md`](console.md) is a byte-identical mirror of the guide for
 `@orkestrel/console` — a runtime dependency, the `StylerInterface` every
 rendered view is painted through (one style engine). It documents **that
 package's** surface, not anything sourced in this repo; it is kept here so a
 reader of this package can see the primitive it is built from without leaving
-this guide set. It mirrors console's published release (`0.0.7`), which
-carries the `StylerInterface.render` / `freezeStyle` surface this package
-builds against.
+this guide set.
 
 [`contract.md`](contract.md) is a byte-identical mirror of the guide
 for `@orkestrel/contract` — a runtime dependency, the `Guard<T>` vocabulary
@@ -79,6 +75,23 @@ surface (`Guide` / `Source`, the manifest and comparison helpers), not
 anything sourced in this repo; it is kept here so a reader of the parity suite
 can see the primitives it is built from without leaving this guide set.
 
+[`test.md`](test.md) is a byte-identical mirror of the guide for
+`@orkestrel/test` — a devDependency, the recorder, delay, collector, and
+scratch helpers every suite in this repo imports rather than rewriting. It
+documents **that package's** surface, not anything sourced in this repo; it is
+kept here for the same reason.
+
+[`scaffold.md`](scaffold.md) is a byte-identical mirror of the guide for
+`@orkestrel/scaffold` — a devDependency, the workspace blueprint behind the
+vendored test set and the `scaffold audit` drift check. It documents **that
+package's** surface, not anything sourced in this repo; it is kept here for the
+same reason.
+
+[`probe.md`](probe.md) is a byte-identical mirror of the guide for
+`@orkestrel/probe` — a devDependency, the TypeScript claim prover a change to
+this package's types is checked with. It documents **that package's** surface,
+not anything sourced in this repo; it is kept here for the same reason.
+
 ## See also
 
-- [`AGENTS.md`](../AGENTS.md) — the rules; §22 documentation-as-contracts.
+- [`AGENTS.md`](../AGENTS.md) — the rules this package is written to.

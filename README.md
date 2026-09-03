@@ -1,9 +1,9 @@
 # @orkestrel/terminal
 
 The terminal side of a form, for the `@orkestrel` line. `@orkestrel/form` owns
-the document — the schema, the twelve controls, the rules, the values, and the
+the document — the schema, the controls, the rules, the values, and the
 settle-once `answer` promise. This package owns what form has no opinion about:
-a key decoder, a theme, pure per-field reducers, and three surfaces one form
+a key decoder, a theme, pure per-field reducers, and the surfaces one form
 can be answered on. The server `Terminal` implements the one driving contract
 against a real TTY (raw-mode stdin, live in-place re-render, a `node:readline`
 fallback when piped). The headless `Prompt` broker PARKS a live form until
@@ -17,10 +17,6 @@ elsewhere to this machine's keyboard over SSE. Built beside
 ```sh
 npm install @orkestrel/terminal
 ```
-
-`@orkestrel/form` is pinned to a committed tarball until it is published, so
-this package is not publishable yet. The pin, its standing conditions, and the
-re-pin recipe are recorded in [guides/terminal.md](./guides/terminal.md).
 
 ## Requirements
 
@@ -85,7 +81,7 @@ the multi-endpoint manager, the stores, and the TTY driver.
 
 ## Package
 
-Two entry points, per the `exports` field in `package.json`: `.` (the
+The entry points, per the `exports` field in `package.json`, are `.` (the
 host-independent core — the reducers, the broker, the bridge, the manager, and
 the stores) and `./server` (the Node-only `Terminal` driver). Both entry points
 ship dual ESM+CJS builds.

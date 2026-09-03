@@ -1,18 +1,19 @@
 // Pure helpers for the server terminal driver — every function here is exported and unit-tested.
-// Three families, all total: the stream-boundary guards that narrow `process.stdin` /
-// `process.stdout` / any injected stream without an assertion; the cursor math the driver uses to
-// redraw a field view IN PLACE (count a view's lines, build the cursor-up sequence, assemble the
-// reposition-and-clear prefix); and the projections and line renderers the whole-form walk needs
-// that no reducer owns — a control read as text, a value shown read-only, the choices a field
-// actually offers, and the group, locked, suggestion, unavailable, and numbered-list lines. The
-// impure driver only feeds bytes into the reducers and writes the strings these helpers build.
+// The families here are all total: the stream-boundary guards that narrow `process.stdin` / any
+// injected stream without an assertion; the cursor math the driver uses to redraw a field view IN
+// PLACE (count a view's lines, build the cursor-up sequence, assemble the reposition-and-clear
+// prefix); and the projections and line renderers the whole-form walk needs that no reducer owns —
+// a control read as text, a value shown read-only, the choices a field actually offers, and the
+// group, locked, suggestion, unavailable, and numbered-list lines. The impure driver only feeds
+// bytes into the reducers and writes the strings these helpers build. The output boundary is
+// narrowed by the console module's own `isStreamTarget`, which this module does not redeclare.
 
 import type { FieldChoice, FieldValue, FormField, TextField } from '@orkestrel/form'
 import type { PromptTheme } from '@src/core'
 import type { StylerInterface } from '@orkestrel/console'
-import type { InputStreamInterface, OutputStreamInterface } from './types.js'
+import type { InputStreamInterface } from './types.js'
+import { RETURN } from '@src/core'
 import {
-	CARRIAGE_RETURN,
 	CLEAR_DOWN,
 	CONTROL_HINTS,
 	CSI_UP,
@@ -44,24 +45,6 @@ export function isInputStream(value: unknown): value is InputStreamInterface {
 		typeof value.on === 'function' &&
 		'off' in value &&
 		typeof value.off === 'function'
-	)
-}
-
-/**
- * Checks whether `value` is a usable {@link OutputStreamInterface} — a record with a callable `write`. A
- * total type guard: it NEVER throws and returns `false` for anything off-shape, so it
- * narrows the output boundary (the real `process.stdout`, or a recording fake a test injects) to the
- * one method the driver writes through — no `as`.
- *
- * @param value - Any value crossing the boundary (a process stream, an injected fake, `unknown`)
- * @returns True if `value` has a callable `write`; false otherwise
- */
-export function isOutputStream(value: unknown): value is OutputStreamInterface {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'write' in value &&
-		typeof value.write === 'function'
 	)
 }
 
@@ -127,7 +110,7 @@ export function lineCount(view: string): number {
  * @param count - How many lines to move the cursor up
  * @returns The `ESC[{count}A` sequence, or `''` when `count <= 0`
  */
-export function moveUp(count: number): string {
+export function renderCursorUp(count: number): string {
 	if (count <= 0) return ''
 	return `${CSI_UP.replace('{count}', String(count))}`
 }
@@ -150,16 +133,16 @@ export function moveUp(count: number): string {
  * @returns The control-sequence prefix to write before the new view
  */
 export function redrawPrefix(previousLines: number): string {
-	return `${moveUp(previousLines - 1)}${CARRIAGE_RETURN}${CLEAR_DOWN}`
+	return `${renderCursorUp(previousLines - 1)}${RETURN}${CLEAR_DOWN}`
 }
 
 /**
  * Projects any field the walk reads as a LINE OF TEXT into the {@link TextField} the text reducer
- * takes — `text` itself, and the six controls a terminal has no widget for: `number`, `date`,
+ * takes — `text` itself, and the controls a terminal has no widget for: `number`, `date`,
  * `time`, `datetime`, `color`, and one `file` entry. The label carries that control's format cue
  * from {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
  * projection carries no rule, because the AUTHORITATIVE form still evaluates the answer this line
- * binds; it exists only so one reducer can render seven controls.
+ * binds; it exists only so one reducer covers every one of them.
  *
  * @param field - The field being read
  * @returns The text field the reducer renders for it
@@ -223,7 +206,15 @@ export function filterDisabled(choices: readonly FieldChoice[]): readonly FieldC
 	return choices.filter((choice) => choice.disabled === true)
 }
 
-/** Renders the section header the walk writes when it enters a new field group, painted by the `message` role. */
+/**
+ * Renders the section header the walk writes when it enters a new field group, painted by the
+ * `message` role.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param label - The group's declared label, falling back to its own name
+ * @returns The rendered section header
+ */
 export function renderGroupHeader(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -253,7 +244,15 @@ export function renderLockedLine(
 	return value.length === 0 ? head : `${head} ${styler.render(theme.roles.content, value)}`
 }
 
-/** Renders the line listing an OPEN select's offered values above its text prompt — a suggestion list, because an open select admits an answer the list does not offer. */
+/**
+ * Renders the line listing an OPEN select's offered values above its text prompt — a suggestion
+ * list, because an open select admits an answer the list does not offer.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param choices - The choices the open select offers, from {@link filterEnabled}
+ * @returns The rendered suggestion line
+ */
 export function renderSuggestionLine(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -263,7 +262,15 @@ export function renderSuggestionLine(
 	return styler.render(theme.roles.hint, `${SUGGESTION_LEAD}: ${values}`)
 }
 
-/** Renders the line naming the choices a field shows but refuses, written above the list the walk drives. */
+/**
+ * Renders the line naming the choices a field shows but refuses, written above the list the walk
+ * drives.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param choices - The refused choices, from {@link filterDisabled}
+ * @returns The rendered unavailable line
+ */
 export function renderUnavailableLine(
 	styler: StylerInterface,
 	theme: PromptTheme,

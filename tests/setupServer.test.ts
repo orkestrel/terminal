@@ -1,19 +1,14 @@
 // tests/setupServer.ts — the Node-only test infrastructure the server project loads. This proof
 // covers the exported behavior the server suites depend on: the recording output target, the
-// manually pushed TTY's real emitter and its raw-mode transition counters, the split between the
-// stripped and the raw transcript, the scripted TTY's per-registration delivery, and the scripted
-// line stream. Expectations are derived through routes the module cannot share — a real
-// EventEmitter's own listener count, the console stripper, the host timer queue, and a real stream
-// drain. Terminal's own rendering and key handling belong to the server suites.
+// recording TTY's real emitter and its raw-mode transition counters, the split between the
+// stripped and the raw transcript, the per-registration script delivery that same TTY replays when
+// scripts are supplied, and the scripted line stream. Expectations are derived through routes the
+// module cannot share — a real EventEmitter's own listener count, the console stripper, the host
+// timer queue, and a real stream drain. Terminal's own rendering and key handling belong to the
+// server suites.
 
 import type { FakeTTYInterface } from './setupServer.js'
-import {
-	createFakeTTY,
-	createLineInput,
-	createScriptedTTY,
-	createStreamTarget,
-	rawOutput,
-} from './setupServer.js'
+import { createFakeTTY, createLineInput, createStreamTarget, rawOutput } from './setupServer.js'
 import { CTRL_D, RETURN } from '@src/core'
 import { strip } from '@orkestrel/console'
 import { collect, createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
@@ -97,11 +92,22 @@ describe('createFakeTTY', () => {
 		expect(rawOutput(tty)).toBe(`${styled} Ada`)
 		expect(rawOutput(tty)).not.toBe(tty.text())
 	})
-})
 
-describe('createScriptedTTY', () => {
-	it('delivers one script per listener registration, in order and off the host queue', async () => {
-		const tty = createScriptedTTY([['Ada', RETURN], [CTRL_D]])
+	it('stays manually pushed when no scripts are supplied', async () => {
+		const tty = createFakeTTY()
+		const received = createRecorder<readonly [chunk: string | Uint8Array]>()
+
+		tty.input.on('data', received.handler)
+		await waitForDelay()
+		// Registration alone delivers nothing without a script list, so the push is the only source.
+		expect(received.calls).toEqual([])
+
+		tty.push('typed')
+		expect(received.calls).toEqual([['typed']])
+	})
+
+	it('delivers one supplied script per listener registration, in order and off the host queue', async () => {
+		const tty = createFakeTTY({ scripts: [['Ada', RETURN], [CTRL_D]] })
 		const first = createRecorder<readonly [chunk: string | Uint8Array]>()
 		const second = createRecorder<readonly [chunk: string | Uint8Array]>()
 
@@ -119,7 +125,7 @@ describe('createScriptedTTY', () => {
 		expect(second.calls).toEqual([[CTRL_D]])
 
 		// A registration past the last script delivers nothing at all.
-		const spent = createScriptedTTY([['only']])
+		const spent = createFakeTTY({ scripts: [['only']] })
 		const after = createRecorder<readonly [chunk: string | Uint8Array]>()
 		spent.input.on('data', after.handler)
 		await waitForDelay()
@@ -128,9 +134,15 @@ describe('createScriptedTTY', () => {
 		expect(after.calls).toEqual([['only']])
 	})
 
-	it('carries the same recording TTY contract as the manually pushed one', () => {
-		const tty: FakeTTYInterface = createScriptedTTY([])
+	it('carries the same recording contract with an empty script list as with none', async () => {
+		const tty: FakeTTYInterface = createFakeTTY({ scripts: [] })
 		const setRawMode = requireValue(tty.input.setRawMode, 'The scripted TTY exposes no setRawMode')
+		const received = createRecorder<readonly [chunk: string | Uint8Array]>()
+
+		tty.input.on('data', received.handler)
+		await waitForDelay()
+		// An empty script list registers the listener and delivers nothing to it.
+		expect(received.calls).toEqual([])
 
 		tty.output.write('\u001b[32mdone\u001b[0m')
 		expect(tty.input.isTTY).toBe(true)

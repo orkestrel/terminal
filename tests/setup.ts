@@ -161,7 +161,7 @@ export function createFormSchema(): FormSchema {
 }
 
 /** Build one form covering every supported field control. */
-export function createTwelveControlSchema(): FormSchema {
+export function createEveryControlSchema(): FormSchema {
 	return {
 		label: 'Registration',
 		fields: [
@@ -224,7 +224,7 @@ export function createHostilePattern(text: string): string {
 
 /**
  * A valid schema with hostile bytes in every schema string position terminal can render or use to
- * relate rendered records. It covers all twelve controls and every control-specific string slot.
+ * relate rendered records. It covers every field control and every control-specific string slot.
  */
 export function createHostileSchema(): FormSchema {
 	const hostile = createHostileText

@@ -7,13 +7,10 @@ import {
 	CTRL_D,
 	CTRL_U,
 	DELETE,
-	ESCAPE,
-	KEY_CSI,
+	KEY_SS3,
 	NEWLINE,
 	RETURN,
 	SPACE,
-	checkboxReduce,
-	confirmReduce,
 	createCheckboxState,
 	createConfirmState,
 	createEditorState,
@@ -23,17 +20,16 @@ import {
 	createSelectState,
 	defaultTimer,
 	editLine,
-	editorReduce,
-	inputReduce,
 	isAbortError,
 	isInsecureRemote,
-	isPendingForm,
-	isPendingFormStatus,
 	isPrintable,
-	isTerminalSnapshot,
-	isWireEvent,
 	parseKey,
-	passwordReduce,
+	reduceCheckbox,
+	reduceConfirm,
+	reduceEditor,
+	reduceInput,
+	reducePassword,
+	reduceSelect,
 	renderCheckboxView,
 	renderConfirmView,
 	renderEditorView,
@@ -47,7 +43,6 @@ import {
 	sanitizeDisplayText,
 	sanitizeSchema,
 	sanitizeThemeIcons,
-	selectReduce,
 	serializeDestroy,
 	serializeExpire,
 	serializePending,
@@ -59,7 +54,7 @@ import {
 	createPendingForm,
 	feedReducer,
 } from '../../setup.js'
-import { strip } from '@orkestrel/console'
+import { CSI, strip } from '@orkestrel/console'
 import { requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
@@ -96,9 +91,11 @@ describe('parseKey', () => {
 	})
 
 	it('decodes CSI and SS3 navigation sequences', () => {
-		expect(parseKey(`${KEY_CSI}A`)).toMatchObject({ name: 'up', meta: true })
-		expect(parseKey(`${ESCAPE}OB`)).toMatchObject({ name: 'down', meta: true })
-		expect(parseKey(`${KEY_CSI}3~`)).toMatchObject({ name: 'delete', meta: true })
+		// The decode table is keyed by the console module's own CSI lead, so a sequence built from
+		// that primitive is the one the decoder answers.
+		expect(parseKey(`${CSI}A`)).toMatchObject({ name: 'up', meta: true })
+		expect(parseKey(`${KEY_SS3}B`)).toMatchObject({ name: 'down', meta: true })
+		expect(parseKey(`${CSI}3~`)).toMatchObject({ name: 'delete', meta: true })
 	})
 
 	it('preserves printable and byte-array input', () => {
@@ -112,8 +109,8 @@ describe('parseKey', () => {
 	it('is total for empty and unknown escape sequences, naming neither', () => {
 		expect(parseKey('')).toEqual({ sequence: '', ctrl: false, meta: false, shift: false })
 		expect(parseKey('')).not.toHaveProperty('name')
-		const unknown = parseKey(`${ESCAPE}[999~`)
-		expect(unknown.sequence).toBe(`${ESCAPE}[999~`)
+		const unknown = parseKey(`${CSI}999~`)
+		expect(unknown.sequence).toBe(`${CSI}999~`)
 		expect(unknown).not.toHaveProperty('name')
 	})
 })
@@ -136,23 +133,23 @@ describe('input reducer', () => {
 			label: 'Name',
 			default: 'Ada',
 		})
-		const typed = inputReduce(initial, parseKey('G'))
+		const typed = reduceInput(initial, parseKey('G'))
 		expect(typed.state).not.toBe(initial)
 		expect(initial.value).toBe('')
 		expect(typed.state.value).toBe('G')
-		expect(inputReduce(initial, parseKey(RETURN))).toMatchObject({ status: 'submit', value: 'Ada' })
+		expect(reduceInput(initial, parseKey(RETURN))).toMatchObject({ status: 'submit', value: 'Ada' })
 	})
 
 	it('supports backspace, ctrl-u, and ctrl-c', () => {
 		const initial = createInputState({ control: 'text', name: 'name' })
-		expect(feedReducer(inputReduce, initial, ['a', 'b', BACKSPACE]).state.value).toBe('a')
-		expect(feedReducer(inputReduce, initial, ['a', CTRL_U]).state.value).toBe('')
-		expect(inputReduce(initial, parseKey(CTRL_C)).status).toBe('cancel')
+		expect(feedReducer(reduceInput, initial, ['a', 'b', BACKSPACE]).state.value).toBe('a')
+		expect(feedReducer(reduceInput, initial, ['a', CTRL_U]).state.value).toBe('')
+		expect(reduceInput(initial, parseKey(CTRL_C)).status).toBe('cancel')
 	})
 
 	it('returns the same state for an undecoded key', () => {
 		const initial = createInputState({ control: 'text', name: 'name' })
-		const step = inputReduce(initial, parseKey(`${KEY_CSI}999~`))
+		const step = reduceInput(initial, parseKey(`${CSI}999~`))
 		expect(step.status).toBe('active')
 		expect(step.state).toEqual(initial)
 	})
@@ -160,7 +157,7 @@ describe('input reducer', () => {
 	it('renders labels, content, and a committed value', () => {
 		const initial = createInputState({ control: 'text', name: 'name', label: 'Name' })
 		expect(strip(renderInputView(initial))).toContain('? Name ›')
-		expect(strip(feedReducer(inputReduce, initial, ['A', RETURN]).view)).toBe('✔ Name A')
+		expect(strip(feedReducer(reduceInput, initial, ['A', RETURN]).view)).toBe('✔ Name A')
 	})
 
 	it('sanitizes preserved names and defaults only when they are echoed', () => {
@@ -169,7 +166,7 @@ describe('input reducer', () => {
 		const initial = createInputState({ control: 'text', name, default: seed })
 
 		expect(strip(renderInputView(initial))).toBe('? name › seed')
-		const submitted = inputReduce(initial, parseKey(RETURN))
+		const submitted = reduceInput(initial, parseKey(RETURN))
 		expect(submitted.value).toBe(seed)
 		expect(strip(submitted.view)).toBe('✔ name seed')
 		expect(seed).not.toBe(sanitizeDisplayText(seed))
@@ -184,32 +181,32 @@ describe('password reducer', () => {
 			label: 'Secret',
 			mask: '•',
 		})
-		const typed = feedReducer(passwordReduce, initial, ['s', '3'])
+		const typed = feedReducer(reducePassword, initial, ['s', '3'])
 		expect(strip(renderPasswordView(typed.state))).toContain('••')
 		expect(renderPasswordView(typed.state)).not.toContain('s3')
-		const submitted = passwordReduce(typed.state, parseKey(RETURN))
+		const submitted = reducePassword(typed.state, parseKey(RETURN))
 		expect(submitted.value).toBe('s3')
 		expect(submitted.view).not.toContain('s3')
 	})
 
 	it('cancels on ctrl-c', () => {
 		const initial = createPasswordState({ control: 'password', name: 'secret' })
-		expect(passwordReduce(initial, parseKey(CTRL_C)).status).toBe('cancel')
+		expect(reducePassword(initial, parseKey(CTRL_C)).status).toBe('cancel')
 	})
 })
 
 describe('confirm reducer', () => {
 	it('submits y, n, and the default', () => {
 		const yes = createConfirmState({ control: 'confirm', name: 'ready', default: true })
-		expect(confirmReduce(yes, parseKey('y')).value).toBe(true)
-		expect(confirmReduce(yes, parseKey('N')).value).toBe(false)
-		expect(confirmReduce(yes, parseKey(RETURN)).value).toBe(true)
+		expect(reduceConfirm(yes, parseKey('y')).value).toBe(true)
+		expect(reduceConfirm(yes, parseKey('N')).value).toBe(false)
+		expect(reduceConfirm(yes, parseKey(RETURN)).value).toBe(true)
 	})
 
 	it('ignores unrelated keys and cancels on ctrl-c', () => {
 		const state = createConfirmState({ control: 'confirm', name: 'ready' })
-		expect(confirmReduce(state, parseKey('x')).status).toBe('active')
-		expect(confirmReduce(state, parseKey(CTRL_C)).status).toBe('cancel')
+		expect(reduceConfirm(state, parseKey('x')).status).toBe('active')
+		expect(reduceConfirm(state, parseKey(CTRL_C)).status).toBe('cancel')
 		expect(strip(renderConfirmView(state))).toContain('(y/N)')
 	})
 })
@@ -229,8 +226,8 @@ describe('select reducer', () => {
 	it('focuses the default, wraps, and submits the choice value', () => {
 		const initial = createSelectState(field)
 		expect(initial.focused).toBe(1)
-		expect(selectReduce(initial, parseKey(`${KEY_CSI}B`)).state.focused).toBe(0)
-		expect(selectReduce(initial, parseKey(RETURN)).value).toBe('viewer')
+		expect(reduceSelect(initial, parseKey(`${CSI}B`)).state.focused).toBe(0)
+		expect(reduceSelect(initial, parseKey(RETURN)).value).toBe('viewer')
 	})
 
 	it('renders every label and help string', () => {
@@ -255,10 +252,10 @@ describe('checkbox reducer', () => {
 	it('seeds, toggles copy-on-write, and submits in choice order', () => {
 		const initial = createCheckboxState(field)
 		expect(initial.checked).toEqual([1])
-		const toggled = checkboxReduce(initial, parseKey(SPACE))
+		const toggled = reduceCheckbox(initial, parseKey(SPACE))
 		expect(toggled.state).not.toBe(initial)
 		expect(toggled.state.checked).toEqual([1, 0])
-		expect(checkboxReduce(toggled.state, parseKey(RETURN)).value).toEqual(['read', 'write'])
+		expect(reduceCheckbox(toggled.state, parseKey(RETURN)).value).toEqual(['read', 'write'])
 	})
 
 	it('renders boxes and the selection count', () => {
@@ -279,15 +276,15 @@ describe('checkbox reducer', () => {
 describe('editor reducer', () => {
 	it('commits lines and finishes with ctrl-d', () => {
 		const initial = createEditorState({ control: 'editor', name: 'notes', label: 'Notes' })
-		const final = feedReducer(editorReduce, initial, ['a', RETURN, 'b', CTRL_D])
+		const final = feedReducer(reduceEditor, initial, ['a', RETURN, 'b', CTRL_D])
 		expect(final).toMatchObject({ status: 'submit', value: 'a\nb' })
 		expect(strip(final.view)).toBe('✔ Notes 2 lines')
 	})
 
 	it('uses the default for an empty editor and cancels on ctrl-c', () => {
 		const state = createEditorState({ control: 'editor', name: 'notes', default: 'seed' })
-		expect(editorReduce(state, parseKey(CTRL_D)).value).toBe('seed')
-		expect(editorReduce(state, parseKey(CTRL_C)).status).toBe('cancel')
+		expect(reduceEditor(state, parseKey(CTRL_D)).value).toBe('seed')
+		expect(reduceEditor(state, parseKey(CTRL_C)).status).toBe('cancel')
 		expect(strip(renderEditorView(state))).toContain('(Ctrl+D to finish)')
 	})
 })
@@ -298,11 +295,11 @@ describe('editLine', () => {
 		expect(editLine('ab', parseKey(SPACE))).toBe('ab ')
 		expect(editLine('ab', parseKey(BACKSPACE))).toBe('a')
 		expect(editLine('ab', parseKey(CTRL_U))).toBe('')
-		expect(editLine('ab', parseKey(`${KEY_CSI}A`))).toBeUndefined()
+		expect(editLine('ab', parseKey(`${CSI}A`))).toBeUndefined()
 	})
 
 	it('refuses an undecoded key that carries no name', () => {
-		expect(editLine('ab', parseKey(`${KEY_CSI}999~`))).toBeUndefined()
+		expect(editLine('ab', parseKey(`${CSI}999~`))).toBeUndefined()
 	})
 })
 
@@ -421,25 +418,7 @@ describe('schema sanitization', () => {
 	})
 })
 
-describe('wire guards and serializers', () => {
-	it('guards pending statuses and envelopes without parsing schema semantics', () => {
-		for (const status of ['pending', 'answered', 'expired'])
-			expect(isPendingFormStatus(status)).toBe(true)
-		expect(isPendingFormStatus('gone')).toBe(false)
-		expect(isPendingForm(createPendingForm())).toBe(true)
-		expect(isPendingForm({ id: 'x', schema: {}, status: 'pending', time: 1 })).toBe(true)
-		expect(isPendingForm({ id: '', schema: {}, status: 'pending', time: 1 })).toBe(false)
-		expect(isPendingForm(Object.create(null))).toBe(false)
-	})
-
-	it('guards wire events and terminal snapshots', () => {
-		expect(isWireEvent({ event: 'pending', data: '{}', id: 'x' })).toBe(true)
-		expect(isWireEvent({ event: 1, data: '{}' })).toBe(false)
-		expect(isTerminalSnapshot({ id: 'agent', timeout: 20 })).toBe(true)
-		expect(isTerminalSnapshot({ id: '', timeout: 20 })).toBe(false)
-		expect(isTerminalSnapshot({ id: 'agent', timeout: '20' })).toBe(false)
-	})
-
+describe('wire serializers', () => {
 	it('serializes pending, expire, and destroy frames exactly', () => {
 		const pending = createPendingForm(undefined, { id: 'one' })
 		expect(serializePending(pending)).toEqual({

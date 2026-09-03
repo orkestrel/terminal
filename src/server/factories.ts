@@ -16,7 +16,7 @@ import { Terminal } from './Terminal.js'
  * @remarks
  * - **The form is the unit.** `ask` takes the caller's live form and returns its settled values. The
  *   returned promise is that form's own `answer`, so a caller holding the form can await either one.
- * - **Every control renders.** Seven controls are read as a line of text with their format cue,
+ * - **Every control renders.** The line-read controls are read as a line of text with their format cue,
  *   `password` masks, `confirm` takes a key, `editor` takes a block, `select` and `checkbox` drive a
  *   list, and an open `select` accepts a value its list does not offer.
  * - **The form decides.** A blank answer binds as absence, the form evaluates, and a refusal

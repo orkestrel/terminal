@@ -1,9 +1,10 @@
 import type { PromptRole, PromptTheme } from './types.js'
-import { freezeStyle, STATUS_ICONS } from '@orkestrel/console'
+import { CSI, ESC, freezeStyle, STATUS_ICONS } from '@orkestrel/console'
 
 // The constant DATA the pure terminal core reads: key decoding, rendering, and transport defaults.
 // UPPER_SNAKE, `Object.freeze`d, every member exported. Control bytes are built with
-// `String.fromCharCode` so no raw control character appears in source.
+// `String.fromCharCode` so no raw control character appears in source, and the escape lead and the
+// CSI prefix come from `@orkestrel/console`, which publishes both.
 
 // === Control bytes (named, no raw control characters in source)
 
@@ -13,8 +14,6 @@ export const RETURN = String.fromCharCode(13)
 export const NEWLINE = String.fromCharCode(10)
 /** Names the tab byte (`\t`, U+0009). */
 export const TAB = String.fromCharCode(9)
-/** Names the escape byte (ESC, U+001B) — the lone byte, and the lead byte of every CSI / SS3 sequence. */
-export const ESCAPE = String.fromCharCode(27)
 /** Names the backspace byte (BS, U+0008) — Ctrl+H / some terminals' Backspace. */
 export const BACKSPACE = String.fromCharCode(8)
 /** Names the delete byte (DEL, U+007F) — the usual Backspace byte on a Unix TTY. */
@@ -33,19 +32,17 @@ export const CTRL_A = String.fromCharCode(1)
 export const CTRL_E = String.fromCharCode(5)
 
 /**
- * Names the Control Sequence Introducer lead (`ESC[`) for the navigation keys — the prefix of the
- * arrow / home / end / delete sequences {@link SEQUENCE_NAMES} is keyed by. Named `KEY_CSI`
- * (not `CSI`) so it never collides with the console module's SGR `CSI` (both barrel through
- * `@src/core`).
+ * Names the Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit
+ * (`ESC O A`). Built from the console module's own {@link import('@orkestrel/console').ESC}; the
+ * navigation keys' CSI lead is that module's {@link import('@orkestrel/console').CSI}, which this
+ * package reuses rather than redeclaring.
  */
-export const KEY_CSI = `${ESCAPE}[`
-/** Names the Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`). */
-export const KEY_SS3 = `${ESCAPE}O`
+export const KEY_SS3 = `${ESC}O`
 
 /**
  * Holds the exact escape SEQUENCE → canonical key NAME table {@link import('./helpers.js').parseKey}
  * consults for the navigation / editing keys. Covers BOTH the CSI form (`ESC[A`…) and the SS3
- * form (`ESCOA`…) of the four arrows, plus the `home` / `end` / `delete` CSI sequences (with
+ * form (`ESCOA`…) of the arrows, plus the `home` / `end` / `delete` CSI sequences (with
  * their numeric-tilde variants). The source of truth for the multi-byte key decode; frozen.
  *
  * @remarks
@@ -55,21 +52,21 @@ export const KEY_SS3 = `${ESCAPE}O`
  * sees the wire encoding.
  */
 export const SEQUENCE_NAMES: Readonly<Record<string, string>> = Object.freeze({
-	[`${KEY_CSI}A`]: 'up',
-	[`${KEY_CSI}B`]: 'down',
-	[`${KEY_CSI}C`]: 'right',
-	[`${KEY_CSI}D`]: 'left',
+	[`${CSI}A`]: 'up',
+	[`${CSI}B`]: 'down',
+	[`${CSI}C`]: 'right',
+	[`${CSI}D`]: 'left',
 	[`${KEY_SS3}A`]: 'up',
 	[`${KEY_SS3}B`]: 'down',
 	[`${KEY_SS3}C`]: 'right',
 	[`${KEY_SS3}D`]: 'left',
-	[`${KEY_CSI}H`]: 'home',
-	[`${KEY_CSI}F`]: 'end',
-	[`${KEY_CSI}1~`]: 'home',
-	[`${KEY_CSI}4~`]: 'end',
-	[`${KEY_CSI}3~`]: 'delete',
-	[`${KEY_CSI}7~`]: 'home',
-	[`${KEY_CSI}8~`]: 'end',
+	[`${CSI}H`]: 'home',
+	[`${CSI}F`]: 'end',
+	[`${CSI}1~`]: 'home',
+	[`${CSI}4~`]: 'end',
+	[`${CSI}3~`]: 'delete',
+	[`${CSI}7~`]: 'home',
+	[`${CSI}8~`]: 'end',
 })
 
 /**
@@ -81,7 +78,7 @@ export const SEQUENCE_NAMES: Readonly<Record<string, string>> = Object.freeze({
  * @remarks
  * `return` / `newline` / `return + newline` all map to `return` (one canonical Enter name) — a
  * terminal or a paste can deliver Enter as `\r`, `\n`, or the `\r\n` pair in one chunk;
- * `delete` / `backspace` both map to `backspace` (the two Backspace bytes); the Ctrl combos
+ * `delete` / `backspace` both map to `backspace` (the Backspace bytes); the Ctrl combos
  * (`c` / `d` / `u` / `a` / `e`) carry `ctrl: true` so a reducer can match
  * `key.ctrl && key.name === 'c'`. `escape` / `tab` / `space` are plain named keys.
  */
@@ -92,7 +89,7 @@ export const CONTROL_NAMES: Readonly<
 	[NEWLINE]: Object.freeze({ name: 'return', ctrl: false }),
 	[`${RETURN}${NEWLINE}`]: Object.freeze({ name: 'return', ctrl: false }),
 	[TAB]: Object.freeze({ name: 'tab', ctrl: false }),
-	[ESCAPE]: Object.freeze({ name: 'escape', ctrl: false }),
+	[ESC]: Object.freeze({ name: 'escape', ctrl: false }),
 	[BACKSPACE]: Object.freeze({ name: 'backspace', ctrl: false }),
 	[DELETE]: Object.freeze({ name: 'backspace', ctrl: false }),
 	[SPACE]: Object.freeze({ name: 'space', ctrl: false }),
@@ -111,7 +108,7 @@ export const DEFAULT_MASK = '*'
 // === Prompt-view icons
 
 /**
- * Holds the six default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
+ * Holds the default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
  * the default theme is assembled; a view reads its resolved theme and never this constant. Frozen.
  *
  * @remarks

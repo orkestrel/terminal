@@ -8,7 +8,7 @@
 // behavior belongs to the suites that own it and is never re-proven here.
 
 import type { TerminalStoreInterface } from '@src/core'
-import { ACCEPT_EVENT_STREAM, CTRL_C, KEY_CSI, RETURN, isPendingForm } from '@src/core'
+import { ACCEPT_EVENT_STREAM, CTRL_C, RETURN, isPendingForm } from '@src/core'
 import { FIELD_CONTROLS, auditSchema, createForm, parseForm, serializeForm } from '@orkestrel/form'
 import {
 	TERMINAL_STORE_SCENARIOS,
@@ -22,11 +22,11 @@ import {
 	createPendingForm,
 	createRecordingTerminal,
 	createSSEResponse,
-	createTwelveControlSchema,
+	createEveryControlSchema,
 	feedReducer,
 } from './setup.js'
 import { createSSEParser } from '@orkestrel/sse'
-import { strip } from '@orkestrel/console'
+import { CSI, strip } from '@orkestrel/console'
 import { createRecorder, requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
@@ -132,7 +132,7 @@ describe('feedReducer', () => {
 				status: 'active',
 			}),
 			[],
-			['A', `${KEY_CSI}A`, RETURN, CTRL_C],
+			['A', `${CSI}A`, RETURN, CTRL_C],
 		)
 
 		// The reducer never sees a raw string: an arrow escape arrives decoded as `up`, and the
@@ -196,9 +196,9 @@ describe('createRecordingTerminal', () => {
 	})
 })
 
-describe('createTwelveControlSchema', () => {
+describe('createEveryControlSchema', () => {
 	it('covers every field control the form package declares, each under its own name', () => {
-		const schema = createTwelveControlSchema()
+		const schema = createEveryControlSchema()
 		const controls = schema.fields.map((field) => field.control)
 		const names = schema.fields.map((field) => field.name)
 
@@ -221,7 +221,7 @@ describe('createPendingForm', () => {
 		// The payload is a real serialized schema, so the real parser recovers the default fixture.
 		expect(parseForm(envelope.schema)).toEqual(createFormSchema())
 
-		const routed = createPendingForm(createTwelveControlSchema(), {
+		const routed = createPendingForm(createEveryControlSchema(), {
 			id: 'routed',
 			from: 'agent',
 			to: 'shell',
@@ -230,7 +230,7 @@ describe('createPendingForm', () => {
 		expect(routed.id).toBe('routed')
 		expect(routed.from).toBe('agent')
 		expect(routed.to).toBe('shell')
-		expect(parseForm(routed.schema)).toEqual(createTwelveControlSchema())
+		expect(parseForm(routed.schema)).toEqual(createEveryControlSchema())
 	})
 })
 

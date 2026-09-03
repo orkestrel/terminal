@@ -1,43 +1,39 @@
-import { CTRL_C, CTRL_D, KEY_CSI, RETURN, createPromptClient, isTerminalError } from '@src/core'
+import { CTRL_C, CTRL_D, RETURN, createPromptClient, isTerminalError } from '@src/core'
 import { createTerminal } from '@src/server'
 import {
+	createEveryControlSchema,
 	createJSONResponse,
 	createPendingForm,
 	createSSEResponse,
-	createTwelveControlSchema,
 } from '../../setup.js'
-import {
-	createFakeTTY,
-	createLineInput,
-	createScriptedTTY,
-	createStreamTarget,
-	rawOutput,
-} from '../../setupServer.js'
+import { createFakeTTY, createLineInput, createStreamTarget, rawOutput } from '../../setupServer.js'
 import { createForm, isFormError } from '@orkestrel/form'
-import { strip } from '@orkestrel/console'
+import { CSI, strip } from '@orkestrel/console'
 import { requireValue, waitForDelay } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
 
 describe('Terminal', () => {
-	it('walks all twelve controls through real reducers and settles one whole form', async () => {
-		const tty = createScriptedTTY([
-			['Ada', RETURN],
-			['s3cret', RETURN],
-			['42', RETURN],
-			['2026-08-15', RETURN],
-			['12:30', RETURN],
-			['2026-08-15T12:30', RETURN],
-			['#112233', RETURN],
-			['y'],
-			[`${KEY_CSI}B`, RETURN],
-			[' ', `${KEY_CSI}B`, ' ', RETURN],
-			['a.txt', RETURN],
-			['b.txt', RETURN],
-			[RETURN],
-			['first', RETURN, 'second', CTRL_D],
-		])
+	it('walks every control through real reducers and settles one whole form', async () => {
+		const tty = createFakeTTY({
+			scripts: [
+				['Ada', RETURN],
+				['s3cret', RETURN],
+				['42', RETURN],
+				['2026-08-15', RETURN],
+				['12:30', RETURN],
+				['2026-08-15T12:30', RETURN],
+				['#112233', RETURN],
+				['y'],
+				[`${CSI}B`, RETURN],
+				[' ', `${CSI}B`, ' ', RETURN],
+				['a.txt', RETURN],
+				['b.txt', RETURN],
+				[RETURN],
+				['first', RETURN, 'second', CTRL_D],
+			],
+		})
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
-		const form = createForm(createTwelveControlSchema())
+		const form = createForm(createEveryControlSchema())
 
 		expect(await terminal.ask(form)).toEqual({
 			name: 'Ada',
@@ -62,7 +58,7 @@ describe('Terminal', () => {
 	})
 
 	it('binds a blank line as absence so required refuses and re-asks', async () => {
-		const tty = createScriptedTTY([[RETURN], ['Ada', RETURN]])
+		const tty = createFakeTTY({ scripts: [[RETURN], ['Ada', RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [{ control: 'text', name: 'name', label: 'Name', rule: { required: true } }],
@@ -75,10 +71,12 @@ describe('Terminal', () => {
 	})
 
 	it('refuses a value the control cannot hold and accepts a later parseable value', async () => {
-		const tty = createScriptedTTY([
-			['old', RETURN],
-			['42', RETURN],
-		])
+		const tty = createFakeTTY({
+			scripts: [
+				['old', RETURN],
+				['42', RETURN],
+			],
+		})
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({ fields: [{ control: 'number', name: 'age', label: 'Age' }] })
 
@@ -87,7 +85,7 @@ describe('Terminal', () => {
 	})
 
 	it('accepts an open select value outside its suggestion list', async () => {
-		const tty = createScriptedTTY([['operator', RETURN]])
+		const tty = createFakeTTY({ scripts: [['operator', RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [
@@ -108,7 +106,7 @@ describe('Terminal', () => {
 	it('sanitizes preserved values only when locked and suggestion lines echo them', async () => {
 		const locked = 'fi\u0000xed\u007f'
 		const offered = 'ad\u0000min\u007f'
-		const tty = createScriptedTTY([['operator', RETURN]])
+		const tty = createFakeTTY({ scripts: [['operator', RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [
@@ -134,7 +132,7 @@ describe('Terminal', () => {
 	it('sanitizes field identity and failure text at the report boundary', async () => {
 		const name = 'na\u0000me\u007f'
 		const message = 'No\u0000pe\u007f'
-		const tty = createScriptedTTY([])
+		const tty = createFakeTTY({ scripts: [] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [{ control: 'text', name, hidden: true, rule: { required: true } }],
@@ -154,10 +152,12 @@ describe('Terminal', () => {
 	})
 
 	it('renders an authoritative refusal before posting the corrected retry', async () => {
-		const tty = createScriptedTTY([
-			['bad', RETURN],
-			['good', RETURN],
-		])
+		const tty = createFakeTTY({
+			scripts: [
+				['bad', RETURN],
+				['good', RETURN],
+			],
+		})
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const pending = createPendingForm(
 			{ fields: [{ control: 'text', name: 'word', label: 'Word' }] },
@@ -207,7 +207,7 @@ describe('Terminal', () => {
 	})
 
 	it('collects multiple file paths until a blank line', async () => {
-		const tty = createScriptedTTY([['one.txt', RETURN], ['two.txt', RETURN], [RETURN]])
+		const tty = createFakeTTY({ scripts: [['one.txt', RETURN], ['two.txt', RETURN], [RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({ fields: [{ control: 'file', name: 'files', multiple: true }] })
 
@@ -216,7 +216,7 @@ describe('Terminal', () => {
 	})
 
 	it('skips hidden and disabled fields, renders locked fields and groups, and submits held values', async () => {
-		const tty = createScriptedTTY([['Ada', RETURN]])
+		const tty = createFakeTTY({ scripts: [['Ada', RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			groups: [{ name: 'identity', label: 'Identity' }],
@@ -235,7 +235,7 @@ describe('Terminal', () => {
 	})
 
 	it('abandons an unanswerable hidden or locked required field after reporting it', async () => {
-		const tty = createScriptedTTY([])
+		const tty = createFakeTTY({ scripts: [] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [
@@ -266,7 +266,7 @@ describe('Terminal', () => {
 	})
 
 	it('submits a form containing only a runtime-disabled required field', async () => {
-		const tty = createScriptedTTY([])
+		const tty = createFakeTTY({ scripts: [] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const form = createForm({
 			fields: [{ control: 'text', name: 'disabled', disabled: true, rule: { required: true } }],

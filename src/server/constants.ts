@@ -1,20 +1,15 @@
 // Server-terminals constants — the cursor and line-clear ANSI sequences the interactive `Terminal`
 // driver writes to redraw a field view IN PLACE, plus the copy the walk shows around those views:
 // the per-control format hints, the readline-fallback prompts, and the marks for a locked field and
-// an unavailable choice. UPPER_SNAKE, every member exported. Sequences are built from a named ESC
-// byte through `String.fromCharCode` so no raw control character appears in source (the core
-// terminals / console-module idiom).
+// an unavailable choice. UPPER_SNAKE, every member exported. Every sequence is built from the
+// console module's own `CSI` prefix, so no raw control character appears in source and this module
+// declares no second copy of that primitive.
 
 import type { FieldControl } from '@orkestrel/form'
-
-/** Names the Escape byte (ESC, U+001B) — the lead byte of every CSI cursor-control sequence below. */
-export const ESCAPE = String.fromCharCode(27)
-
-/** Names the Control Sequence Introducer (`ESC[`) — the prefix of every cursor / erase sequence. */
-export const CSI = `${ESCAPE}[`
+import { CSI } from '@orkestrel/console'
 
 /**
- * Holds the cursor-UP sequence TEMPLATE (`ESC[{count}A`) — {@link import('./helpers.js').moveUp}
+ * Holds the cursor-UP sequence TEMPLATE (`ESC[{count}A`) — {@link import('./helpers.js').renderCursorUp}
  * interpolates the `{count}` placeholder with the number of lines to climb. Kept as a template so
  * the count stays out of the constant.
  */
@@ -35,12 +30,6 @@ export const CURSOR_SHOW = `${CSI}?25h`
  * never leaves orphaned rows below.
  */
 export const CLEAR_DOWN = `${CSI}J`
-
-/** Names the carriage return byte (`\r`, U+000D) — returns the cursor to column 0 so a redraw starts at the line's left edge. */
-export const CARRIAGE_RETURN = String.fromCharCode(13)
-
-/** Names the line feed byte (`\n`, U+000A) — the line terminator the driver writes after the final committed prompt view. */
-export const LINE_FEED = String.fromCharCode(10)
 
 /**
  * Holds the numbered-list prompt the non-TTY {@link import('./Terminal.js').Terminal} `select` fallback

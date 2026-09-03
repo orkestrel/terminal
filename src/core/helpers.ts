@@ -38,8 +38,8 @@ import { isString } from '@orkestrel/contract'
 import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested:
-// the key decoder, schema sanitization, per-field view renderers, and the six `create*State`
-// factories + `*Reduce` reducers. No `node:*`, no I/O, no events. Form owns validation and
+// the key decoder, schema sanitization, per-field view renderers, and the `create*State`
+// factories with their `reduce*` reducers. No `node:*`, no I/O, no events. Form owns validation and
 // settlement; these reducers only turn keys into candidate field values.
 
 // === Key decoding
@@ -104,7 +104,13 @@ export function parseKey(input: string | Uint8Array): KeyEvent {
 	return { sequence, ctrl: false, meta: false, shift: false }
 }
 
-/** Checks whether a single character is a printable (non-control) character — used by {@link parseKey}'s char fallback. */
+/**
+ * Checks whether a single character is a printable (non-control) character — used by
+ * {@link parseKey}'s char fallback.
+ *
+ * @param character - The single character to test
+ * @returns True if the character is at or above space and is not DEL; false otherwise
+ */
 export function isPrintable(character: string): boolean {
 	if (character.length === 0) return false
 	const code = character.codePointAt(0)
@@ -291,7 +297,15 @@ export function sanitizeThemeIcons(theme: PromptThemeOptions): PromptThemeOption
 
 // === Shared view helpers
 
-/** Renders the styled question header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles. */
+/**
+ * Renders the styled question header (`? message`) — the leading line every active prompt view
+ * shares, themed by the `question` + `message` roles.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param message - The prompt's question text
+ * @returns The rendered question header
+ */
 export function renderPromptHeader(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -320,7 +334,15 @@ export function renderHintedHeader(
 	return hint === undefined ? head : `${head} ${styler.render(theme.roles.hint, hint)}`
 }
 
-/** Renders the styled submit line (`✔ message`) — the committed header an interactive prompt shows once resolved, themed by the `success` + `message` roles. */
+/**
+ * Renders the styled submit line (`✔ message`) — the committed header an interactive prompt shows
+ * after it resolves, themed by the `success` + `message` roles.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param message - The settled prompt's question text
+ * @returns The rendered committed header
+ */
 export function renderSubmitHeader(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -329,7 +351,14 @@ export function renderSubmitHeader(
 	return `${styler.render(theme.roles.success, theme.icons.success)} ${styler.render(theme.roles.message, message)}`
 }
 
-/** Renders the styled failure line (`✖ message`) a form driver appends for a refused field. */
+/**
+ * Renders the styled failure line (`✖ message`) a form driver appends for a refused field.
+ *
+ * @param styler - The console styler that renders each role
+ * @param theme - The resolved prompt theme
+ * @param message - The failure text, normally the field's label and the reason
+ * @returns The rendered failure line
+ */
 export function renderErrorLine(
 	styler: StylerInterface,
 	theme: PromptTheme,
@@ -362,7 +391,12 @@ export function createInputState(
 	}
 }
 
-/** Renders a text-field key state as a styled view. */
+/**
+ * Renders a text-field key state as a styled view.
+ *
+ * @param state - The text field's current reducer state
+ * @returns The rendered single-line view — header, pointer, and the typed value or the default
+ */
 export function renderInputView(state: InputState): string {
 	const content = state.value.length > 0 ? state.value : state.default
 	const role = state.value.length > 0 ? state.theme.roles.content : state.theme.roles.hint
@@ -374,8 +408,12 @@ export function renderInputView(state: InputState): string {
  * Advances an input prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the value; backspace shrinks it; ctrl-u clears it; ctrl-c
  * cancels; return produces the candidate value, with an empty line falling back to the default.
+ *
+ * @param state - The text field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the new state, the rendered view, the status, and the value on submit
  */
-export function inputReduce(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
+export function reduceInput(state: InputState, key: KeyEvent): PromptStep<string, InputState> {
 	if (key.ctrl && key.name === 'c') return { state, view: renderInputView(state), status: 'cancel' }
 
 	if (key.name === 'return') {
@@ -419,7 +457,12 @@ export function createPasswordState(
 	}
 }
 
-/** Renders a password-field key state as a styled view. */
+/**
+ * Renders a password-field key state as a styled view.
+ *
+ * @param state - The password field's current reducer state
+ * @returns The rendered view, with the mask repeated in place of the typed value
+ */
 export function renderPasswordView(state: PasswordState): string {
 	const masked = state.styler.render(
 		state.theme.roles.content,
@@ -430,10 +473,14 @@ export function renderPasswordView(state: PasswordState): string {
 
 /**
  * Advances a password prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
- * reducer. Identical line-editing to {@link inputReduce} (printable extends, backspace shrinks,
+ * reducer. Identical line-editing to {@link reduceInput} (printable extends, backspace shrinks,
  * ctrl-u clears, ctrl-c cancels) but the view masks the value. Return produces the candidate value.
+ *
+ * @param state - The password field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the new state, the masked view, the status, and the value on submit
  */
-export function passwordReduce(
+export function reducePassword(
 	state: PasswordState,
 	key: KeyEvent,
 ): PromptStep<string, PasswordState> {
@@ -480,6 +527,9 @@ export function createConfirmState(
 
 /**
  * Renders a confirm-field key state as a styled view. The selected role paints the default letter.
+ *
+ * @param state - The confirm field's current reducer state
+ * @returns The rendered view — the header and the yes/no group with the default capitalized
  */
 export function renderConfirmView(state: ConfirmState): string {
 	const head = renderPromptHeader(state.styler, state.theme, state.message)
@@ -493,8 +543,12 @@ export function renderConfirmView(state: ConfirmState): string {
  * Advances a confirm prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<boolean>`
  * reducer. `y` / `Y` submits `true`, `n` / `N` submits `false`, return on an empty line submits
  * the `default`, ctrl-c cancels; any other key is ignored (stays active).
+ *
+ * @param state - The confirm field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the state, the rendered view, the status, and the answer on submit
  */
-export function confirmReduce(
+export function reduceConfirm(
 	state: ConfirmState,
 	key: KeyEvent,
 ): PromptStep<boolean, ConfirmState> {
@@ -542,7 +596,12 @@ export function createSelectState(
 	}
 }
 
-/** Renders a select-field key state as a multi-line styled view. */
+/**
+ * Renders a select-field key state as a multi-line styled view.
+ *
+ * @param state - The select field's current reducer state
+ * @returns The rendered view — the header, then one row per choice with the focused row marked
+ */
 export function renderSelectView(state: SelectState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
@@ -569,8 +628,12 @@ export function renderSelectView(state: SelectState): string {
  * reducer. `up` / `down` (and `k` / `j`) move the focus, WRAPPING at the ends; return submits the
  * focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer
  * guards against it); any other key is ignored.
+ *
+ * @param state - The select field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the state, the rendered view, the status, and the chosen value on submit
  */
-export function selectReduce(state: SelectState, key: KeyEvent): PromptStep<string, SelectState> {
+export function reduceSelect(state: SelectState, key: KeyEvent): PromptStep<string, SelectState> {
 	if (key.ctrl && key.name === 'c')
 		return { state, view: renderSelectView(state), status: 'cancel' }
 
@@ -628,7 +691,12 @@ export function createCheckboxState(
 	}
 }
 
-/** Renders a checkbox-field key state as a multi-line styled view. */
+/**
+ * Renders a checkbox-field key state as a multi-line styled view.
+ *
+ * @param state - The checkbox field's current reducer state
+ * @returns The rendered view — the header, one box per choice, and the selected count
+ */
 export function renderCheckboxView(state: CheckboxState): string {
 	const lines = state.choices.map((choice, index) => {
 		const active = index === state.focused
@@ -662,8 +730,12 @@ export function renderCheckboxView(state: CheckboxState): string {
  * `(state, key) → PromptStep<readonly string[]>` reducer. `up` / `down` (and `k` / `j`) move the
  * focus (wrapping); `space` toggles the focused index in the checked set; return submits the
  * checked values in choice order; ctrl-c cancels. The form applies selection-count rules.
+ *
+ * @param state - The checkbox field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the state, the rendered view, the status, and the ticked values on submit
  */
-export function checkboxReduce(
+export function reduceCheckbox(
 	state: CheckboxState,
 	key: KeyEvent,
 ): PromptStep<readonly string[], CheckboxState> {
@@ -707,7 +779,14 @@ export function checkboxReduce(
 	return { state, view: renderCheckboxView(state), status: 'active' }
 }
 
-/** Toggles `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion list. */
+/**
+ * Toggles `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion
+ * list.
+ *
+ * @param indices - The ticked indices, in tick order
+ * @param index - The index to add when absent, or drop when present
+ * @returns A new list carrying the toggled membership; the input is never mutated
+ */
 export function toggleIndex(indices: readonly number[], index: number): readonly number[] {
 	return indices.includes(index) ? indices.filter((i) => i !== index) : [...indices, index]
 }
@@ -740,6 +819,9 @@ export function createEditorState(
 
 /**
  * Renders an editor-field key state as a multi-line styled view with its finish hint.
+ *
+ * @param state - The editor field's current reducer state
+ * @returns The rendered view — the hinted header, the committed lines, and the line in progress
  */
 export function renderEditorView(state: EditorState): string {
 	const head = renderHintedHeader(state.styler, state.theme, state.message, '(Ctrl+D to finish)')
@@ -757,8 +839,12 @@ export function renderEditorView(state: EditorState): string {
  * reducer. Printable characters extend the current line; backspace shrinks it; return commits the
  * current line and starts a fresh one; ctrl-d FINISHES (joining all lines, falling back to the
  * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
+ *
+ * @param state - The editor field's current reducer state
+ * @param key - The decoded keypress to apply
+ * @returns The next step — the state, the rendered view, the status, and the joined text on submit
  */
-export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
+export function reduceEditor(state: EditorState, key: KeyEvent): PromptStep<string, EditorState> {
 	if (key.ctrl && key.name === 'c')
 		return { state, view: renderEditorView(state), status: 'cancel' }
 
@@ -794,8 +880,12 @@ export function editorReduce(state: EditorState, key: KeyEvent): PromptStep<stri
 /**
  * Applies a single line-editing {@link KeyEvent} to a text buffer — the editing shared by input /
  * password / editor. A printable key appends its character; `backspace` drops the last character;
- * `space` appends a space; ctrl-u clears the line. Returns the new buffer, or `undefined` when the
- * key does not edit the line (so the caller can leave the state untouched).
+ * `space` appends a space; ctrl-u clears the line.
+ *
+ * @param value - The buffer the field holds so far
+ * @param key - The decoded keypress to apply
+ * @returns The new buffer, or `undefined` when the key does not edit the line, so the caller can
+ *   leave the state untouched
  */
 export function editLine(value: string, key: KeyEvent): string | undefined {
 	if (key.ctrl && key.name === 'u') return ''
@@ -825,13 +915,24 @@ export function editLine(value: string, key: KeyEvent): string | undefined {
  * behind both the {@link import('./Prompt.js').Prompt} broker (its expiry) and the
  * {@link import('./PromptClient.js').PromptClient} (its reconnect backoff); a test injects a
  * deterministic timer instead, so neither entity touches real time.
+ *
+ * @param callback - The deadline callback to arm
+ * @param ms - How long to wait before firing it, in milliseconds
+ * @returns The {@link TimerCancelFunction} that clears the armed deadline
  */
 export function defaultTimer(callback: () => void, ms: number): TimerCancelFunction {
 	const handle = setTimeout(callback, ms)
 	return () => clearTimeout(handle)
 }
 
-/** Implements the default {@link import('./types.js').FetchHandler} — the global `fetch`, adapted to the minimal injected shape the {@link import('./PromptClient.js').PromptClient} uses. */
+/**
+ * Implements the default {@link import('./types.js').FetchHandler} — the global `fetch`, adapted to
+ * the minimal injected shape the {@link import('./PromptClient.js').PromptClient} uses.
+ *
+ * @param input - The request URL
+ * @param init - The request init the client sets — method, headers, body, and abort signal
+ * @returns The host `fetch` promise for that request
+ */
 export function globalFetch(input: string, init?: FetchInit): Promise<Response> {
 	return fetch(input, init)
 }
@@ -840,6 +941,9 @@ export function globalFetch(input: string, init?: FetchInit): Promise<Response> 
  * Checks whether a caught value is an `AbortError` — the {@link import('./PromptClient.js').PromptClient}
  * distinguishes a deliberate `disconnect` / teardown (an aborted `fetch`) from a real fault, so it
  * exits its connect loop quietly instead of emitting `error` / reconnecting.
+ *
+ * @param error - The caught value to test
+ * @returns True if the value is a host `Error` or `DOMException` named `AbortError`; false otherwise
  */
 export function isAbortError(error: unknown): boolean {
 	return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError'
@@ -879,17 +983,31 @@ export function isInsecureRemote(url: string): boolean {
 
 // === Terminal manager wire seams (transport-neutral, no http dependency)
 
-/** Serializes a parked {@link PendingForm} into a {@link WireEvent}. */
+/**
+ * Serializes a parked {@link PendingForm} into a {@link WireEvent}.
+ *
+ * @param form - The parked form's wire-safe record
+ * @returns The `pending` frame — the JSON-stringified record as `data`, and the form's own `id`
+ */
 export function serializePending(form: PendingForm): WireEvent {
 	return { event: 'pending', data: JSON.stringify(form), id: form.id }
 }
 
-/** Serializes a parked prompt's expiry or release into a {@link WireEvent} — event `'expire'`, `data` the JSON-stringified `{ id }` payload. */
+/**
+ * Serializes a parked prompt's expiry or release into a {@link WireEvent}.
+ *
+ * @param id - The id of the parked form that expired or was released
+ * @returns The `expire` frame, carrying the JSON-stringified `{ id }` payload as `data`
+ */
 export function serializeExpire(id: string): WireEvent {
 	return { event: 'expire', data: JSON.stringify({ id }) }
 }
 
-/** Serializes the {@link WireEvent} a broker or manager sends when it is going away — event `'destroy'`, no payload. */
+/**
+ * Serializes the {@link WireEvent} a broker or manager sends when it is going away.
+ *
+ * @returns The `destroy` frame, whose `data` is empty because the signal carries no payload
+ */
 export function serializeDestroy(): WireEvent {
 	return { event: 'destroy', data: '' }
 }

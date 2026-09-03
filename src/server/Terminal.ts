@@ -16,11 +16,10 @@ import type {
 } from '@orkestrel/form'
 import type { KeyEvent, PromptStep, PromptTheme, TerminalInterface } from '@src/core'
 import type { StylerInterface } from '@orkestrel/console'
+import type { StreamTargetInterface } from '@orkestrel/console/server'
 import type { Interface } from 'node:readline'
-import type { InputStreamInterface, OutputStreamInterface, TerminalOptions } from './types.js'
+import type { InputStreamInterface, TerminalOptions } from './types.js'
 import {
-	checkboxReduce,
-	confirmReduce,
 	createCheckboxState,
 	createConfirmState,
 	createEditorState,
@@ -28,19 +27,23 @@ import {
 	createPasswordState,
 	createPromptTheme,
 	createSelectState,
-	editorReduce,
-	inputReduce,
+	NEWLINE,
 	parseKey,
-	passwordReduce,
+	reduceCheckbox,
+	reduceConfirm,
+	reduceEditor,
+	reduceInput,
+	reducePassword,
+	reduceSelect,
 	renderErrorLine,
 	renderHintedHeader,
 	renderPromptHeader,
 	sanitizeDisplayText,
-	selectReduce,
 	TerminalError,
 } from '@src/core'
 import { matchesAnswer, parseValue } from '@orkestrel/form'
 import { createStyler } from '@orkestrel/console'
+import { isStreamTarget } from '@orkestrel/console/server'
 import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 import {
@@ -51,7 +54,6 @@ import {
 	FALLBACK_EDITOR_HINT,
 	FALLBACK_SELECT_HINT,
 	FILE_HINT,
-	LINE_FEED,
 	REFUSAL_MESSAGE,
 } from './constants.js'
 import {
@@ -59,7 +61,6 @@ import {
 	filterDisabled,
 	filterEnabled,
 	isInputStream,
-	isOutputStream,
 	isReadable,
 	lineCount,
 	redrawPrefix,
@@ -83,7 +84,7 @@ import {
  * @remarks
  * See {@link TerminalInterface} for the driving contract. The walk itself:
  *
- * - **Twelve controls, seven reducers.** `text`, `number`, `date`, `time`, `datetime`, `color`, and
+ * - **Controls and reducers.** `text`, `number`, `date`, `time`, `datetime`, `color`, and
  *   each `file` entry are read as one line of text through {@link fieldToText}, which appends that
  *   control's format cue to the label. `password`, `confirm`, `editor`, `select`, and `checkbox`
  *   each drive their own reducer. An open `select` is a suggestion list plus a typed line, because
@@ -107,7 +108,7 @@ import {
  */
 export class Terminal implements TerminalInterface {
 	readonly #input: InputStreamInterface
-	readonly #output: OutputStreamInterface
+	readonly #output: StreamTargetInterface
 	readonly #styler: StylerInterface
 	readonly #theme: PromptTheme
 	readonly #handlers = new Map<object, (chunk: string | Uint8Array) => void>()
@@ -120,7 +121,7 @@ export class Terminal implements TerminalInterface {
 		// Resolve each stream through its guard: a present, well-shaped injected stream is used as is;
 		// otherwise the real process stream — no assertion, and an absent option falls through.
 		this.#input = isInputStream(options?.input) ? options.input : stdin
-		this.#output = isOutputStream(options?.output) ? options.output : stdout
+		this.#output = isStreamTarget(options?.output) ? options.output : stdout
 		this.#styler = createStyler()
 		this.#theme = createPromptTheme(options?.theme)
 	}
@@ -182,7 +183,7 @@ export class Terminal implements TerminalInterface {
 	#writeGroup(form: FormInterface, name: string): void {
 		const label = form.schema.groups?.find((group) => group.name === name)?.label ?? name
 		this.#output.write(
-			`${LINE_FEED}${renderGroupHeader(this.#styler, this.#theme, sanitizeDisplayText(label))}${LINE_FEED}`,
+			`${NEWLINE}${renderGroupHeader(this.#styler, this.#theme, sanitizeDisplayText(label))}${NEWLINE}`,
 		)
 	}
 
@@ -194,7 +195,7 @@ export class Terminal implements TerminalInterface {
 			sanitizeDisplayText(field.label ?? field.name),
 			sanitizeDisplayText(valueToText(form.values[field.name])),
 		)
-		this.#output.write(`${line}${LINE_FEED}`)
+		this.#output.write(`${line}${NEWLINE}`)
 	}
 
 	/** Reads one field through the reducer its control names, resolving the raw answer the binding projects. */
@@ -242,23 +243,23 @@ export class Terminal implements TerminalInterface {
 			const label = sanitizeDisplayText(form.field(error.field)?.label ?? error.field)
 			const message = sanitizeDisplayText(error.message)
 			const line = renderErrorLine(this.#styler, this.#theme, `${label}: ${message}`)
-			this.#output.write(`${line}${LINE_FEED}`)
+			this.#output.write(`${line}${NEWLINE}`)
 		}
 	}
 
 	// === The controls
 
-	/** Reads a field as one line of text — `text` itself and the six controls a terminal has no widget for. */
+	/** Reads a field as one line of text — `text` itself and the controls a terminal has no widget for. */
 	#askText(form: FormInterface, field: FormField): Promise<string> {
 		const state = createInputState(fieldToText(field), this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, inputReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reduceInput)
 		return this.#line(form, state.message, state.default)
 	}
 
 	/** Reads a secret — masked live in raw mode, and read without echo through readline on a stream that cannot enter it. */
 	#askPassword(form: FormInterface, field: PasswordField): Promise<string> {
 		const state = createPasswordState(field, this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, passwordReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reducePassword)
 		return this.#prompt(form, renderPromptHeader(this.#styler, this.#theme, state.message))
 	}
 
@@ -269,7 +270,7 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #confirm(form: FormInterface, field: ConfirmField): Promise<FieldValue> {
 		const state = createConfirmState(field, this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, confirmReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reduceConfirm)
 		const header = renderHintedHeader(
 			this.#styler,
 			this.#theme,
@@ -287,7 +288,7 @@ export class Terminal implements TerminalInterface {
 	/** Reads text over many lines — ctrl-d finishes in raw mode, and end of input finishes on a piped stream. */
 	#askEditor(form: FormInterface, field: EditorField): Promise<string> {
 		const state = createEditorState(field, this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, editorReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reduceEditor)
 		return this.#block(form, state.message, state.default)
 	}
 
@@ -306,15 +307,13 @@ export class Terminal implements TerminalInterface {
 					...choice,
 					value: sanitizeDisplayText(choice.value),
 				}))
-				this.#output.write(
-					`${renderSuggestionLine(this.#styler, this.#theme, display)}${LINE_FEED}`,
-				)
+				this.#output.write(`${renderSuggestionLine(this.#styler, this.#theme, display)}${NEWLINE}`)
 			}
 			return this.#askText(form, field)
 		}
 		if (choices.length === 0) return undefined
 		const state = createSelectState({ ...field, choices }, this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, selectReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reduceSelect)
 		this.#writeList(state.message, choices)
 		const line = await this.#prompt(form, this.#formatHint(`${FALLBACK_SELECT_HINT}:`))
 		return choices[Number.parseInt(line.trim(), 10) - 1]?.value
@@ -329,7 +328,7 @@ export class Terminal implements TerminalInterface {
 		const choices = filterEnabled(field.choices)
 		this.#writeUnavailable(field.choices)
 		const state = createCheckboxState({ ...field, choices }, this.#styler, this.#theme)
-		if (supportsRawMode(this.#input)) return this.#drive(form, state, checkboxReduce)
+		if (supportsRawMode(this.#input)) return this.#drive(form, state, reduceCheckbox)
 		this.#writeList(state.message, choices)
 		const line = await this.#prompt(form, this.#formatHint(`${FALLBACK_CHECKBOX_HINT}:`))
 		return line
@@ -344,7 +343,7 @@ export class Terminal implements TerminalInterface {
 	 * than an empty list, because the reader answered a blank line.
 	 */
 	async #file(form: FormInterface, field: FileField): Promise<FieldValue | undefined> {
-		if (field.multiple === true) this.#output.write(`${this.#formatHint(FILE_HINT)}${LINE_FEED}`)
+		if (field.multiple === true) this.#output.write(`${this.#formatHint(FILE_HINT)}${NEWLINE}`)
 		const paths: string[] = []
 		for (;;) {
 			const entry = await this.#askText(form, field)
@@ -359,14 +358,14 @@ export class Terminal implements TerminalInterface {
 	#writeUnavailable(choices: readonly FieldChoice[]): void {
 		const refused = filterDisabled(choices)
 		if (refused.length === 0) return
-		this.#output.write(`${renderUnavailableLine(this.#styler, this.#theme, refused)}${LINE_FEED}`)
+		this.#output.write(`${renderUnavailableLine(this.#styler, this.#theme, refused)}${NEWLINE}`)
 	}
 
 	/** Writes a field's header above its numbered choice list — the non-TTY presentation of a choice field. */
 	#writeList(message: string, choices: readonly FieldChoice[]): void {
 		const header = renderPromptHeader(this.#styler, this.#theme, message)
 		const list = renderNumberedList(this.#styler, this.#theme, choices)
-		this.#output.write(`${header}${LINE_FEED}${list}${LINE_FEED}`)
+		this.#output.write(`${header}${NEWLINE}${list}${NEWLINE}`)
 	}
 
 	/** Paints one line of supplementary instruction through the `hint` role. */
@@ -421,7 +420,7 @@ export class Terminal implements TerminalInterface {
 				this.#output.write(firstView)
 			} catch (error) {
 				// Raw mode was never entered yet, but the cursor was hidden — restore it before rejecting.
-				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
 				reject(error)
 				return
 			}
@@ -463,7 +462,7 @@ export class Terminal implements TerminalInterface {
 				// Terminal step (submit / cancel): paint the final committed view, then tear down.
 				this.#render(step.view, lines)
 				this.#leaveRaw(token)
-				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
 				if (step.status === 'cancel') reject(new TerminalError('CANCEL', 'Prompt cancelled'))
 				else if (step.status === 'submit' && step.value !== undefined) resolve(step.value)
 				else reject(new TerminalError('DRIVER', 'submit produced no value'))
@@ -471,7 +470,7 @@ export class Terminal implements TerminalInterface {
 				// A throw inside the reducer/styler: tear down raw mode + the listener, restore the cursor
 				// exactly as the normal exit path does, then reject.
 				this.#leaveRaw(token)
-				this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+				this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
 				reject(error)
 			}
 		}
@@ -481,7 +480,7 @@ export class Terminal implements TerminalInterface {
 	#interrupt(token: object, reject: (reason?: unknown) => void, error: unknown): void {
 		if (!this.#handlers.has(token)) return
 		this.#leaveRaw(token)
-		this.#output.write(`${CURSOR_SHOW}${LINE_FEED}`)
+		this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
 		reject(error)
 	}
 
@@ -505,7 +504,7 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #block(form: FormInterface, message: string, seed: string): Promise<string> {
 		const header = renderHintedHeader(this.#styler, this.#theme, message, FALLBACK_EDITOR_HINT)
-		this.#output.write(`${header}${LINE_FEED}`)
+		this.#output.write(`${header}${NEWLINE}`)
 		const collected: string[] = []
 		for (;;) {
 			const line = await this.#next(form)

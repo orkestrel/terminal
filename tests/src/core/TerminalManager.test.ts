@@ -156,12 +156,12 @@ describe('TerminalManager', () => {
 		manager.destroy()
 	})
 
-	it('returns terminal, unknown, and rejected answer reasons without throwing', () => {
+	it('returns target, unknown, and rejected answer reasons without throwing', () => {
 		const manager = createTerminalManager()
 		manager.add('agent')
 		expect(manager.answer('missing', 'id', {})).toEqual({
 			success: false,
-			error: { reason: 'terminal' },
+			error: { reason: 'target' },
 		})
 		expect(manager.answer('agent', 'missing', {})).toEqual({
 			success: false,

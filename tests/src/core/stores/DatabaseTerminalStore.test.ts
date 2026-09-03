@@ -31,7 +31,7 @@ describe('DatabaseTerminalStore', () => {
 })
 
 describe('DatabaseTerminalStore — read-boundary guard', () => {
-	it('an off-shape stored row (a malformed snapshot column) resolves undefined on get (§14 fail-closed)', async () => {
+	it('an off-shape stored row (a malformed snapshot column) resolves undefined on get', async () => {
 		const table = buildDatabaseTable()
 		// Plant a poisoned row directly on the table — a snapshot missing its required `id`.
 		await table.set({ id: 'poisoned', snapshot: { timeout: 5000 } })

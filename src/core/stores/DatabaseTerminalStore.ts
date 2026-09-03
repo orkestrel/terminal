@@ -36,7 +36,8 @@ import { isTerminalSnapshot } from '../validators.js'
  *
  * @example
  * ```ts
- * import { createDatabaseTerminalStore, createMemoryDriver } from '@src/core'
+ * import { createDatabaseTerminalStore } from '@orkestrel/terminal'
+ * import { createMemoryDriver } from '@orkestrel/database'
  *
  * const store = createDatabaseTerminalStore(createMemoryDriver()) // a durable driver swaps in here
  * await store.set({ id: 'shell', timeout: 5000 })        // persist the config (one JSON column)
@@ -57,7 +58,13 @@ export class DatabaseTerminalStore implements TerminalStoreInterface {
 		this.#table = table
 	}
 
-	/** Resolves the persisted snapshot for `id`, narrowing the opaque JSON column back to a `TerminalSnapshot`. */
+	/**
+	 * Resolves the persisted snapshot for `id`, narrowing the opaque JSON column back to a
+	 * `TerminalSnapshot`.
+	 *
+	 * @param id - The endpoint name the row is keyed by
+	 * @returns The stored snapshot, or `undefined` when none is held or the column is off-shape
+	 */
 	async get(id: string): Promise<TerminalSnapshot | undefined> {
 		const row = await this.#table.get(id)
 		if (row === undefined) return undefined
@@ -67,12 +74,23 @@ export class DatabaseTerminalStore implements TerminalStoreInterface {
 		return isTerminalSnapshot(row.snapshot) ? row.snapshot : undefined
 	}
 
-	/** Inserts or replaces under the snapshot's OWN `id` (no separate id param) — the row is `{ id, snapshot }`. */
+	/**
+	 * Inserts or replaces under the snapshot's OWN `id` (no separate id param) — the row is
+	 * `{ id, snapshot }`.
+	 *
+	 * @param snapshot - The config snapshot to persist, carrying its own `id`
+	 * @returns A promise that settles once the row is written
+	 */
 	async set(snapshot: TerminalSnapshot): Promise<void> {
 		await this.#table.set({ id: snapshot.id, snapshot })
 	}
 
-	/** Drops a snapshot by id; an absent id is a no-op (no throw). */
+	/**
+	 * Drops a snapshot by id; an absent id is a no-op (no throw).
+	 *
+	 * @param id - The endpoint name to drop
+	 * @returns A promise that settles once the row is gone
+	 */
 	async delete(id: string): Promise<void> {
 		await this.#table.remove(id)
 	}

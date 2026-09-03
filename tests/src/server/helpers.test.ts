@@ -1,17 +1,15 @@
 import type { FieldChoice, FormField } from '@orkestrel/form'
 import {
-	CARRIAGE_RETURN,
 	CLEAR_DOWN,
 	CSI_UP,
 	fieldToText,
 	filterDisabled,
 	filterEnabled,
 	isInputStream,
-	isOutputStream,
 	isReadable,
 	lineCount,
-	moveUp,
 	redrawPrefix,
+	renderCursorUp,
 	renderGroupHeader,
 	renderLockedLine,
 	renderNumberedList,
@@ -20,7 +18,7 @@ import {
 	supportsRawMode,
 	valueToText,
 } from '@src/server'
-import { createPromptTheme } from '@src/core'
+import { RETURN, createPromptTheme } from '@src/core'
 import { createStyler, strip } from '@orkestrel/console'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
@@ -32,12 +30,6 @@ describe('stream guards', () => {
 		expect(isInputStream({ on() {} })).toBe(false)
 		expect(isInputStream(null)).toBe(false)
 		expect(isInputStream(Object.create(null))).toBe(false)
-	})
-
-	it('accepts exactly the minimal output stream shape', () => {
-		expect(isOutputStream({ write() {} })).toBe(true)
-		expect(isOutputStream({ write: 'no' })).toBe(false)
-		expect(isOutputStream(undefined)).toBe(false)
 	})
 
 	it('narrows a real Node readable stream', () => {
@@ -61,15 +53,15 @@ describe('cursor math', () => {
 		expect(lineCount('one\ntwo\n')).toBe(3)
 	})
 
-	it('moves up only for a positive count', () => {
-		expect(moveUp(-1)).toBe('')
-		expect(moveUp(0)).toBe('')
-		expect(moveUp(2)).toBe(CSI_UP.replace('{count}', '2'))
+	it('renders a cursor-up sequence only for a positive count', () => {
+		expect(renderCursorUp(-1)).toBe('')
+		expect(renderCursorUp(0)).toBe('')
+		expect(renderCursorUp(2)).toBe(CSI_UP.replace('{count}', '2'))
 	})
 
 	it('builds the reposition-and-clear prefix from the previous line count', () => {
-		expect(redrawPrefix(1)).toBe(`${CARRIAGE_RETURN}${CLEAR_DOWN}`)
-		expect(redrawPrefix(3)).toBe(`${moveUp(2)}${CARRIAGE_RETURN}${CLEAR_DOWN}`)
+		expect(redrawPrefix(1)).toBe(`${RETURN}${CLEAR_DOWN}`)
+		expect(redrawPrefix(3)).toBe(`${renderCursorUp(2)}${RETURN}${CLEAR_DOWN}`)
 	})
 })
 

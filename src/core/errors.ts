@@ -22,6 +22,13 @@ export class TerminalError extends Error {
 	/** Holds an optional context bag naming the offending values — see the class {@link TerminalError remarks}. */
 	readonly context?: Readonly<Record<string, unknown>>
 
+	/**
+	 * Builds one terminal refusal.
+	 *
+	 * @param code - The machine-readable {@link TerminalErrorCode} a caller branches on
+	 * @param message - The human-readable reason
+	 * @param context - The optional bag naming the offending values — see the class {@link TerminalError remarks}
+	 */
 	constructor(
 		code: TerminalErrorCode,
 		message: string,

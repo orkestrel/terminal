@@ -4,7 +4,7 @@ import type { FieldChoice, FieldError, FormInterface, FormValues } from '@orkest
 import type { Style, StylerInterface } from '@orkestrel/console'
 
 // The PURE, UNIVERSAL terminal core. `@orkestrel/form` owns every form concept — the schema, the
-// twelve controls, the rules, the values, and the settle-once `answer` promise — and this package
+// controls, the rules, the values, and the settle-once `answer` promise — and this package
 // declares none of them a second time. What terminal owns is everything form has no opinion about:
 // a key decoder, a presentation theme, the headless broker that PARKS a live form until somebody
 // elsewhere answers it, the SSE bridge that carries one parked form to a machine with a keyboard,
@@ -130,7 +130,7 @@ export interface PromptThemeOptions {
  * Represents the immutable state a text field's reducer carries — built by
  * {@link import('./helpers.js').createInputState}, rendered by
  * {@link import('./helpers.js').renderInputView}, and advanced by
- * {@link import('./helpers.js').inputReduce}.
+ * {@link import('./helpers.js').reduceInput}.
  *
  * @remarks
  * - `message` — the sanitized label the header renders.
@@ -635,10 +635,11 @@ export interface TerminalManagerOptions {
 
 /**
  * Explains why a {@link TerminalManagerInterface.answer} call refused — an {@link AnswerError} from the
- * endpoint's own broker, or `terminal` when no endpoint is mounted under that name. One
- * discriminant, `reason`, across both.
+ * endpoint's own broker, or `target` when no endpoint is mounted under that name. That is the same
+ * condition {@link TerminalErrorCode}'s `TARGET` names for {@link TerminalManagerInterface.ask}, so
+ * one word carries it on both doors. One discriminant, `reason`, across every member.
  */
-export type TerminalAnswerError = AnswerError | { readonly reason: 'terminal' }
+export type TerminalAnswerError = AnswerError | { readonly reason: 'target' }
 
 /**
  * Declares a registry of named {@link PromptInterface} brokers, one per endpoint, so several

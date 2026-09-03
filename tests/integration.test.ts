@@ -15,7 +15,7 @@ import {
 } from '@src/core'
 import { createTerminal } from '@src/server'
 import { createHostilePattern, createHostileText, createHostileWireSchema } from './setup.js'
-import { createFakeTTY, createScriptedTTY } from './setupServer.js'
+import { createFakeTTY } from './setupServer.js'
 import { createForm, isFormValues, serializeForm } from '@orkestrel/form'
 import { createLoopback } from '@orkestrel/test/server'
 import { createServer } from 'node:http'
@@ -186,7 +186,7 @@ describe('terminal end to end', () => {
 		expect(pending?.schema).toStrictEqual(serializeForm(schema))
 		expect(JSON.stringify(pending?.schema)).not.toContain('custom')
 
-		const tty = createScriptedTTY([['Ada', RETURN], [RETURN]])
+		const tty = createFakeTTY({ scripts: [['Ada', RETURN], [RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const client = createPromptClient({ url: server.url, terminal, reconnect: false })
 
@@ -212,20 +212,22 @@ describe('terminal end to end', () => {
 		// The wire order matches `schema.fields`: text, editor, password, number, date, time,
 		// datetime, color, confirm, select, checkbox, file. Every field carries a default or accepts
 		// absence, so a blank return walks the whole form; the editor field needs its explicit finish.
-		const tty = createScriptedTTY([
-			[RETURN],
-			[CTRL_D],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-			[RETURN],
-		])
+		const tty = createFakeTTY({
+			scripts: [
+				[RETURN],
+				[CTRL_D],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+				[RETURN],
+			],
+		})
 		const terminal = createTerminal({ input: tty.input, output: tty.output })
 		const client = createPromptClient({ url: server.url, terminal, reconnect: false })
 

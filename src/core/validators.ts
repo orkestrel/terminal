@@ -9,7 +9,12 @@ import {
 	recordOf,
 } from '@orkestrel/contract'
 
-/** Narrows an unknown value to a {@link PendingFormStatus}. */
+/**
+ * Narrows an unknown value to a {@link PendingFormStatus}.
+ *
+ * @param value - The candidate ticket status
+ * @returns True if the value is one of the declared ticket statuses; false otherwise
+ */
 export const isPendingFormStatus: Guard<PendingFormStatus> = literalOf(
 	'pending',
 	'answered',
@@ -51,7 +56,13 @@ export const isWireEvent: Guard<WireEvent> = recordOf(
 	['id'],
 )
 
-/** Narrows an unknown value to a {@link TerminalSnapshot}. */
+/**
+ * Narrows an unknown value to a {@link TerminalSnapshot} — the read boundary a store applies to an
+ * untrusted persisted row.
+ *
+ * @param value - The candidate snapshot read back from storage
+ * @returns True if the value carries a non-empty `id` and an optional numeric `timeout`; false otherwise
+ */
 export const isTerminalSnapshot: Guard<TerminalSnapshot> = recordOf(
 	{ id: isNonEmptyString, timeout: isNumber },
 	['timeout'],

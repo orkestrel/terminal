@@ -188,7 +188,7 @@ export class TerminalManager implements TerminalManagerInterface {
 
 	answer(to: string, id: string, values: FormValues): Result<FormValues, TerminalAnswerError> {
 		const broker = this.#terminals.get(to)
-		if (broker === undefined) return { success: false, error: { reason: 'terminal' } }
+		if (broker === undefined) return { success: false, error: { reason: 'target' } }
 		const result = broker.answer(id, values)
 		if (result.success) this.#edges.delete(id)
 		return result
