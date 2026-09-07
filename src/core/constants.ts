@@ -40,10 +40,11 @@ export const CTRL_E = String.fromCharCode(5)
 export const KEY_SS3 = `${ESC}O`
 
 /**
- * Holds the exact escape SEQUENCE → canonical key NAME table {@link import('./helpers.js').parseKey}
- * consults for the navigation / editing keys. Covers BOTH the CSI form (`ESC[A`…) and the SS3
- * form (`ESCOA`…) of the arrows, plus the `home` / `end` / `delete` CSI sequences (with
- * their numeric-tilde variants). The source of truth for the multi-byte key decode; frozen.
+ * Holds the exact escape sequence to canonical key name table
+ * {@link import('./helpers.js').parseKey} consults for the navigation and editing keys. Covers the
+ * CSI form (`ESC[A`…) and the SS3 form (`ESCOA`…) of the arrows, plus the `home` / `end` / `delete`
+ * CSI sequences with their numeric-tilde variants. The source of truth for the multi-byte key
+ * decode; frozen.
  *
  * @remarks
  * Terminals disagree on these: a cursor key is `ESC[A` (normal) or `ESCOA` (application mode),
@@ -70,10 +71,10 @@ export const SEQUENCE_NAMES: Readonly<Record<string, string>> = Object.freeze({
 })
 
 /**
- * Holds the control BYTE (or CRLF pair) → key descriptor table {@link import('./helpers.js').parseKey}
- * consults for the one-byte keys and the two-byte CRLF Enter chunk. Each entry carries the
- * canonical `name` and whether it is a `ctrl` combination. The source of truth for that decode;
- * frozen.
+ * Holds the control byte (or CRLF pair) to key descriptor table
+ * {@link import('./helpers.js').parseKey} consults for the one-byte keys and the two-byte CRLF
+ * Enter chunk. Each entry carries the canonical `name` and whether it is a `ctrl` combination. The
+ * source of truth for that decode; frozen.
  *
  * @remarks
  * `return` / `newline` / `return + newline` all map to `return` (one canonical Enter name) — a
@@ -108,8 +109,9 @@ export const DEFAULT_MASK = '*'
 // === Prompt-view icons
 
 /**
- * Holds the default glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from. Read only when
- * the default theme is assembled; a view reads its resolved theme and never this constant. Frozen.
+ * Holds the terminal-owned glyphs {@link DEFAULT_PROMPT_THEME} assembles its `icons` from, beside
+ * the console module's own success and error marks. Read only when the default theme is assembled;
+ * a view reads its resolved theme and never this constant. Frozen.
  *
  * @remarks
  * - `question` — the leading mark on a prompt's message line.
@@ -190,19 +192,20 @@ export const DEFAULT_PROMPT_THEME: PromptTheme = Object.freeze({
 
 // === Broker + SSE-bridge defaults
 
-/** Holds how long (ms) the {@link import('./types.js').PromptInterface} broker parks an unanswered prompt before it expires — 5 minutes. */
+/** Holds how long (ms) the {@link import('./types.js').PromptInterface} broker parks an unanswered form before it expires — 5 minutes. */
 export const DEFAULT_PROMPT_TIMEOUT_MS = 300_000
 
 /** Holds how long (ms) the {@link import('./types.js').PromptClientInterface} waits before each reconnect attempt — 2 seconds. */
 export const DEFAULT_RECONNECT_DELAY_MS = 2_000
 
 /**
- * Holds the SSE `event:` names the broker emits and the {@link import('./types.js').PromptClientInterface}
- * dispatches on. Frozen; the source of truth for the wire event vocabulary.
+ * Holds the SSE `event:` names the broker emits and the
+ * {@link import('./types.js').PromptClientInterface} dispatches on — `pending`, `expire`, and
+ * `destroy`. Frozen; the source of truth for the wire event vocabulary.
  *
  * @remarks
  * - `pending` — a serialized {@link import('./types.js').PendingForm} to dispatch and answer.
- * - `expire` — an `{ id }` payload: the broker expired or released a parked prompt (the client drops it).
+ * - `expire` — an `{ id }` payload: the broker expired or released a parked form (the client drops it).
  * - `destroy` — the broker is going away; the client disconnects (no auto-reconnect) but stays reusable.
  */
 export const SSE_EVENTS = Object.freeze({
@@ -211,10 +214,13 @@ export const SSE_EVENTS = Object.freeze({
 	destroy: 'destroy',
 })
 
-/** Names the auth-token request header the {@link import('./types.js').PromptClientInterface} sends. */
+/**
+ * Names the auth-token request header the {@link import('./types.js').PromptClientInterface} sends
+ * when a `token` is configured — `x-orkestrel-token`.
+ */
 export const HEADER_TOKEN = 'x-orkestrel-token'
 
-/** Names the `Accept` header value that opens the broker's SSE stream. */
+/** Names the `Accept` header value that opens the broker's SSE stream — `text/event-stream`. */
 export const ACCEPT_EVENT_STREAM = 'text/event-stream'
 
 /**

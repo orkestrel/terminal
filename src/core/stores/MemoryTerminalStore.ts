@@ -2,9 +2,10 @@ import type { TerminalSnapshot, TerminalStoreInterface } from '../types.js'
 
 /**
  * Implements the in-memory {@link TerminalStoreInterface} — a process-lifetime `Map` of
- * {@link TerminalSnapshot}s keyed by endpoint id, the DEFAULT store
- * {@link import('../factories.js').createMemoryTerminalStore} builds. The EXACT twin of
- * {@link import('./DatabaseTerminalStore.js').DatabaseTerminalStore}.
+ * {@link TerminalSnapshot} records keyed by endpoint id, the default store
+ * {@link import('../factories.js').createMemoryTerminalStore} builds and the exact twin of
+ * {@link import('./DatabaseTerminalStore.js').DatabaseTerminalStore}. It carries no idle expiry and
+ * no eviction.
  *
  * @remarks
  * A plain `Map<string, TerminalSnapshot>` — the snapshot is already pure, self-contained CONFIG-only

@@ -42,7 +42,7 @@ export class TerminalError extends Error {
 }
 
 /**
- * Narrows an unknown caught value to a {@link TerminalError}.
+ * Narrows an unknown caught value to a {@link TerminalError}, so a caller can branch on its `code`.
  *
  * @param value - The value to test (typically a `catch` binding or a rejected prompt call)
  * @returns True if `value` is a {@link TerminalError}; false otherwise

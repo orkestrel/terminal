@@ -45,9 +45,10 @@ export function createPrompt(options?: PromptOptions): PromptInterface {
 }
 
 /**
- * Creates the SSE prompt {@link PromptClientInterface} BRIDGE — it connects to a remote broker's SSE
- * endpoint, dispatches each received form to a local {@link import('./types.js').TerminalInterface},
- * and POSTs the answer back. Universal — `fetch` / SSE are web-standard.
+ * Creates the SSE prompt {@link PromptClientInterface} bridge — it connects to a remote broker's
+ * SSE endpoint, dispatches each received form to a local
+ * {@link import('./types.js').TerminalInterface}, and POSTs the answer back. Universal — `fetch`
+ * and SSE are web standards.
  *
  * @param options - See {@link PromptClientOptions} (`url` + `terminal` required)
  * @returns A {@link PromptClientInterface}
@@ -72,9 +73,9 @@ export function createPromptClient(options: PromptClientOptions): PromptClientIn
 }
 
 /**
- * Creates the multi-endpoint {@link TerminalManager} — a named registry of
- * {@link PromptInterface} brokers so several parties can `ask` prompts of each other by name,
- * with a transitive DEADLOCK check across every in-flight ask.
+ * Creates the multi-endpoint {@link TerminalManager} — a named registry of {@link PromptInterface}
+ * brokers so several parties can `ask` forms of each other by name, with a transitive cycle check
+ * that refuses `DEADLOCK` across every in-flight ask.
  *
  * @param options - See {@link TerminalManagerOptions}
  * @returns A {@link TerminalManager}
@@ -111,7 +112,8 @@ export function createMemoryTerminalStore(): TerminalStoreInterface {
 /**
  * Creates a {@link TerminalStoreInterface} backed by one table of the `databases` layer — the
  * driver-pluggable twin of {@link createMemoryTerminalStore}, storing each endpoint's config
- * snapshot as one opaque JSON column.
+ * snapshot as one opaque JSON column. The default driver is an in-memory `@orkestrel/database`
+ * driver.
  *
  * @param driver - The {@link DriverInterface} backing the table (default an in-memory driver)
  * @returns A {@link TerminalStoreInterface}

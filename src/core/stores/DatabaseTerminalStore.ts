@@ -3,10 +3,11 @@ import type { TableInterface } from '@orkestrel/database'
 import { isTerminalSnapshot } from '../validators.js'
 
 /**
- * Implements a {@link TerminalStoreInterface} backed by one table of the `databases` layer — an endpoint's
- * durable CONFIG state IS a row, so persistence reduces to keyed point-access (`get` / `set` /
- * `delete`) over a {@link TableInterface}, the driver-pluggable twin of the plain-`Map`
- * {@link import('./MemoryTerminalStore.js').MemoryTerminalStore}.
+ * Implements a {@link TerminalStoreInterface} backed by one table of the `databases` layer — an
+ * endpoint's durable config state is a row, so persistence reduces to keyed point-access (`get` /
+ * `set` / `delete`) over a {@link TableInterface}, the driver-pluggable twin of the plain-`Map`
+ * {@link import('./MemoryTerminalStore.js').MemoryTerminalStore}. A stored `snapshot` is narrowed
+ * with {@link import('../validators.js').isTerminalSnapshot} on read.
  *
  * @remarks
  * The store is driver-agnostic: it holds a single {@link TableInterface} whose backend (memory,

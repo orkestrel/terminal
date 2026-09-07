@@ -23,10 +23,10 @@ import {
 } from './constants.js'
 
 /**
- * Checks whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` / `off`
- * `'data'` subscription methods. A total type guard: it NEVER throws and returns `false`
- * for anything off-shape, so it narrows the one unavoidable input boundary (the real `process.stdin`,
- * or a fake TTY a test injects) to the exact slice the driver reads — no `as`.
+ * Checks whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` /
+ * `off` `'data'` subscription methods. A total type guard: it never throws and returns `false` for
+ * anything off-shape, so it narrows the one unavoidable input boundary (the real `process.stdin`,
+ * or a fake TTY a test injects) to the exact slice the driver reads, never an assertion.
  *
  * @remarks
  * Only `on` / `off` are required (the irreducible event seam); `setRawMode` / `resume` / `pause` /
@@ -50,11 +50,11 @@ export function isInputStream(value: unknown): value is InputStreamInterface {
 
 /**
  * Checks whether `value` is a Node {@link NodeJS.ReadableStream} — a total structural guard
- * checking for the callable `read` / `pipe` / `on` that `node:readline`'s `createInterface` requires
- * as its `input`. The non-TTY fallback narrows the resolved input stream through this before handing
- * it to readline (never an `as`), so a real piped `process.stdin` (or a `PassThrough` a test injects)
- * crosses into the readline boundary honestly. Never throws; returns `false` for a minimal fake that
- * isn't a full readable.
+ * checking for the callable `read` / `pipe` / `on` that `node:readline`'s `createInterface`
+ * requires as its `input`. The non-TTY fallback narrows the resolved input stream through this
+ * before handing it to readline, never through an assertion, so a real piped `process.stdin` (or a
+ * `PassThrough` a test injects) crosses into the readline boundary honestly. Never throws; returns
+ * `false` for a minimal fake that isn't a full readable.
  *
  * @param value - The resolved input stream (or any value crossing the boundary)
  * @returns True if `value` has the readable methods readline needs; false otherwise
@@ -71,11 +71,11 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
 }
 
 /**
- * Checks whether an input stream can be driven in RAW mode — it both reports `isTTY === true` AND
- * exposes a callable `setRawMode`. The {@link import('./Terminal.js').Terminal} probes this to choose its path:
- * `true` ⇒ the interactive raw-mode prompts (arrow-key navigation, live re-render); `false` ⇒ the
- * `node:readline` line-input fallback (a piped / non-terminal stream cannot enter raw mode). Total —
- * never throws.
+ * Checks whether an input stream can be driven in raw mode — it reports `isTTY === true` and
+ * exposes a callable `setRawMode`. The {@link import('./Terminal.js').Terminal} probes this to
+ * choose its path: true selects the interactive raw-mode fields, with arrow-key navigation and a
+ * live re-render; false selects the `node:readline` line-input fallback, because a piped or
+ * non-terminal stream cannot enter raw mode. Total — never throws.
  *
  * @param input - The resolved {@link InputStreamInterface}
  * @returns True if the stream is a TTY with `setRawMode`; false otherwise
@@ -85,10 +85,10 @@ export function supportsRawMode(input: InputStreamInterface): boolean {
 }
 
 /**
- * Counts the terminal LINES a rendered prompt `view` occupies — one more than its newline count
- * (a view with no newline is a single line; N newlines span N+1 lines). The basis of the in-place
- * re-render: the driver records the line count of the view it wrote so the next redraw knows how
- * far up to move the cursor before overwriting. Total; an empty string is one (empty) line.
+ * Counts the terminal lines a rendered prompt `view` occupies — one more than its newline count, so
+ * a view with no newline is a single line and a view with N newlines spans N+1 lines. The basis of
+ * the in-place re-render: the driver records the line count of the view it wrote so the next redraw
+ * knows how far up to move the cursor before overwriting. Total; an empty string is one empty line.
  *
  * @param view - The rendered (possibly multi-line, possibly ANSI-styled) view string
  * @returns The number of lines the view spans (always at least 1)
@@ -102,10 +102,10 @@ export function lineCount(view: string): number {
 }
 
 /**
- * Returns the cursor-UP control sequence that moves the cursor up `count` lines (`ESC[{count}A`) — or the
- * empty string when `count` is zero or negative (no movement needed, and `ESC[0A` is a wasted write).
- * The pure step the in-place re-render uses to climb back over the previous view before clearing it.
- * Total.
+ * Returns the cursor-up control sequence that moves the cursor up `count` lines (`ESC[{count}A`),
+ * or the empty string when `count` is zero or negative, because no movement is needed and `ESC[0A`
+ * is a wasted write. The pure step the in-place re-render uses to climb back over the previous view
+ * before clearing it. Total.
  *
  * @param count - How many lines to move the cursor up
  * @returns The `ESC[{count}A` sequence, or `''` when `count <= 0`
@@ -116,11 +116,11 @@ export function renderCursorUp(count: number): string {
 }
 
 /**
- * Returns the full reposition-and-clear prefix to write BEFORE re-rendering a prompt view in place — given
- * the line count of the PREVIOUS view, it moves the cursor up over those lines, returns it to column
- * 0, and erases everything from there to the end of the screen, so the next view is drawn on a clean
- * region (no orphaned rows from a taller previous view). Pure; the driver writes this immediately
- * followed by the new view.
+ * Returns the full reposition-and-clear prefix to write before re-rendering a prompt view in place
+ * — given the line count of the previous view, it moves the cursor up over those lines, returns it
+ * to column 0, and erases everything from there to the end of the screen, so the next view is drawn
+ * on a clean region and a taller previous view leaves no orphaned rows. Pure; the driver writes
+ * this immediately followed by the new view.
  *
  * @remarks
  * For the FIRST render `previousLines` is `1` (the cursor sits on the line the prompt opened on) so
@@ -137,11 +137,11 @@ export function redrawPrefix(previousLines: number): string {
 }
 
 /**
- * Projects any field the walk reads as a LINE OF TEXT into the {@link TextField} the text reducer
- * takes — `text` itself, and the controls a terminal has no widget for: `number`, `date`,
- * `time`, `datetime`, `color`, and one `file` entry. The label carries that control's format cue
- * from {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
- * projection carries no rule, because the AUTHORITATIVE form still evaluates the answer this line
+ * Projects any field the walk reads as a line of text into the {@link TextField} the text reducer
+ * takes — `text` itself, and the controls a terminal has no widget for: `number`, `date`, `time`,
+ * `datetime`, `color`, and one `file` entry. The label carries that control's format cue from
+ * {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
+ * projection carries no rule, because the authoritative form still evaluates the answer this line
  * binds; it exists only so one reducer covers every one of them.
  *
  * @param field - The field being read
@@ -183,7 +183,7 @@ export function valueToText(value: FieldValue | undefined): string {
 }
 
 /**
- * Returns the choices a `select` or `checkbox` field actually OFFERS — the form refuses a disabled
+ * Returns the choices a `select` or `checkbox` field actually offers — the form refuses a disabled
  * choice's value at every door, including a fill, so the walk never puts one in front of the
  * cursor. Pair with {@link filterDisabled} to tell the reader what was withheld.
  *
@@ -195,7 +195,7 @@ export function filterEnabled(choices: readonly FieldChoice[]): readonly FieldCh
 }
 
 /**
- * Returns the choices a `select` or `checkbox` field SHOWS but refuses — the complement of
+ * Returns the choices a `select` or `checkbox` field shows but refuses — the complement of
  * {@link filterEnabled}, rendered by {@link renderUnavailableLine} above the list so a reader sees
  * why a declared choice is missing from it.
  *
@@ -224,9 +224,9 @@ export function renderGroupHeader(
 }
 
 /**
- * Renders the read-only line a LOCKED field shows — its label, the {@link LOCKED_MARK}, and the
- * answer the form already holds. The walk writes this instead of a prompt, because the field is still
- * validated and still submitted but must not be edited here.
+ * Renders the read-only line a locked field shows — its label, the {@link LOCKED_MARK}, and the
+ * answer the form already holds. The walk writes this instead of a prompt, because the field is
+ * still validated and still submitted but must not be edited here.
  *
  * @param styler - The console styler that renders each role
  * @param theme - The resolved prompt theme
@@ -245,7 +245,7 @@ export function renderLockedLine(
 }
 
 /**
- * Renders the line listing an OPEN select's offered values above its text prompt — a suggestion
+ * Renders the line listing an open select's offered values above its text prompt — a suggestion
  * list, because an open select admits an answer the list does not offer.
  *
  * @param styler - The console styler that renders each role

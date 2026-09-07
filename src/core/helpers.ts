@@ -46,9 +46,9 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
 
 /**
  * Decodes one keypress's bytes into a {@link KeyEvent} — total, never throws. A `Uint8Array` is
- * read as UTF-8; the resulting string is matched against the known control bytes and the CRLF
- * pair ({@link CONTROL_NAMES}) and escape sequences ({@link SEQUENCE_NAMES}), falling back to a
- * single printable character. An unrecognized sequence carries NO `name`, with the raw `sequence`
+ * read as UTF-8; the resulting string is matched against the known control bytes and the CRLF pair
+ * ({@link CONTROL_NAMES}) and escape sequences ({@link SEQUENCE_NAMES}), falling back to a single
+ * printable character. An unrecognized sequence carries no `name`, with the raw `sequence`
  * preserved.
  *
  * @remarks
@@ -105,8 +105,8 @@ export function parseKey(input: string | Uint8Array): KeyEvent {
 }
 
 /**
- * Checks whether a single character is a printable (non-control) character — used by
- * {@link parseKey}'s char fallback.
+ * Checks whether a single character is printable — the fallback test {@link parseKey} applies after
+ * the control bytes and the escape sequences, so the C0 controls and DEL are excluded.
  *
  * @param character - The single character to test
  * @returns True if the character is at or above space and is not DEL; false otherwise
@@ -168,7 +168,8 @@ export function sanitizeDisplayText(text: string): string {
 }
 
 /**
- * Sanitizes every terminal-readable string in a parsed form schema.
+ * Sanitizes every terminal-readable string in a parsed form schema, keeping every identity and
+ * answer string verbatim and dropping field metadata.
  *
  * @remarks
  * Display strings pass through {@link sanitizeDisplayText}: labels, help, placeholders, masks,
@@ -352,7 +353,8 @@ export function renderSubmitHeader(
 }
 
 /**
- * Renders the styled failure line (`✖ message`) a form driver appends for a refused field.
+ * Renders the styled failure line (`✖ message`) a form driver writes for each refused field before
+ * it asks that field again.
  *
  * @param styler - The console styler that renders each role
  * @param theme - The resolved prompt theme
@@ -370,7 +372,8 @@ export function renderErrorLine(
 // === Input prompt
 
 /**
- * Builds the initial text-field key state.
+ * Builds the initial text-field reducer state — the sanitized label, the declared default, the
+ * styler, and the resolved theme.
  *
  * @param field - The text field to render
  * @param styler - The styler used to render the view
@@ -392,7 +395,8 @@ export function createInputState(
 }
 
 /**
- * Renders a text-field key state as a styled view.
+ * Renders a text-field reducer state as a styled view — the header, the pointer, and the typed
+ * value, or the default shown as a hint while nothing is typed.
  *
  * @param state - The text field's current reducer state
  * @returns The rendered single-line view — header, pointer, and the typed value or the default
@@ -436,7 +440,8 @@ export function reduceInput(state: InputState, key: KeyEvent): PromptStep<string
 // === Password prompt
 
 /**
- * Builds the initial password-field key state.
+ * Builds the initial password-field reducer state — the text-field state, plus the mask glyph each
+ * typed character renders as.
  *
  * @param field - The password field to render
  * @param styler - The styler used to render the view
@@ -458,7 +463,8 @@ export function createPasswordState(
 }
 
 /**
- * Renders a password-field key state as a styled view.
+ * Renders a password-field reducer state as a styled view, with the value replaced by the mask
+ * repeated so the secret is never echoed.
  *
  * @param state - The password field's current reducer state
  * @returns The rendered view, with the mask repeated in place of the typed value
@@ -505,7 +511,8 @@ export function reducePassword(
 // === Confirm prompt
 
 /**
- * Builds the initial confirm-field key state.
+ * Builds the initial confirm-field reducer state — the sanitized label and the declared default
+ * answer.
  *
  * @param field - The confirm field to render
  * @param styler - The styler used to render the view
@@ -526,7 +533,8 @@ export function createConfirmState(
 }
 
 /**
- * Renders a confirm-field key state as a styled view. The selected role paints the default letter.
+ * Renders a confirm-field reducer state as a styled view — the header and the yes/no group, with
+ * the default letter capitalized and painted by the `selected` role.
  *
  * @param state - The confirm field's current reducer state
  * @returns The rendered view — the header and the yes/no group with the default capitalized
@@ -573,7 +581,8 @@ export function reduceConfirm(
 // === Select prompt
 
 /**
- * Builds the initial select-field key state.
+ * Builds the initial select-field reducer state — the offered choices, with the focus pre-placed on
+ * the declared default.
  *
  * @param field - The select field to render
  * @param styler - The styler used to render the view
@@ -597,7 +606,8 @@ export function createSelectState(
 }
 
 /**
- * Renders a select-field key state as a multi-line styled view.
+ * Renders a select-field reducer state as a multi-line styled view — one row per choice, with the
+ * focused row marked and its help shown.
  *
  * @param state - The select field's current reducer state
  * @returns The rendered view — the header, then one row per choice with the focused row marked
@@ -625,7 +635,7 @@ export function renderSelectView(state: SelectState): string {
 
 /**
  * Advances a select prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
- * reducer. `up` / `down` (and `k` / `j`) move the focus, WRAPPING at the ends; return submits the
+ * reducer. `up` / `down` (and `k` / `j`) move the focus, wrapping at the ends; return submits the
  * focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer
  * guards against it); any other key is ignored.
  *
@@ -664,7 +674,8 @@ export function reduceSelect(state: SelectState, key: KeyEvent): PromptStep<stri
 // === Checkbox prompt
 
 /**
- * Builds the initial checkbox-field key state.
+ * Builds the initial checkbox-field reducer state — the offered choices, with every value in the
+ * field's `default` list pre-checked.
  *
  * @param field - The checkbox field to render
  * @param styler - The styler used to render the view
@@ -692,7 +703,8 @@ export function createCheckboxState(
 }
 
 /**
- * Renders a checkbox-field key state as a multi-line styled view.
+ * Renders a checkbox-field reducer state as a multi-line styled view — one box per choice, and the
+ * selected count beneath them.
  *
  * @param state - The checkbox field's current reducer state
  * @returns The rendered view — the header, one box per choice, and the selected count
@@ -781,7 +793,7 @@ export function reduceCheckbox(
 
 /**
  * Toggles `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion
- * list.
+ * list; the primitive {@link reduceCheckbox} calls.
  *
  * @param indices - The ticked indices, in tick order
  * @param index - The index to add when absent, or drop when present
@@ -794,7 +806,8 @@ export function toggleIndex(indices: readonly number[], index: number): readonly
 // === Editor prompt
 
 /**
- * Builds the initial editor-field key state.
+ * Builds the initial editor-field reducer state — the committed lines empty, and the declared
+ * default held for a finish with nothing typed.
  *
  * @param field - The editor field to render
  * @param styler - The styler used to render the view
@@ -818,7 +831,8 @@ export function createEditorState(
 }
 
 /**
- * Renders an editor-field key state as a multi-line styled view with its finish hint.
+ * Renders an editor-field reducer state as a multi-line styled view — the finish hint, the
+ * committed lines, and the line in progress.
  *
  * @param state - The editor field's current reducer state
  * @returns The rendered view — the hinted header, the committed lines, and the line in progress
@@ -837,8 +851,8 @@ export function renderEditorView(state: EditorState): string {
 /**
  * Advances an editor prompt by one {@link KeyEvent} — the pure `(state, key) → PromptStep<string>`
  * reducer. Printable characters extend the current line; backspace shrinks it; return commits the
- * current line and starts a fresh one; ctrl-d FINISHES (joining all lines, falling back to the
- * default when empty); ctrl-c cancels. The form validates the candidate after the driver fills it.
+ * current line and starts a fresh one; ctrl-d finishes, joining every line and falling back to the
+ * default when empty; ctrl-c cancels. The form validates the candidate after the driver fills it.
  *
  * @param state - The editor field's current reducer state
  * @param key - The decoded keypress to apply
@@ -878,9 +892,10 @@ export function reduceEditor(state: EditorState, key: KeyEvent): PromptStep<stri
 // === Shared reducer helpers
 
 /**
- * Applies a single line-editing {@link KeyEvent} to a text buffer — the editing shared by input /
- * password / editor. A printable key appends its character; `backspace` drops the last character;
- * `space` appends a space; ctrl-u clears the line.
+ * Applies a single line-editing {@link KeyEvent} to a text buffer — the editing shared by input,
+ * password, and editor. A printable key appends its character; `backspace` drops the last
+ * character; `space` appends a space; ctrl-u clears the line; a key that edits nothing returns
+ * `undefined`.
  *
  * @param value - The buffer the field holds so far
  * @param key - The decoded keypress to apply
@@ -950,8 +965,10 @@ export function isAbortError(error: unknown): boolean {
 }
 
 /**
- * Checks whether `url` is an INSECURE remote endpoint — a plain `http://` URL whose host is NOT a
- * loopback address. Pure string parsing (no `URL` global), so it stays total on malformed input.
+ * Checks whether `url` is an insecure remote endpoint — a plain `http://` URL whose host is not a
+ * loopback address. Pure string parsing (no `URL` global), so it stays total on malformed input;
+ * the {@link import('./PromptClient.js').PromptClient} warns once when a `token` would cross such
+ * an endpoint in cleartext.
  *
  * @remarks
  * A loopback host (`localhost`, `127.0.0.1`, `[::1]`) over `http://` is exempt (local
@@ -984,7 +1001,8 @@ export function isInsecureRemote(url: string): boolean {
 // === Terminal manager wire seams (transport-neutral, no http dependency)
 
 /**
- * Serializes a parked {@link PendingForm} into a {@link WireEvent}.
+ * Serializes a parked {@link PendingForm} into a `pending` {@link WireEvent}, whose frame `id` is
+ * the form's own id.
  *
  * @param form - The parked form's wire-safe record
  * @returns The `pending` frame — the JSON-stringified record as `data`, and the form's own `id`
@@ -994,7 +1012,8 @@ export function serializePending(form: PendingForm): WireEvent {
 }
 
 /**
- * Serializes a parked prompt's expiry or release into a {@link WireEvent}.
+ * Serializes a parked form's expiry or release into an `expire` {@link WireEvent}, whose `data` is
+ * the JSON `{ id }` payload.
  *
  * @param id - The id of the parked form that expired or was released
  * @returns The `expire` frame, carrying the JSON-stringified `{ id }` payload as `data`
@@ -1004,7 +1023,8 @@ export function serializeExpire(id: string): WireEvent {
 }
 
 /**
- * Serializes the {@link WireEvent} a broker or manager sends when it is going away.
+ * Serializes the `destroy` {@link WireEvent} a broker or manager sends when it is going away, which
+ * carries no payload.
  *
  * @returns The `destroy` frame, whose `data` is empty because the signal carries no payload
  */

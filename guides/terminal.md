@@ -1,23 +1,19 @@
 # Terminal
 
-> The terminal side of a form. `@orkestrel/form` owns the document — the schema, the
-> controls, the rules, the values, and the settle-once `answer` promise — and this package declares
-> none of it a second time. What terminal owns is everything form has no opinion about: a key
-> decoder, a presentation theme, the pure per-field reducers, the headless broker that PARKS a live
-> form until somebody elsewhere answers it, the SSE bridge that carries a parked form to a machine
-> with a keyboard, and the manager that routes parked forms between named endpoints.
->
-> **One contract; the local TTY, the headless broker, and the SSE bridge.**
-> [`src/core`](../src/core) declares one driving contract, `TerminalInterface`, with one method:
-> `ask(form)` returns the settled `FormValues`. A form reaches a person over each of them. The
-> server `Terminal` ([`src/server`](../src/server)) IMPLEMENTS the
-> contract against a real TTY — raw-mode stdin, live in-place re-render, a `node:readline` fallback
-> when piped — and is the only impure part of the stack. The headless `Prompt` broker implements no
-> terminal at all: it parks the live form, emits a wire-safe record, and drives that same form to
-> settlement when an answer arrives. The `PromptClient` bridge receives a form parked elsewhere,
-> rebuilds it locally, and drives it through a local `TerminalInterface`. `PromptFormInterface` and
-> its per-control prompt methods are gone: a form is one question however many fields it holds, so
-> the contract needs one method and this package holds no second form vocabulary.
+> The terminal side of a form: a key decoder, a presentation theme, the pure per-field reducers,
+> the headless broker that parks a live form until somebody elsewhere answers it, the SSE bridge
+> that carries a parked form to a machine with a keyboard, and the manager that routes parked
+> forms between named endpoints.
+
+`@orkestrel/form` owns the document — the schema, the controls, the rules, the values, and the
+settle-once `answer` promise — and this package declares none of it a second time. One contract
+carries the rest: [`src/core`](../src/core) declares `TerminalInterface`, whose `ask(form)` returns
+the settled `FormValues`, and the local TTY, the headless broker, and the SSE bridge each reach a
+person over it. The server `Terminal` ([`src/server`](../src/server)) implements that contract
+against a real TTY — raw-mode stdin, live in-place re-render, a `node:readline` fallback when
+piped — and is the only impure part of the stack. `PromptFormInterface` and its per-control prompt
+methods are gone: a form is one question however many fields it holds, so the contract needs `ask`
+alone and this package holds no second form vocabulary.
 
 ## The blank line binds as absence
 
@@ -32,7 +28,7 @@ const form = createForm({
 })
 const terminal = createTerminal()
 const values = await terminal.ask(form)
-// Bare return at `name`: the field binds as ABSENCE, `required` refuses it, the failure prints,
+// Bare return at `name`: the field binds as absence, `required` refuses it, the failure prints,
 // and the walk asks again. It never resolves `{ name: '' }`.
 ```
 
@@ -41,7 +37,7 @@ projection. The consequences a caller sees directly:
 
 - A bare return on a field with **no default** leaves that key out of the resolved values entirely.
   The key is absent, rather than present holding an empty string.
-- A bare return on a field **with a default** binds the DECLARED default, never the value a previous
+- A bare return on a field **with a default** binds the declared default, never the value a previous
   pass held, so a rejected answer is never re-offered as the default.
 - `required` therefore refuses a blank line. A field with no `required` rule accepts an empty
   answer.
@@ -79,22 +75,22 @@ const schema = {
 	],
 }
 
-// 1. The local TTY — answer at THIS keyboard.
+// 1. The local TTY — answer at this keyboard.
 const terminal = createTerminal()
 const answers = await terminal.ask(createForm(schema))
 
-// 2. The headless broker — PARK a live form, answer it from a transport.
+// 2. The headless broker — park a live form, answer it from a transport.
 const prompt = createPrompt()
 const parked = createForm(schema)
 const id = prompt.park(parked) // emits `pending`; the caller awaits `parked.answer`
-prompt.answer(id, { name: 'Ada', role: 'admin' }) // fills and submits the AUTHORITATIVE form
+prompt.answer(id, { name: 'Ada', role: 'admin' }) // fills and submits the authoritative form
 
 // 3. The SSE bridge — receive a form parked elsewhere, drive it through a local terminal.
 const client = createPromptClient({ url: 'http://host/forms', terminal })
 await client.connect()
 ```
 
-Everything below is exported. The core module is `@orkestrel/terminal`; the driver is
+Everything that follows is exported. The core module is `@orkestrel/terminal`; the driver is
 `@orkestrel/terminal/server`. No `@orkestrel/form` symbol is re-exported here — import a form
 symbol from form.
 
@@ -102,121 +98,121 @@ symbol from form.
 
 What a driver is, and what one step of a field reducer produces ([`src/core`](../src/core)).
 
-| API                 | Kind      | Summary                                                                                                                                    |
-| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `TerminalInterface` | interface | The one driving contract — `ask(form)` walks a form to settlement and returns its `FormValues`. Implemented here by the server `Terminal`. |
-| `PromptStatus`      | type      | Where one field's reducer stands after a key — `active` / `submit` / `cancel`. Names its axis, never `kind`.                               |
-| `PromptStep`        | interface | One reducer step's output — the next `state`, the rendered `view`, the `status`, and, on `submit` only, the candidate `value` (data-only). |
+| API                 | Kind      | Summary                                                                                                                                                                                                                                                                                                 |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalInterface` | interface | Declares the contract for asking a form of a human at a keyboard — `ask` and nothing beside it, because a form is one question however many fields it holds. The server `Terminal` implements it against a real TTY; a `PromptClientInterface` holds one to answer forms parked elsewhere.              |
+| `PromptStatus`      | type      | Names where one field's reducer stands after a key. `active`: keep asking, because the key was consumed or the answer was refused. `submit`: the field resolved with its `value`. `cancel`: the user aborted with ctrl-c. Names its axis, never `kind`.                                                 |
+| `PromptStep`        | interface | Represents the result of one reducer step — the next `state`, the rendered `view`, the `status`, and, on `submit` alone, the candidate `value`. The whole contract between a pure reducer and the impure driver: the driver applies the next `state`, writes the `view`, and reads `value` on `submit`. |
 
 ### Key decoding
 
 The TTY-agnostic decoder every driver reads keystrokes through ([`src/core`](../src/core)). Pure and
 total: no `node:*`, no I/O, and no input throws.
 
-| API           | Kind      | Summary                                                                                                                                      |
-| ------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KeyEvent`    | interface | One decoded keypress — the OPTIONAL `name` plus `sequence` / `ctrl` / `meta` / `shift` (data-only).                                          |
-| `parseKey`    | function  | One keypress's bytes (`string` / `Uint8Array`) decoded into a `KeyEvent` — TOTAL; an unrecognized sequence carries no `name`, never a throw. |
-| `isPrintable` | function  | Whether a single character is printable — `parseKey`'s character fallback test, excluding the C0 controls and DEL.                           |
-| `editLine`    | function  | One line-editing key applied to a text buffer (the input / password / editor shared editing) — `undefined` when the key does not edit.       |
+| API           | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KeyEvent`    | interface | Represents one decoded keypress — the TTY-agnostic representation of a single key, the output of `parseKey`. A driver reads `name` and the modifier flags to decide its transition; `sequence` is preserved so a printable character round-trips and an unknown escape is never lost.                                                                                            |
+| `parseKey`    | function  | Decodes one keypress's bytes into a `KeyEvent` — total, never throws. A `Uint8Array` is read as UTF-8; the resulting string is matched against the known control bytes and the CRLF pair (`CONTROL_NAMES`) and escape sequences (`SEQUENCE_NAMES`), falling back to a single printable character. An unrecognized sequence carries no `name`, with the raw `sequence` preserved. |
+| `isPrintable` | function  | Checks whether a single character is printable — the fallback test `parseKey` applies after the control bytes and the escape sequences, so the C0 controls and DEL are excluded.                                                                                                                                                                                                 |
+| `editLine`    | function  | Applies a single line-editing `KeyEvent` to a text buffer — the editing shared by input, password, and editor. A printable key appends its character; `backspace` drops the last character; `space` appends a space; ctrl-u clears the line; a key that edits nothing returns `undefined`.                                                                                       |
 
 ### Presentation
 
-A theme is DATA — a glyph per icon slot and a console `Style` per semantic role — plus the shared
+A theme is data — a glyph per icon slot and a console `Style` per semantic role — plus the shared
 line shapes every view is assembled from ([`src/core`](../src/core)).
 
-| API                  | Kind      | Summary                                                                                                                                                     |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PromptIcon`         | type      | One glyph slot a rendered field draws — `question` / `pointer` / `dot` / `selected` / `checked` / `unchecked` / `success` / `error`.                        |
-| `PromptRole`         | type      | One semantic styling slot — `question` / `pointer` / `message` / `content` / `success` / `error` / `selected` / `focus` / `hint` / `muted` / `description`. |
-| `PromptTheme`        | interface | A resolved presentation — a glyph for every `PromptIcon` and a console `Style` for every `PromptRole` (data-only, deeply frozen).                           |
-| `PromptThemeOptions` | interface | The PARTIAL theme an option bag carries — every icon and role optional, merged leaf by leaf over the default (data-only).                                   |
-| `createPromptTheme`  | function  | A partial theme merged over `DEFAULT_PROMPT_THEME` — supplied leaves replace, the rest keep their default; each style is frozen by console.                 |
-| `renderPromptHeader` | function  | The styled question header (`? label`) every active field view leads with, themed by the `question` + `message` roles.                                      |
-| `renderHintedHeader` | function  | The question header plus a key hint painted with the `hint` role — the header alone when no hint is supplied.                                               |
-| `renderSubmitHeader` | function  | The styled committed header (`✔ label`) a field shows once it has an answer, themed by the `success` + `message` roles.                                     |
-| `renderErrorLine`    | function  | The styled failure line (`✖ message`) the driver writes for each refused field before it asks again.                                                        |
+| API                  | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PromptIcon`         | type      | Names one glyph slot a rendered field draws — the icon axis of a `PromptTheme`. A named value set, not a toggle, so it stays a union.                                                                                                                                                                                                                                                                                                    |
+| `PromptRole`         | type      | Names one styling slot a rendered field paints through — the semantic axis of a `PromptTheme`. A role says what a fragment means; the theme decides what that meaning looks like, so a consumer re-maps styled output by naming roles rather than reimplementing a renderer.                                                                                                                                                             |
+| `PromptTheme`        | interface | Represents a resolved presentation — the glyph for every `PromptIcon` and the console `Style` for every `PromptRole`. Plain JSON data with no functions, so it crosses the wire with the form it decorates. Built by `createPromptTheme`.                                                                                                                                                                                                |
+| `PromptThemeOptions` | interface | Represents the partial `PromptTheme` an option bag carries — every icon and every role is optional, and `createPromptTheme` merges what is supplied over `DEFAULT_PROMPT_THEME` leaf by leaf. Supplying one icon or one role leaves every other slot at its default.                                                                                                                                                                     |
+| `createPromptTheme`  | function  | Builds a complete `PromptTheme` by merging a partial one over `DEFAULT_PROMPT_THEME`, leaf by leaf — each supplied icon replaces that glyph, each supplied role replaces that `Style`, and everything else keeps its default. Each supplied style is snapshotted through the console module's own `freezeStyle`, so the result is deeply frozen and a caller mutating its own attribute list afterwards cannot reach into a built theme. |
+| `renderPromptHeader` | function  | Renders the styled question header (`? message`) — the leading line every active prompt view shares, themed by the `question` + `message` roles.                                                                                                                                                                                                                                                                                         |
+| `renderHintedHeader` | function  | Renders a question header followed by a key hint painted with the `hint` role, or the header alone when no hint is supplied.                                                                                                                                                                                                                                                                                                             |
+| `renderSubmitHeader` | function  | Renders the styled submit line (`✔ message`) — the committed header an interactive prompt shows after it resolves, themed by the `success` + `message` roles.                                                                                                                                                                                                                                                                            |
+| `renderErrorLine`    | function  | Renders the styled failure line (`✖ message`) a form driver writes for each refused field before it asks that field again.                                                                                                                                                                                                                                                                                                               |
 
 ### The field reducers
 
 The pure `(state, key) → PromptStep` machines the driver feeds decoded keys into
-([`src/core`](../src/core)). Each is total and copy-on-write, and each produces a CANDIDATE value
+([`src/core`](../src/core)). Each is total and copy-on-write, and each produces a candidate value
 only: the form validates, the form settles, and none of this code does either.
 
-| API                   | Kind      | Summary                                                                                                                                    |
-| --------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `InputState`          | interface | One text field's reducer state — the sanitized label, the default, the styler, the theme, and the typed value (data-only).                 |
-| `createInputState`    | function  | A `TextField`'s initial state — the sanitized label, the declared default, the styler, and the resolved theme.                             |
-| `renderInputView`     | function  | A text state rendered — header, pointer, and the typed value (or the default shown as a hint).                                             |
-| `reduceInput`         | function  | The text reducer — printable extends, backspace shrinks, ctrl-u clears, return submits (an empty line falling back to the default).        |
-| `PasswordState`       | interface | One password field's reducer state — the text state with the mask glyph in place of a default (data-only).                                 |
-| `createPasswordState` | function  | A `PasswordField`'s initial state — like the text state, plus the mask glyph each character renders as.                                    |
-| `renderPasswordView`  | function  | A password state rendered — the value replaced by the mask repeated, so the real value is never echoed.                                    |
-| `reducePassword`      | function  | The password reducer — identical line editing to `reduceInput`, with a masked view and a masked committed line.                            |
-| `ConfirmState`        | interface | One confirm field's reducer state — the label, the default answer, the styler, and the theme; no typed value (data-only).                  |
-| `createConfirmState`  | function  | A `ConfirmField`'s initial state — the sanitized label and the declared default answer.                                                    |
-| `renderConfirmView`   | function  | A confirm state rendered — the header plus the yes/no group, the DEFAULT letter capitalized and painted by the `selected` role.            |
-| `reduceConfirm`       | function  | The confirm reducer — `y` submits true, `n` submits false, return takes the default, any other key is ignored.                             |
-| `SelectState`         | interface | One select field's reducer state — the offered choices and the focused index (data-only).                                                  |
-| `createSelectState`   | function  | A `SelectField`'s initial state — the offered choices with the focus pre-placed on the declared default.                                   |
-| `renderSelectView`    | function  | A select state rendered — a MULTI-LINE view, one row per choice, the focused row marked and its help shown.                                |
-| `reduceSelect`        | function  | The select reducer — up / down (and `k` / `j`) move the focus WRAPPING, return submits the focused choice's `value`.                       |
-| `CheckboxState`       | interface | One checkbox field's reducer state — the select state plus the ticked indices in tick order (data-only).                                   |
-| `createCheckboxState` | function  | A `CheckboxField`'s initial state — the choices, with every value in the field's `default` list pre-checked.                               |
-| `renderCheckboxView`  | function  | A checkbox state rendered — one box per choice plus the selected count.                                                                    |
-| `reduceCheckbox`      | function  | The checkbox reducer — space toggles the focused box, return submits the checked values in choice order; the form applies the count rules. |
-| `toggleIndex`         | function  | One index toggled in a readonly index list — copy-on-write, the primitive `reduceCheckbox` calls.                                          |
-| `EditorState`         | interface | One editor field's reducer state — the committed lines and the line in progress, kept apart (data-only).                                   |
-| `createEditorState`   | function  | An `EditorField`'s initial state — committed lines empty, the declared default held for an empty finish.                                   |
-| `renderEditorView`    | function  | An editor state rendered — the finish hint, the committed lines, and the line in progress.                                                 |
-| `reduceEditor`        | function  | The editor reducer — return commits a line, ctrl-d finishes (joining the lines, falling back to the default when empty).                   |
+| API                   | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InputState`          | interface | Represents the immutable state a text field's reducer carries — built by `createInputState`, rendered by `renderInputView`, and advanced by `reduceInput`.                                                                                                                                                                                                                                  |
+| `createInputState`    | function  | Builds the initial text-field reducer state — the sanitized label, the declared default, the styler, and the resolved theme.                                                                                                                                                                                                                                                                |
+| `renderInputView`     | function  | Renders a text-field reducer state as a styled view — the header, the pointer, and the typed value, or the default shown as a hint while nothing is typed.                                                                                                                                                                                                                                  |
+| `reduceInput`         | function  | Advances an input prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<string>` reducer. Printable characters extend the value; backspace shrinks it; ctrl-u clears it; ctrl-c cancels; return produces the candidate value, with an empty line falling back to the default.                                                                                                      |
+| `PasswordState`       | interface | Represents the immutable state a password field's reducer carries — the text state with the mask glyph in place of a default, because a secret is never seeded from the schema.                                                                                                                                                                                                             |
+| `createPasswordState` | function  | Builds the initial password-field reducer state — the text-field state, plus the mask glyph each typed character renders as.                                                                                                                                                                                                                                                                |
+| `renderPasswordView`  | function  | Renders a password-field reducer state as a styled view, with the value replaced by the mask repeated so the secret is never echoed.                                                                                                                                                                                                                                                        |
+| `reducePassword`      | function  | Advances a password prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<string>` reducer. Identical line-editing to `reduceInput` (printable extends, backspace shrinks, ctrl-u clears, ctrl-c cancels) but the view masks the value. Return produces the candidate value.                                                                                                       |
+| `ConfirmState`        | interface | Represents the immutable state a confirm field's reducer carries. It holds no typed value, because the answer is the key itself.                                                                                                                                                                                                                                                            |
+| `createConfirmState`  | function  | Builds the initial confirm-field reducer state — the sanitized label and the declared default answer.                                                                                                                                                                                                                                                                                       |
+| `renderConfirmView`   | function  | Renders a confirm-field reducer state as a styled view — the header and the yes/no group, with the default letter capitalized and painted by the `selected` role.                                                                                                                                                                                                                           |
+| `reduceConfirm`       | function  | Advances a confirm prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<boolean>` reducer. `y` / `Y` submits `true`, `n` / `N` submits `false`, return on an empty line submits the `default`, ctrl-c cancels; any other key is ignored (stays active).                                                                                                                           |
+| `SelectState`         | interface | Represents the immutable state a select field's reducer carries — the choices the list offers and the index the cursor sits on.                                                                                                                                                                                                                                                             |
+| `createSelectState`   | function  | Builds the initial select-field reducer state — the offered choices, with the focus pre-placed on the declared default.                                                                                                                                                                                                                                                                     |
+| `renderSelectView`    | function  | Renders a select-field reducer state as a multi-line styled view — one row per choice, with the focused row marked and its help shown.                                                                                                                                                                                                                                                      |
+| `reduceSelect`        | function  | Advances a select prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<string>` reducer. `up` / `down` (and `k` / `j`) move the focus, wrapping at the ends; return submits the focused choice's `value`; ctrl-c cancels. An empty choice list can never submit (a higher layer guards against it); any other key is ignored.                                                     |
+| `CheckboxState`       | interface | Represents the immutable state a checkbox field's reducer carries — the select state plus the ticked set.                                                                                                                                                                                                                                                                                   |
+| `createCheckboxState` | function  | Builds the initial checkbox-field reducer state — the offered choices, with every value in the field's `default` list pre-checked.                                                                                                                                                                                                                                                          |
+| `renderCheckboxView`  | function  | Renders a checkbox-field reducer state as a multi-line styled view — one box per choice, and the selected count beneath them.                                                                                                                                                                                                                                                               |
+| `reduceCheckbox`      | function  | Advances a checkbox prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<readonly string[]>` reducer. `up` / `down` (and `k` / `j`) move the focus (wrapping); `space` toggles the focused index in the checked set; return submits the checked values in choice order; ctrl-c cancels. The form applies selection-count rules.                                                   |
+| `toggleIndex`         | function  | Toggles `index` in a readonly index list — copy-on-write, returning the new sorted-by-insertion list; the primitive `reduceCheckbox` calls.                                                                                                                                                                                                                                                 |
+| `EditorState`         | interface | Represents the immutable state an editor field's reducer carries — the committed lines and the line still being typed, kept apart so a return commits one without ending the field.                                                                                                                                                                                                         |
+| `createEditorState`   | function  | Builds the initial editor-field reducer state — the committed lines empty, and the declared default held for a finish with nothing typed.                                                                                                                                                                                                                                                   |
+| `renderEditorView`    | function  | Renders an editor-field reducer state as a multi-line styled view — the finish hint, the committed lines, and the line in progress.                                                                                                                                                                                                                                                         |
+| `reduceEditor`        | function  | Advances an editor prompt by one `KeyEvent` — the pure `(state, key) → PromptStep<string>` reducer. Printable characters extend the current line; backspace shrinks it; return commits the current line and starts a fresh one; ctrl-d finishes, joining every line and falling back to the default when empty; ctrl-c cancels. The form validates the candidate after the driver fills it. |
 
 ### Untrusted display
 
 A schema that arrived over a wire is data from somebody else. These are the projection that makes it
-safe to PRINT ([`src/core`](../src/core)).
+safe to print ([`src/core`](../src/core)).
 
-| API                   | Kind     | Summary                                                                                                                               |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `sanitizeDisplayText` | function | One single-line display slot cleaned — console's ANSI `strip` and C0 `stripControls`, plus tab, line feed, and carriage return.       |
-| `sanitizeSchema`      | function | Every terminal-readable string in a parsed schema cleaned, with every identity and answer string verbatim; field metadata is dropped. |
-| `sanitizeThemeIcons`  | function | Every glyph a wire-supplied theme carries, cleaned. A role needs no pass: its colors and attributes are fixed name sets.              |
+| API                   | Kind     | Summary                                                                                                                                                                                                                                                                         |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sanitizeDisplayText` | function | Sanitizes text for one single-line display slot. Composes console's ANSI `strip` and C0 `stripControls` passes with removal of tab, line feed, and carriage return.                                                                                                             |
+| `sanitizeSchema`      | function | Sanitizes every terminal-readable string in a parsed form schema, keeping every identity and answer string verbatim and dropping field metadata.                                                                                                                                |
+| `sanitizeThemeIcons`  | function | Sanitizes every glyph a wire-supplied `PromptThemeOptions` carries for a single-line display slot. Only the icons need it: a role is guard-narrowed to a console `Style`, whose colors and attributes are fixed name sets, so no role can carry a byte a terminal would act on. |
 
 ### The headless broker
 
 The park-as-promise arm — no terminal here, so a transport forwards each `pending` record to whoever
 can answer, and `answer` drives the parked form to settlement ([`src/core`](../src/core)).
 
-| API                   | Kind      | Summary                                                                                                                                        |
-| --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PromptInterface`     | interface | The broker — `emitter` / `count` data plus `park` / `pending` / `answer` / `stop` / `destroy`.                                                 |
-| `Prompt`              | class     | The observable broker — parks live forms, applies remote answers to the authoritative instance, abandons on timeout, release, or teardown.     |
-| `createPrompt`        | function  | The `PromptInterface` broker's factory.                                                                                                        |
-| `PromptOptions`       | interface | `createPrompt` options — `on` / `error` / `timeout` / `timer` / `cap` (data-only).                                                             |
-| `ParkRequest`         | interface | The parking envelope — `from` / `to`, the attribution edge a `TerminalManagerInterface` stamps; a direct caller passes no request (data-only). |
-| `PendingForm`         | interface | One form PARKED — `id` / `schema` / `status` / `time` / optional `from` / `to`; the wire-safe record a transport carries (data-only).          |
-| `PendingFormStatus`   | type      | The TICKET's status — `pending` / `answered` / `expired`. The form it carries has its own status; the two are separate facts.                  |
-| `ParkedForm`          | interface | The broker's per-form record — the authoritative live `form`, its wire `pending` record, and the `cancel` for its expiry deadline (data-only). |
-| `AnswerError`         | type      | Why `answer` refused — `{ reason: 'unknown' }`, or `{ reason: 'rejected', errors }` carrying the authoritative form's own `FieldError` list.   |
-| `PromptEventMap`      | type      | The broker's events — `pending(form)` / `answer(id, values)` / `expire(id)`; errors are `unknown`, and there is no listener-error event.       |
-| `isPendingForm`       | function  | An unknown wire value narrowed to a `PendingForm` — the ENVELOPE only; `parseForm` owns the schema payload.                                    |
-| `isPendingFormStatus` | const     | An unknown value narrowed to a `PendingFormStatus`.                                                                                            |
-| `TimerHandler`        | type      | One injected timer — arms a deadline after `ms` and returns a `TimerCancelFunction`; the broker's expiry seam and the client's backoff seam.   |
-| `TimerCancelFunction` | type      | The cancel for a pending deadline — idempotent, safe after the timer fired.                                                                    |
-| `defaultTimer`        | function  | The default `TimerHandler` — a thin host `setTimeout` / `clearTimeout` wrapper.                                                                |
+| API                   | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PromptInterface`     | interface | Declares the headless form broker — parks a live form until somebody elsewhere answers it. The headless arm of the local-TTY, headless, and remote trio: there is no terminal here, so a transport forwards each `pending` record to whoever can answer, and `answer` drives the parked form to settlement.                                                      |
+| `Prompt`              | class     | Implements the headless form broker. It parks live forms, exposes their serialized schemas, applies remote answers to the authoritative form, and abandons a parked form on timeout, release, or teardown.                                                                                                                                                       |
+| `createPrompt`        | function  | Creates the headless `PromptInterface` broker. It parks live forms and applies remote answers to the authoritative instances.                                                                                                                                                                                                                                    |
+| `PromptOptions`       | interface | Configures `createPrompt` and every `PromptInterface` broker, including one a `TerminalManagerInterface` mounts per endpoint.                                                                                                                                                                                                                                    |
+| `ParkRequest`         | interface | Represents the parking envelope — everything the broker needs about a park that the form itself does not say.                                                                                                                                                                                                                                                    |
+| `PendingForm`         | interface | Represents one form parked by the broker — an id-keyed, wire-safe record of a live form awaiting a remote answer. The value a `pending` listener receives and the broker serializes over SSE to a `PromptClientInterface`.                                                                                                                                       |
+| `PendingFormStatus`   | type      | Names the lifecycle status of a parked `PendingForm` — where the ticket stands, which is not where the form stands. A ticket is `pending` until somebody answers it; the form it carries has its own status, and each is a separate fact about a separate entity.                                                                                                |
+| `ParkedForm`          | interface | Represents one parked form's runtime state inside the broker — the live form, the wire-safe record the broker exposes, and the cancel for its expiry timer.                                                                                                                                                                                                      |
+| `AnswerError`         | type      | Explains why `PromptInterface.answer` refused — `unknown` for an id no form is parked under, `rejected` for values the authoritative form itself refused, carrying the `FieldError` list it reported. Names its axis with `reason`.                                                                                                                              |
+| `PromptEventMap`      | type      | Declares the broker's event map — lean, errors `unknown`, no listener-error event.                                                                                                                                                                                                                                                                               |
+| `isPendingForm`       | function  | Narrows an unknown wire value to a `PendingForm` envelope — the envelope alone, because the form package's `parseForm` owns the schema payload.                                                                                                                                                                                                                  |
+| `isPendingFormStatus` | const     | Narrows an unknown value to a `PendingFormStatus`.                                                                                                                                                                                                                                                                                                               |
+| `TimerHandler`        | type      | Represents one injected timer — arms a deadline `callback` to fire after `ms`, returning a `TimerCancelFunction` that cancels it. The broker's timeout seam: the default wraps the host `setTimeout` and `clearTimeout`; a test injects a deterministic timer that captures the callback and fires it on demand, with no real time and no global patching.       |
+| `TimerCancelFunction` | type      | Cancels a pending `TimerHandler` deadline — idempotent, safe to call after the timer fired.                                                                                                                                                                                                                                                                      |
+| `defaultTimer`        | function  | Implements the default `TimerHandler` — a thin host `setTimeout` / `clearTimeout` wrapper that arms `callback` after `ms` and returns a `TimerCancelFunction`. The deadline seam behind both the `Prompt` broker (its expiry) and the `PromptClient` (its reconnect backoff); a test injects a deterministic timer instead, so neither entity touches real time. |
 
 ### The wire seam
 
 The `http`-free frame shape a consumer's own HTTP spine mounts the broker over
 ([`src/core`](../src/core)).
 
-| API                | Kind      | Summary                                                                                                        |
-| ------------------ | --------- | -------------------------------------------------------------------------------------------------------------- |
-| `WireEvent`        | interface | One SSE-shaped frame — the `event` name, its already-stringified `data`, and an optional `id` (data-only).     |
-| `isWireEvent`      | const     | An unknown value narrowed to a `WireEvent` — the guard a consumer's own transport applies to an inbound frame. |
-| `serializePending` | function  | The `pending` frame for a parked form — `id` the form's own id.                                                |
-| `serializeExpire`  | function  | The `expire` frame for a parked form that expired or was released — `data` the JSON `{ id }` payload.          |
-| `serializeDestroy` | function  | The `destroy` frame a broker or manager sends when it is going away — no payload.                              |
+| API                | Kind      | Summary                                                                                                                                                                                                                                            |
+| ------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WireEvent`        | interface | Represents one SSE-shaped wire frame — the `event` name, its already-stringified `data` payload, and an optional `id`. The transport-neutral shape `serializePending`, `serializeExpire`, and `serializeDestroy` build, with no `http` dependency. |
+| `isWireEvent`      | const     | Narrows an unknown value to a transport-neutral `WireEvent` — the guard a consumer's own transport applies to an inbound frame.                                                                                                                    |
+| `serializePending` | function  | Serializes a parked `PendingForm` into a `pending` `WireEvent`, whose frame `id` is the form's own id.                                                                                                                                             |
+| `serializeExpire`  | function  | Serializes a parked form's expiry or release into an `expire` `WireEvent`, whose `data` is the JSON `{ id }` payload.                                                                                                                              |
+| `serializeDestroy` | function  | Serializes the `destroy` `WireEvent` a broker or manager sends when it is going away, which carries no payload.                                                                                                                                    |
 
 ### The SSE bridge
 
@@ -224,60 +220,60 @@ The client-side counterpart to the broker: receive a form parked elsewhere, rebu
 through a local terminal, and POST the answers back ([`src/core`](../src/core)). Universal — `fetch`
 and SSE are web standards.
 
-| API                     | Kind      | Summary                                                                                                                                |
-| ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `PromptClientInterface` | interface | The bridge — `emitter` / `url` / `connected` data plus `connect` / `disconnect` / `destroy`.                                           |
-| `PromptClient`          | class     | The observable bridge — ingests without waiting on a render, drives one form at a time, and retries an authoritative refusal.          |
-| `createPromptClient`    | function  | The `PromptClientInterface` bridge's factory.                                                                                          |
-| `PromptClientOptions`   | interface | `createPromptClient` options — `url` / `terminal` required, plus `token` / `reconnect` / `delay` / `on` / `error` / `fetch` / `timer`. |
-| `PromptClientEventMap`  | type      | The client's events — `connect` / `disconnect` / `expire(id)` / `error(unknown)`.                                                      |
-| `FetchHandler`          | type      | A minimal `fetch` — the subset the client uses (open the stream, POST an answer); injected so a test drives it with no network.        |
-| `FetchInit`             | interface | The request init the client passes its `FetchHandler` — `method` / `headers` / `body` / `signal` (data-only).                          |
-| `globalFetch`           | function  | The default `FetchHandler` — the global `fetch` adapted to that minimal shape.                                                         |
-| `isAbortError`          | function  | Whether a caught value is an `AbortError`, so a deliberate `disconnect` exits quietly instead of reconnecting.                         |
-| `isInsecureRemote`      | function  | Whether a URL is a non-loopback `http://` endpoint — the client warns once when a `token` would cross it in cleartext.                 |
+| API                     | Kind      | Summary                                                                                                                                                                                                                                                                                                                   |
+| ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PromptClientInterface` | interface | Declares the SSE form bridge — the client-side counterpart to `PromptInterface`. It receives serialized `PendingForm` records from a remote broker, rebuilds each schema locally, drives it through a `TerminalInterface`, and POSTs the answer back, so a human at this machine answers forms a broker parked elsewhere. |
+| `PromptClient`          | class     | Implements the SSE form bridge. It ingests serialized forms from a remote broker without waiting on a render, drives one form at a time through a local terminal, posts each answer back, and asks again when the authoritative form refuses one.                                                                         |
+| `createPromptClient`    | function  | Creates the SSE prompt `PromptClientInterface` bridge — it connects to a remote broker's SSE endpoint, dispatches each received form to a local `TerminalInterface`, and POSTs the answer back. Universal — `fetch` and SSE are web standards.                                                                            |
+| `PromptClientOptions`   | interface | Configures `createPromptClient` and the `PromptClientInterface`.                                                                                                                                                                                                                                                          |
+| `PromptClientEventMap`  | type      | Declares the client's event map — lean, errors `unknown`, no listener-error event.                                                                                                                                                                                                                                        |
+| `FetchHandler`          | type      | Represents a minimal `fetch` — the subset of the global `fetch` a `PromptClientInterface` uses: open the SSE stream, POST an answer. Injected so a test drives the client with a scripted `Response` instead of a real network.                                                                                           |
+| `FetchInit`             | interface | Represents the request init a `PromptClientInterface` passes to its `FetchHandler` — the `RequestInit` fields it actually sets.                                                                                                                                                                                           |
+| `globalFetch`           | function  | Implements the default `FetchHandler` — the global `fetch`, adapted to the minimal injected shape the `PromptClient` uses.                                                                                                                                                                                                |
+| `isAbortError`          | function  | Checks whether a caught value is an `AbortError` — the `PromptClient` distinguishes a deliberate `disconnect` / teardown (an aborted `fetch`) from a real fault, so it exits its connect loop quietly instead of emitting `error` / reconnecting.                                                                         |
+| `isInsecureRemote`      | function  | Checks whether `url` is an insecure remote endpoint — a plain `http://` URL whose host is not a loopback address. Pure string parsing (no `URL` global), so it stays total on malformed input; the `PromptClient` warns once when a `token` would cross such an endpoint in cleartext.                                    |
 
 ### The terminal manager
 
-A named registry of brokers, so several parties can ask forms of each other BY NAME with a `from` →
+A named registry of brokers, so several parties can ask forms of each other by name with a `from` →
 `to` edge on every parked record ([`src/core`](../src/core)).
 
-| API                        | Kind      | Summary                                                                                                                                                |
-| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `TerminalManagerInterface` | interface | The registry — `emitter` / `count` data plus `terminal` / `terminals` / `add` / `ask` / `pending` / `answer` / `open` / `save` / `remove` / `destroy`. |
-| `TerminalManager`          | class     | The observable registry — mints and reuses named brokers, attributes each ask, refuses `TARGET` and `DEADLOCK`, persists config.                       |
-| `createTerminalManager`    | function  | The registry's factory. It returns `TerminalManagerInterface`, implemented exactly by `TerminalManager`.                                               |
-| `TerminalManagerOptions`   | interface | `createTerminalManager` options — `store`, the manager-wide `timeout` / `timer` / `cap` default, and `on` / `error` (data-only).                       |
-| `TerminalManagerEventMap`  | type      | The manager's events — every mounted broker's `pending(form)` / `answer(to, id, values)` / `expire(to, id)`, attributed by name.                       |
-| `TerminalAnswerError`      | type      | Why a manager `answer` refused — an `AnswerError`, plus `{ reason: 'target' }` when no endpoint is mounted under that name.                            |
+| API                        | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalManagerInterface` | interface | Declares a registry of named `PromptInterface` brokers, one per endpoint, so several parties (agents, tools, humans) can ask forms of each other by name, attributed with a `from` → `to` edge on every parked record.                                                                                                                                               |
+| `TerminalManager`          | class     | Registers named `PromptInterface` brokers, one per endpoint, so several parties can `ask` forms of each other by name with a `from` → `to` attribution edge on every parked form, and refuses `DEADLOCK` on a transitive cycle across every in-flight ask.                                                                                                           |
+| `createTerminalManager`    | function  | Creates the multi-endpoint `TerminalManager` — a named registry of `PromptInterface` brokers so several parties can `ask` forms of each other by name, with a transitive cycle check that refuses `DEADLOCK` across every in-flight ask.                                                                                                                             |
+| `TerminalManagerOptions`   | interface | Configures `createTerminalManager` and the `TerminalManagerInterface`.                                                                                                                                                                                                                                                                                               |
+| `TerminalManagerEventMap`  | type      | Declares the manager's event map — the name-attributed re-emission of every mounted broker's events, so a caller subscribes once for every endpoint instead of once per broker.                                                                                                                                                                                      |
+| `TerminalAnswerError`      | type      | Explains why a `TerminalManagerInterface.answer` call refused — an `AnswerError` from the endpoint's own broker, or `target` when no endpoint is mounted under that name. That is the same condition `TerminalErrorCode`'s `TARGET` names for `TerminalManagerInterface.ask`, so one word carries it on both doors. One discriminant, `reason`, across every member. |
 
 ### The terminal store
 
-The point-access persistence seam for a manager's endpoint CONFIG — config only, because a parked
+The point-access persistence seam for a manager's endpoint config — config only, because a parked
 form is process-bound and is never resurrected ([`src/core`](../src/core)).
 
-| API                           | Kind      | Summary                                                                                                               |
-| ----------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
-| `TerminalStoreInterface`      | interface | The store contract — async `get` / `set` / `delete`, keyed by the snapshot's own `id`.                                |
-| `TerminalSnapshot`            | interface | One endpoint's persisted config — `id` (the endpoint name) and its optional `timeout` (data-only).                    |
-| `TerminalSnapshotRow`         | interface | One opaque persisted row — `id` plus `snapshot: unknown`, the shape a `TableInterface`-backed store reads and writes. |
-| `isTerminalSnapshot`          | const     | A stored value narrowed back to a `TerminalSnapshot` on read — a non-empty `id` and an optional numeric `timeout`.    |
-| `MemoryTerminalStore`         | class     | The in-memory twin — a process-lifetime `Map`; no idle TTL, no eviction.                                              |
-| `DatabaseTerminalStore`       | class     | The database twin — one opaque JSON column over a `TableInterface`, narrowed with `isTerminalSnapshot` on read.       |
-| `createMemoryTerminalStore`   | function  | The in-memory store's factory.                                                                                        |
-| `createDatabaseTerminalStore` | function  | The database-backed store's factory (default driver: an in-memory `@orkestrel/database` driver).                      |
+| API                           | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalStoreInterface`      | interface | Declares the point-access persistence seam for a `TerminalManagerInterface`'s endpoint configs. Every primitive is async; deleting an absent id is a no-op.                                                                                                                                                                                                               |
+| `TerminalSnapshot`            | interface | Represents one endpoint's persisted config snapshot — `id` is the endpoint name and `timeout` its configured default. Parked forms are process-bound and are never resurrected, so `open` always restores an empty broker.                                                                                                                                                |
+| `TerminalSnapshotRow`         | interface | Represents one opaque persisted row — the shape a table-backed store reads and writes. The store is a `TableInterface<TerminalSnapshotRow>`, and `snapshot` is narrowed with `isTerminalSnapshot` on read.                                                                                                                                                                |
+| `isTerminalSnapshot`          | const     | Narrows an unknown value to a `TerminalSnapshot` — a non-empty `id` and an optional numeric `timeout`, the read boundary a store applies to an untrusted persisted row.                                                                                                                                                                                                   |
+| `MemoryTerminalStore`         | class     | Implements the in-memory `TerminalStoreInterface` — a process-lifetime `Map` of `TerminalSnapshot` records keyed by endpoint id, the default store `createMemoryTerminalStore` builds and the exact twin of `DatabaseTerminalStore`. It carries no idle expiry and no eviction.                                                                                           |
+| `DatabaseTerminalStore`       | class     | Implements a `TerminalStoreInterface` backed by one table of the `databases` layer — an endpoint's durable config state is a row, so persistence reduces to keyed point-access (`get` / `set` / `delete`) over a `TableInterface`, the driver-pluggable twin of the plain-`Map` `MemoryTerminalStore`. A stored `snapshot` is narrowed with `isTerminalSnapshot` on read. |
+| `createMemoryTerminalStore`   | function  | Creates the in-memory `TerminalStoreInterface` — a process-lifetime `Map` of endpoint config snapshots, the default store backing a `TerminalManagerInterface`'s `open` / `save`.                                                                                                                                                                                         |
+| `createDatabaseTerminalStore` | function  | Creates a `TerminalStoreInterface` backed by one table of the `databases` layer — the driver-pluggable twin of `createMemoryTerminalStore`, storing each endpoint's config snapshot as one opaque JSON column. The default driver is an in-memory `@orkestrel/database` driver.                                                                                           |
 
 ### The terminal error
 
-Terminal's own failure type. A refusal that belongs to the FORM — a malformed schema, a value a
+Terminal's own failure type. A refusal that belongs to the form — a malformed schema, a value a
 control cannot hold, a write to a settled form — arrives as form's own `FormError` and is never
 re-coded ([`src/core`](../src/core)).
 
-| API                 | Kind     | Summary                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TerminalErrorCode` | type     | The machine-readable condition — `EXPIRE` (a park reached a destroyed broker) / `CANCEL` (ctrl-c at the driver) / `DRIVER` (the fallback was given an input it cannot read) / `DEADLOCK` (an ask would close a `from` → `to` cycle) / `TARGET` (an unknown endpoint) / `LIMIT` (the broker's `cap`) / `DESTROYED` (a call reached a destroyed manager). |
-| `TerminalError`     | class    | The error those conditions throw or reject with — a `code` plus an optional `context` bag.                                                                                                                                                                                                                                                              |
-| `isTerminalError`   | function | An unknown caught value narrowed to a `TerminalError`, so a caller can branch on `error.code`.                                                                                                                                                                                                                                                          |
+| API                 | Kind     | Summary                                                                                                                                                                                                                                                                                                             |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TerminalErrorCode` | type     | Names the machine-readable condition carried by a `TerminalError` — the axis a `catch` branches on. Names its axis (the failure condition), never `kind`.                                                                                                                                                           |
+| `TerminalError`     | class    | Represents the error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an unusable driver stream, a manager routing fault, or a ctrl-c cancellation. A parked form's own lifecycle failures reject through the form's `answer` with the form package's error, never with this one. |
+| `isTerminalError`   | function | Narrows an unknown caught value to a `TerminalError`, so a caller can branch on its `code`.                                                                                                                                                                                                                         |
 
 ### The core constants
 
@@ -286,32 +282,32 @@ The decode tables, the default mask, the theme defaults, and the broker and SSE 
 `String.fromCharCode` or read from console's own `ESC` and `CSI`, so no raw control character
 appears in source.
 
-| API                          | Kind  | Summary                                                                                                                                     |
-| ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RETURN`                     | const | Carriage return (`\r`, U+000D) — Enter on most terminals.                                                                                   |
-| `NEWLINE`                    | const | Line feed (`\n`, U+000A) — Enter on some terminals, and in pasted input.                                                                    |
-| `TAB`                        | const | Tab (U+0009).                                                                                                                               |
-| `BACKSPACE`                  | const | Backspace (U+0008) — Ctrl+H, and Backspace on some terminals.                                                                               |
-| `DELETE`                     | const | Delete (U+007F) — the usual Backspace byte on a Unix TTY.                                                                                   |
-| `SPACE`                      | const | Space (U+0020).                                                                                                                             |
-| `CTRL_C`                     | const | Ctrl+C (U+0003) — cancel.                                                                                                                   |
-| `CTRL_D`                     | const | Ctrl+D (U+0004) — the editor's finish key.                                                                                                  |
-| `CTRL_U`                     | const | Ctrl+U (U+0015) — clear the current line.                                                                                                   |
-| `CTRL_A`                     | const | Ctrl+A (U+0001) — move to start of line.                                                                                                    |
-| `CTRL_E`                     | const | Ctrl+E (U+0005) — move to end of line.                                                                                                      |
-| `KEY_SS3`                    | const | The Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit, built from console's own `ESC`.                  |
-| `SEQUENCE_NAMES`             | const | The escape-SEQUENCE to key-NAME table `parseKey` consults — both forms of the arrows, plus home / end / delete.                             |
-| `CONTROL_NAMES`              | const | The control-BYTE (or CRLF pair) to key-descriptor table `parseKey` consults — each entry's canonical `name` and whether it is a ctrl combo. |
-| `DEFAULT_MASK`               | const | The glyph a password field renders each character as when it declares no `mask` — `*`.                                                      |
-| `PROMPT_ICONS`               | const | The terminal-owned glyphs `DEFAULT_PROMPT_THEME` is assembled from, beside console's own success and error marks.                           |
-| `PROMPT_ROLES`               | const | Every `PromptRole` in one frozen list — the role axis's source of truth, walked when a partial theme is merged.                             |
-| `DEFAULT_PROMPT_THEME`       | const | The theme every field renders with unless options supply another — the default glyphs and a `Style` per role.                               |
-| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | How long the broker parks an unanswered form before abandoning it — 5 minutes.                                                              |
-| `DEFAULT_RECONNECT_DELAY_MS` | const | How long the client waits before each reconnect attempt — 2 seconds.                                                                        |
-| `SSE_EVENTS`                 | const | The `event:` names the broker emits and the client dispatches on — `pending` / `expire` / `destroy`.                                        |
-| `HEADER_TOKEN`               | const | The auth-token request header the client sends when a `token` is configured.                                                                |
-| `ACCEPT_EVENT_STREAM`        | const | The `Accept` header value that opens the broker's stream (`text/event-stream`).                                                             |
-| `SSE_BUFFER_LIMIT`           | const | How many characters the client's SSE parser buffers before treating the stream as hostile — 1 MiB.                                          |
+| API                          | Kind  | Summary                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RETURN`                     | const | Names the carriage return byte (`\r`, U+000D) — Enter on most terminals.                                                                                                                                                                                                                                                                                                    |
+| `NEWLINE`                    | const | Names the line feed byte (`\n`, U+000A) — Enter on some terminals / pasted input.                                                                                                                                                                                                                                                                                           |
+| `TAB`                        | const | Names the tab byte (`\t`, U+0009).                                                                                                                                                                                                                                                                                                                                          |
+| `BACKSPACE`                  | const | Names the backspace byte (BS, U+0008) — Ctrl+H / some terminals' Backspace.                                                                                                                                                                                                                                                                                                 |
+| `DELETE`                     | const | Names the delete byte (DEL, U+007F) — the usual Backspace byte on a Unix TTY.                                                                                                                                                                                                                                                                                               |
+| `SPACE`                      | const | Names the space byte (U+0020).                                                                                                                                                                                                                                                                                                                                              |
+| `CTRL_C`                     | const | Names the Ctrl+C byte (ETX, U+0003) — interrupt / cancel.                                                                                                                                                                                                                                                                                                                   |
+| `CTRL_D`                     | const | Names the Ctrl+D byte (EOT, U+0004) — end-of-transmission / finish (the editor's commit key).                                                                                                                                                                                                                                                                               |
+| `CTRL_U`                     | const | Names the Ctrl+U byte (NAK, U+0015) — clear the current line.                                                                                                                                                                                                                                                                                                               |
+| `CTRL_A`                     | const | Names the Ctrl+A byte (SOH, U+0001) — move to start of line.                                                                                                                                                                                                                                                                                                                |
+| `CTRL_E`                     | const | Names the Ctrl+E byte (ENQ, U+0005) — move to end of line.                                                                                                                                                                                                                                                                                                                  |
+| `KEY_SS3`                    | const | Names the Single Shift Three lead (`ESCO`) — the alternate arrow-key prefix some terminals emit (`ESC O A`). Built from the console module's own `ESC`; the navigation keys' CSI lead is that module's `CSI`, which this package reuses rather than redeclaring.                                                                                                            |
+| `SEQUENCE_NAMES`             | const | Holds the exact escape sequence to canonical key name table `parseKey` consults for the navigation and editing keys. Covers the CSI form (`ESC[A`…) and the SS3 form (`ESCOA`…) of the arrows, plus the `home` / `end` / `delete` CSI sequences with their numeric-tilde variants. The source of truth for the multi-byte key decode; frozen.                               |
+| `CONTROL_NAMES`              | const | Holds the control byte (or CRLF pair) to key descriptor table `parseKey` consults for the one-byte keys and the two-byte CRLF Enter chunk. Each entry carries the canonical `name` and whether it is a `ctrl` combination. The source of truth for that decode; frozen.                                                                                                     |
+| `DEFAULT_MASK`               | const | Names the default mask glyph `createPasswordState` uses — `*`.                                                                                                                                                                                                                                                                                                              |
+| `PROMPT_ICONS`               | const | Holds the terminal-owned glyphs `DEFAULT_PROMPT_THEME` assembles its `icons` from, beside the console module's own success and error marks. Read only when the default theme is assembled; a view reads its resolved theme and never this constant. Frozen.                                                                                                                 |
+| `PROMPT_ROLES`               | const | Holds every `PromptRole`, in one frozen list — the role axis's source of truth. `createPromptTheme` walks it to merge a partial theme, and a consumer building a complete role map reads it rather than retyping every name.                                                                                                                                                |
+| `DEFAULT_PROMPT_THEME`       | const | Holds the `PromptTheme` every prompt renders with unless its options supply another — the glyph set assembled from `PROMPT_ICONS` plus the console `STATUS_ICONS` `success` / `error` marks, and the console `Style` each role is painted with. Deeply frozen through the console module's own `freezeStyle`; the baseline `createPromptTheme` merges a partial theme over. |
+| `DEFAULT_PROMPT_TIMEOUT_MS`  | const | Holds how long (ms) the `PromptInterface` broker parks an unanswered form before it expires — 5 minutes.                                                                                                                                                                                                                                                                    |
+| `DEFAULT_RECONNECT_DELAY_MS` | const | Holds how long (ms) the `PromptClientInterface` waits before each reconnect attempt — 2 seconds.                                                                                                                                                                                                                                                                            |
+| `SSE_EVENTS`                 | const | Holds the SSE `event:` names the broker emits and the `PromptClientInterface` dispatches on — `pending`, `expire`, and `destroy`. Frozen; the source of truth for the wire event vocabulary.                                                                                                                                                                                |
+| `HEADER_TOKEN`               | const | Names the auth-token request header the `PromptClientInterface` sends when a `token` is configured — `x-orkestrel-token`.                                                                                                                                                                                                                                                   |
+| `ACCEPT_EVENT_STREAM`        | const | Names the `Accept` header value that opens the broker's SSE stream — `text/event-stream`.                                                                                                                                                                                                                                                                                   |
+| `SSE_BUFFER_LIMIT`           | const | Sets the maximum number of characters the `PromptClientInterface` lets its SSE parser buffer before treating the stream as hostile — 1 MiB, comfortably above any legitimate prompt payload. Passed as the `limit` to `createSSEParser` so an unterminated or oversized `data:` field cannot grow the buffer without bound (a memory-exhaustion guard).                     |
 
 ### The server Terminal
 
@@ -319,35 +315,35 @@ The local-TTY arm and the only impure part of the stack ([`src/server`](../src/s
 raw-mode stdin, drives the core reducers, renders each view in place, and falls back to
 `node:readline` when piped. Every form contract is imported from core and none is redeclared here.
 
-| API                    | Kind      | Summary                                                                                                                                                                              |
-| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Terminal`             | class     | The interactive driver — walks one form's fields, binds each answer through the form's own `fill`, re-asks what the form refused.                                                    |
-| `createTerminal`       | function  | The `TerminalInterface` driver's factory over the resolved streams — the env-symmetric sibling of `createPrompt` and `createPromptClient`.                                           |
-| `TerminalOptions`      | interface | `createTerminal` options — `input` / `output` / `theme`, all optional; a bare `createTerminal()` drives the real process streams. `output` is console's own `StreamTargetInterface`. |
-| `InputStreamInterface` | interface | The minimal input stream the driver reads — required `on` / `off`, optional `setRawMode` / `resume` / `pause` / `isTTY`.                                                             |
+| API                    | Kind      | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Terminal`             | class     | Implements `TerminalInterface` for a human at this machine's keyboard — the interactive form driver, and the only impure part of the terminal stack. `ask` walks one form's fields in schema order, feeds raw-mode stdin bytes through `parseKey` into the matching pure reducer, renders each returned view in place, binds every answer through the form's own `fill`, and re-asks what the form refused. It owns no form logic: the schema, the rules, the values, and the settlement all belong to the form it is given, and this class owns only raw mode, the cursor, and the re-render. |
+| `createTerminal`       | function  | Creates the interactive terminal form driver — the local-keyboard arm of the terminal trio, beside the core headless `createPrompt` broker and the SSE `createPromptClient` bridge. Where the broker parks a live form until somebody elsewhere answers it, a `Terminal` answers one here: it walks the form's fields in schema order, drives each control's pure reducer over raw-mode stdin, binds every answer through the form's own `fill`, and submits. It is the only impure part of the terminal stack.                                                                                |
+| `TerminalOptions`      | interface | Configures `createTerminal` — every member optional, so a bare `createTerminal()` walks a form over the real `process.stdin` / `process.stdout` with the default theme.                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `InputStreamInterface` | interface | Represents the minimal input-stream shape the driver reads — exactly the slice of a Node `tty.ReadStream` / `process.stdin` it touches, and no more. A `TerminalOptions` `input` is narrowed to this through `isInputStream`, never an assertion, so a test drives a whole form with a hand-built fake stream that emits scripted key chunks, never touches the real `process.stdin`, and asserts that raw mode is entered once and always cleaned up.                                                                                                                                         |
 
 ### The server helpers
 
 The stream guards, the cursor math behind the in-place re-render, and the per-field line projections
 the walk renders with ([`src/server`](../src/server)). All pure, all exported, all unit-tested.
 
-| API                     | Kind     | Summary                                                                                                                                     |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isInputStream`         | function | Whether a value is a usable `InputStreamInterface` (callable `on` / `off`) — the input boundary guard, total.                               |
-| `isReadable`            | function | Whether a value is a Node readable stream (callable `read` / `pipe` / `on`) — narrows the input to the `node:readline` boundary.            |
-| `supportsRawMode`       | function | Whether an input can be driven in RAW mode (`isTTY === true` AND a callable `setRawMode`) — selects raw mode over the readline fallback.    |
-| `lineCount`             | function | How many terminal LINES a rendered view occupies — one more than its newline count. The basis of the in-place re-render.                    |
-| `renderCursorUp`        | function | The cursor-UP sequence (`ESC[{count}A`), or `''` when `count <= 0`.                                                                         |
-| `redrawPrefix`          | function | The reposition-and-clear prefix written before re-rendering in place — climb, return to column 0, erase to end of screen.                   |
-| `fieldToText`           | function | Any field read as one LINE — `text` and the controls a terminal has no widget for — projected into the `TextField` the text reducer takes.  |
-| `valueToText`           | function | One held answer projected into read-only text — a scalar as itself, a boolean as `yes` / `no`, a list joined by commas, absence as nothing. |
-| `filterEnabled`         | function | The choices a field actually OFFERS — the form refuses a disabled choice at every door, so the walk never puts one in front of the cursor.  |
-| `filterDisabled`        | function | The choices a field SHOWS but refuses — the complement, so a withheld choice is named rather than silently missing.                         |
-| `renderGroupHeader`     | function | The section header the walk writes when it enters a new field group.                                                                        |
-| `renderLockedLine`      | function | The read-only line a LOCKED field renders — its label, the locked mark, and the answer the form already holds.                              |
-| `renderSuggestionLine`  | function | The line listing an OPEN select's offered values above its text prompt, because an open select admits an answer the list does not offer.    |
-| `renderUnavailableLine` | function | The line naming the choices a field shows but refuses, written above the list the walk drives.                                              |
-| `renderNumberedList`    | function | The numbered choice list the non-TTY fallback prints, since a piped stream cannot navigate with arrow keys.                                 |
+| API                     | Kind     | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `isInputStream`         | function | Checks whether `value` is a usable `InputStreamInterface` — a record with callable `on` / `off` `'data'` subscription methods. A total type guard: it never throws and returns `false` for anything off-shape, so it narrows the one unavoidable input boundary (the real `process.stdin`, or a fake TTY a test injects) to the exact slice the driver reads, never an assertion.                                                                                                                                                          |
+| `isReadable`            | function | Checks whether `value` is a Node `NodeJS.ReadableStream` — a total structural guard checking for the callable `read` / `pipe` / `on` that `node:readline`'s `createInterface` requires as its `input`. The non-TTY fallback narrows the resolved input stream through this before handing it to readline, never through an assertion, so a real piped `process.stdin` (or a `PassThrough` a test injects) crosses into the readline boundary honestly. Never throws; returns `false` for a minimal fake that isn't a full readable.        |
+| `supportsRawMode`       | function | Checks whether an input stream can be driven in raw mode — it reports `isTTY === true` and exposes a callable `setRawMode`. The `Terminal` probes this to choose its path: true selects the interactive raw-mode fields, with arrow-key navigation and a live re-render; false selects the `node:readline` line-input fallback, because a piped or non-terminal stream cannot enter raw mode. Total — never throws.                                                                                                                        |
+| `lineCount`             | function | Counts the terminal lines a rendered prompt `view` occupies — one more than its newline count, so a view with no newline is a single line and a view with N newlines spans N+1 lines. The basis of the in-place re-render: the driver records the line count of the view it wrote so the next redraw knows how far up to move the cursor before overwriting. Total; an empty string is one empty line.                                                                                                                                     |
+| `renderCursorUp`        | function | Returns the cursor-up control sequence that moves the cursor up `count` lines (`ESC[{count}A`), or the empty string when `count` is zero or negative, because no movement is needed and `ESC[0A` is a wasted write. The pure step the in-place re-render uses to climb back over the previous view before clearing it. Total.                                                                                                                                                                                                              |
+| `redrawPrefix`          | function | Returns the full reposition-and-clear prefix to write before re-rendering a prompt view in place — given the line count of the previous view, it moves the cursor up over those lines, returns it to column 0, and erases everything from there to the end of the screen, so the next view is drawn on a clean region and a taller previous view leaves no orphaned rows. Pure; the driver writes this immediately followed by the new view.                                                                                               |
+| `fieldToText`           | function | Projects any field the walk reads as a line of text into the `TextField` the text reducer takes — `text` itself, and the controls a terminal has no widget for: `number`, `date`, `time`, `datetime`, `color`, and one `file` entry. The label carries that control's format cue from `CONTROL_HINTS`, and a declared `default` becomes the line a bare return submits. The projection carries no rule, because the authoritative form still evaluates the answer this line binds; it exists only so one reducer covers every one of them. |
+| `valueToText`           | function | Projects one held answer into the text a read-only line shows — a scalar as itself, a boolean as `yes` / `no` (the word the confirm reducer commits), and a list joined by commas. Absence renders as nothing, because a locked field nobody has answered has nothing to show.                                                                                                                                                                                                                                                             |
+| `filterEnabled`         | function | Returns the choices a `select` or `checkbox` field actually offers — the form refuses a disabled choice's value at every door, including a fill, so the walk never puts one in front of the cursor. Pair with `filterDisabled` to tell the reader what was withheld.                                                                                                                                                                                                                                                                       |
+| `filterDisabled`        | function | Returns the choices a `select` or `checkbox` field shows but refuses — the complement of `filterEnabled`, rendered by `renderUnavailableLine` above the list so a reader sees why a declared choice is missing from it.                                                                                                                                                                                                                                                                                                                    |
+| `renderGroupHeader`     | function | Renders the section header the walk writes when it enters a new field group, painted by the `message` role.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `renderLockedLine`      | function | Renders the read-only line a locked field shows — its label, the `LOCKED_MARK`, and the answer the form already holds. The walk writes this instead of a prompt, because the field is still validated and still submitted but must not be edited here.                                                                                                                                                                                                                                                                                     |
+| `renderSuggestionLine`  | function | Renders the line listing an open select's offered values above its text prompt — a suggestion list, because an open select admits an answer the list does not offer.                                                                                                                                                                                                                                                                                                                                                                       |
+| `renderUnavailableLine` | function | Renders the line naming the choices a field shows but refuses, written above the list the walk drives.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `renderNumberedList`    | function | Renders the numbered choice list the non-TTY fallback prints — a piped stream cannot navigate with arrow keys, so each offered choice is printed with the number the reader types back. One line per choice, with no trailing newline.                                                                                                                                                                                                                                                                                                     |
 
 ### The server constants
 
@@ -355,28 +351,28 @@ The cursor and clear sequences the driver writes, and the fixed copy the walk re
 ([`src/server`](../src/server)). Sequences are built from console's own `CSI`, so no raw control
 character appears in source.
 
-| API                      | Kind  | Summary                                                                                                            |
-| ------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------ |
-| `CSI_UP`                 | const | The cursor-UP TEMPLATE (`ESC[{count}A`), built from console's own `CSI` — `renderCursorUp` interpolates `{count}`. |
-| `CURSOR_HIDE`            | const | The cursor-hide sequence — written before a redraw so the cursor does not flicker; paired with `CURSOR_SHOW`.      |
-| `CURSOR_SHOW`            | const | The cursor-show sequence — restored when a field settles or the walk ends.                                         |
-| `CLEAR_DOWN`             | const | The erase-to-end-of-screen sequence — wipes a whole multi-line view before the new one.                            |
-| `CONTROL_HINTS`          | const | The format cue `fieldToText` appends per control — the `(YYYY-MM-DD)` on a date label, and its siblings.           |
-| `FILE_HINT`              | const | The instruction shown above a multiple-file list — one path per line, blank to finish.                             |
-| `SUGGESTION_LEAD`        | const | The lead word on an open select's suggestion line.                                                                 |
-| `UNAVAILABLE_LEAD`       | const | The lead word on the line naming refused choices.                                                                  |
-| `LOCKED_MARK`            | const | The mark a locked field's read-only line carries.                                                                  |
-| `REFUSAL_MESSAGE`        | const | The invalidation message the driver writes when an answer is one the control cannot hold.                          |
-| `FALLBACK_SELECT_HINT`   | const | The prompt the non-TTY select fallback reads its index on.                                                         |
-| `FALLBACK_CHECKBOX_HINT` | const | The prompt the non-TTY checkbox fallback reads its comma-separated indices on.                                     |
-| `FALLBACK_EDITOR_HINT`   | const | The hint the non-TTY editor shows, since ctrl-d is a raw-mode key and end of input finishes here.                  |
-| `FALLBACK_CONFIRM_HINT`  | const | The hint the non-TTY confirm shows, since it reads a typed line rather than a single key.                          |
+| API                      | Kind  | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CSI_UP`                 | const | Holds the cursor-up sequence template (`ESC[{count}A`) — `renderCursorUp` interpolates the `{count}` placeholder with the number of lines to climb. Kept as a template so the count stays out of the constant.                                                                                                                                                                                                                                                                |
+| `CURSOR_HIDE`            | const | Hides the cursor (`ESC[?25l`) — written before the driver starts redrawing a prompt so the cursor does not flicker across the view during an in-place re-render; paired with `CURSOR_SHOW`.                                                                                                                                                                                                                                                                                   |
+| `CURSOR_SHOW`            | const | Shows the cursor (`ESC[?25h`) — restores the cursor after a prompt resolves / cancels (the `CURSOR_HIDE` pair).                                                                                                                                                                                                                                                                                                                                                               |
+| `CLEAR_DOWN`             | const | Erases from the cursor down to the end of the screen (`ESC[J`) — wipes the whole previous view, which a `select` or `checkbox` can spread over several lines, in one write before the new view is rendered, so a redraw never leaves orphaned rows behind.                                                                                                                                                                                                                    |
+| `CONTROL_HINTS`          | const | Holds the format cue appended to a field's label for each control the walk reads as a line of text — the terminal has no date picker, no color well, and no file chooser, so the accepted shape is stated instead. A control with no entry needs none: `text` and `editor` accept any line, `password` masks one, and `confirm`, `select`, and `checkbox` are answered by key rather than by format. The form's own rules still decide whether the typed value is acceptable. |
+| `FILE_HINT`              | const | Holds the instruction a `file` field with `multiple` shows before its entries — one path per line, and a blank line ends the list.                                                                                                                                                                                                                                                                                                                                            |
+| `SUGGESTION_LEAD`        | const | Holds the lead on the line listing an open `select`'s offered values, which a typed answer can ignore.                                                                                                                                                                                                                                                                                                                                                                        |
+| `UNAVAILABLE_LEAD`       | const | Holds the lead on the line listing the choices a `select` or `checkbox` shows but refuses, so a reader sees why one is missing from the list it heads.                                                                                                                                                                                                                                                                                                                        |
+| `LOCKED_MARK`            | const | Holds the mark on a locked field's line — the walk renders its value and moves on, because the form refuses an edit there.                                                                                                                                                                                                                                                                                                                                                    |
+| `REFUSAL_MESSAGE`        | const | States what a field is told when the walk read an answer the control cannot hold — a word typed into a `number`, an off-list value typed into an open `select` whose choice is refused. The value binds as absence and this message is invalidated onto the field, so the walk re-asks it with the reason on screen.                                                                                                                                                          |
+| `FALLBACK_SELECT_HINT`   | const | Holds the numbered-list prompt the non-TTY `Terminal` `select` fallback appends — a piped (non-terminal) stream cannot navigate with arrow keys, so the choices are printed numbered and the user types one number on a single readline line.                                                                                                                                                                                                                                 |
+| `FALLBACK_CHECKBOX_HINT` | const | Holds the comma-separated multi-select hint the non-TTY `checkbox` fallback shows (the user types one or more numbers).                                                                                                                                                                                                                                                                                                                                                       |
+| `FALLBACK_EDITOR_HINT`   | const | Holds the hint the non-TTY `editor` fallback shows — a piped stream has no ctrl-d, so end of input finishes the block.                                                                                                                                                                                                                                                                                                                                                        |
+| `FALLBACK_CONFIRM_HINT`  | const | Holds the hint the non-TTY `confirm` fallback shows — a piped stream sends a whole line, so the answer is typed rather than pressed.                                                                                                                                                                                                                                                                                                                                          |
 
 ## Methods
 
 One table per behavioral interface, keyed by its backticked name, listing exactly its
-call-signature members. Each interface's readonly data members stay in its Surface row above and are
-not repeated here. Each implementing class implements its interface exactly, so each table is also
+call-signature members. Each interface's readonly data members stay in its Surface row and are not
+repeated here. Each implementing class implements its interface exactly, so each table is also
 the instance method surface of the class that implements it.
 
 A `*Options` / `*EventMap` / `*State` / `PendingForm` / `ParkedForm` / `KeyEvent` / `PromptStep` /
@@ -389,71 +385,71 @@ function types. None carries a method table.
 
 The one driving contract. The server `Terminal` implements it.
 
-| Method | Returns               | Behavior                                                                                                  |
-| ------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
-| `ask`  | `Promise<FormValues>` | Walk the given form to settlement and resolve its values. See the ctrl-c exception in the Contract below. |
+| Method | Returns               | Summary                                                                                                      |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ask`  | `Promise<FormValues>` | Walks the given form to settlement and resolves its values. The Contract section names the ctrl-c exception. |
 
 #### `PromptInterface`
 
 The headless broker.
 
-| Method    | Returns                                               | Behavior                                                                                                                          |
-| --------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `park`    | `string`                                              | Park a live form, mint its id, emit `pending`, and arm the expiry deadline. Returns the id; the caller already holds the promise. |
-| `pending` | `readonly PendingForm[]` / `PendingForm \| undefined` | List every parked record (`pending()`), or look one up by id (`pending(id)`).                                                     |
-| `answer`  | `Result<FormValues, AnswerError>`                     | Fill and submit the AUTHORITATIVE parked form. Accepted, it settles and the record is dropped; refused, the form stays parked.    |
-| `stop`    | `boolean` / `void`                                    | Release a batch (`stop(ids)`, array overload first), one id, or every parked form. The broker stays usable.                       |
-| `destroy` | `void`                                                | Tear down — abandon every parked form, cancel every deadline, then destroy the emitter. Idempotent.                               |
+| Method    | Returns                                               | Summary                                                                                                                               |
+| --------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `park`    | `string`                                              | Parks a live form, mints its id, emits `pending`, and arms the expiry deadline. Returns the id; the caller already holds the promise. |
+| `pending` | `readonly PendingForm[]` / `PendingForm \| undefined` | Lists every parked record (`pending()`), or looks one up by id (`pending(id)`).                                                       |
+| `answer`  | `Result<FormValues, AnswerError>`                     | Fills and submits the authoritative parked form. Accepted, it settles and the record is dropped; refused, the form stays parked.      |
+| `stop`    | `boolean` / `void`                                    | Releases a batch (`stop(ids)`, the array overload declared first), one id, or every parked form. The broker stays usable.             |
+| `destroy` | `void`                                                | Tears the broker down — abandons every parked form, cancels every deadline, then destroys the emitter. Idempotent.                    |
 
 #### `PromptClientInterface`
 
 The SSE bridge.
 
-| Method       | Returns         | Behavior                                                                                                               |
-| ------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `connect`    | `Promise<void>` | Open the stream and pump it, queueing each received form for the local terminal; reconnects on the `delay` backoff.    |
-| `disconnect` | `void`          | Stop the current connection AND the reconnect loop. An active local render continues; a later `connect()` may restart. |
-| `destroy`    | `void`          | Tear down permanently — disconnect, drop the queue, abandon the active local form, and destroy the emitter.            |
+| Method       | Returns         | Summary                                                                                                                                |
+| ------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `connect`    | `Promise<void>` | Opens the stream and pumps it, queueing each received form for the local terminal; reconnects on the `delay` backoff.                  |
+| `disconnect` | `void`          | Stops the current connection and the reconnect loop. An active local render continues, and a later `connect()` can restart the stream. |
+| `destroy`    | `void`          | Tears the client down permanently — disconnects, drops the queue, abandons the active local form, and destroys the emitter.            |
 
 #### `TerminalManagerInterface`
 
 The multi-endpoint registry.
 
-| Method      | Returns                                   | Behavior                                                                                                                          |
-| ----------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `terminal`  | `PromptInterface \| undefined`            | Look up one endpoint's broker by name.                                                                                            |
-| `terminals` | `readonly PromptInterface[]`              | List every mounted broker, in insertion order.                                                                                    |
-| `add`       | `PromptInterface`                         | Mint, or return the existing unchanged, broker for `name`. Idempotent; it never clobbers a live endpoint.                         |
-| `ask`       | `Promise<FormValues>`                     | Park `form` from `from` to `to` and resolve with the settled values. Rejects `TARGET` or `DEADLOCK`.                              |
-| `pending`   | `readonly PendingForm[]`                  | List every endpoint's parked records (`pending()`), or scope to one endpoint (`pending(to)`).                                     |
-| `answer`    | `Result<FormValues, TerminalAnswerError>` | Route an answer to the named endpoint's broker; `{ reason: 'target' }` when no endpoint carries that name.                        |
-| `open`      | `Promise<PromptInterface \| undefined>`   | Return the live broker for `name`, or restore an EMPTY one from the `store`. Parked forms are never resurrected.                  |
-| `save`      | `Promise<boolean>`                        | Persist an endpoint's config snapshot; false with no store, or an unknown name.                                                   |
-| `remove`    | `boolean` / `void`                        | Remove a batch (`remove(names)`, the array overload declared FIRST, true only when all succeed), one endpoint, or every endpoint. |
-| `destroy`   | `void`                                    | Tear down every broker, then the manager's own emitter.                                                                           |
+| Method      | Returns                                   | Summary                                                                                                                                       |
+| ----------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `PromptInterface \| undefined`            | Looks up one endpoint's broker by name.                                                                                                       |
+| `terminals` | `readonly PromptInterface[]`              | Lists every mounted broker, in insertion order.                                                                                               |
+| `add`       | `PromptInterface`                         | Mints, or returns unchanged, the broker for `name`. Idempotent; it never clobbers a live endpoint.                                            |
+| `ask`       | `Promise<FormValues>`                     | Parks `form` from `from` to `to` and resolves with the settled values. Rejects `TARGET` or `DEADLOCK`.                                        |
+| `pending`   | `readonly PendingForm[]`                  | Lists every endpoint's parked records (`pending()`), or scopes to one endpoint (`pending(to)`).                                               |
+| `answer`    | `Result<FormValues, TerminalAnswerError>` | Routes an answer to the named endpoint's broker; `{ reason: 'target' }` when no endpoint carries that name.                                   |
+| `open`      | `Promise<PromptInterface \| undefined>`   | Returns the live broker for `name`, or restores an empty one from the `store`. Parked forms are never resurrected.                            |
+| `save`      | `Promise<boolean>`                        | Persists an endpoint's config snapshot; false with no store, or an unknown name.                                                              |
+| `remove`    | `boolean` / `void`                        | Removes a batch (`remove(names)`, the array overload declared first, true only when every name was mounted), one endpoint, or every endpoint. |
+| `destroy`   | `void`                                    | Tears down every broker, then the manager's own emitter.                                                                                      |
 
 #### `TerminalStoreInterface`
 
 The persistence seam both store twins implement exactly.
 
-| Method   | Returns                                  | Behavior                                                                  |
-| -------- | ---------------------------------------- | ------------------------------------------------------------------------- |
-| `get`    | `Promise<TerminalSnapshot \| undefined>` | Resolve the snapshot stored for `id`, or `undefined` when none is.        |
-| `set`    | `Promise<void>`                          | Insert or replace under the snapshot's OWN `id`; there is no id argument. |
-| `delete` | `Promise<void>`                          | Drop a snapshot by id. An absent id is a no-op, never a throw.            |
+| Method   | Returns                                  | Summary                                                                     |
+| -------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| `get`    | `Promise<TerminalSnapshot \| undefined>` | Resolves the snapshot stored for `id`, or `undefined` when none is.         |
+| `set`    | `Promise<void>`                          | Inserts or replaces under the snapshot's own `id`; there is no id argument. |
+| `delete` | `Promise<void>`                          | Drops a snapshot by id. An absent id is a no-op, never a throw.             |
 
 #### `InputStreamInterface`
 
 The stream shape the driver reads. Only `on` and `off` are required; a stream missing `setRawMode`
 takes the `node:readline` fallback.
 
-| Method       | Returns | Behavior                                                                     |
-| ------------ | ------- | ---------------------------------------------------------------------------- |
-| `on`         | `void`  | Subscribe a `'data'` chunk listener — the irreducible event seam.            |
-| `off`        | `void`  | Unsubscribe that listener. The driver always pairs it, so no listener leaks. |
-| `setRawMode` | `void`  | Switch the TTY in and out of raw mode. Absent on a piped stream.             |
-| `resume`     | `void`  | Start the flow of `'data'` events.                                           |
-| `pause`      | `void`  | Stop it again on cleanup.                                                    |
+| Method       | Returns | Summary                                                                       |
+| ------------ | ------- | ----------------------------------------------------------------------------- |
+| `on`         | `void`  | Subscribes a `'data'` chunk listener — the irreducible event seam.            |
+| `off`        | `void`  | Unsubscribes that listener. The driver always pairs it, so no listener leaks. |
+| `setRawMode` | `void`  | Switches the TTY in and out of raw mode. Absent on a piped stream.            |
+| `resume`     | `void`  | Starts the flow of `'data'` events.                                           |
+| `pause`      | `void`  | Stops it again on cleanup.                                                    |
 
 ## Contract
 
@@ -464,42 +460,42 @@ These invariants hold across `src/core`, `src/server`, and this guide.
    directions. Every `## Methods`
    table lists exactly its interface's call-signature members, and each implementing class implements
    every one of them and adds none beyond.
-2. **The form is the unit.** `park(form)` takes a LIVE form and returns its id. It wraps no promise,
-   because the caller already holds one: the form's own `answer`. The parked form is AUTHORITATIVE —
+2. **The form is the unit.** `park(form)` takes a live form and returns its id. It wraps no promise,
+   because the caller already holds one: the form's own `answer`. The parked form is authoritative —
    `answer(id, values)` fills and submits that instance, so every rule it carries decides, including
    a `custom` validator the wire could not carry. The wire record is `PendingForm`
    `{ id, schema, status, time, from?, to? }`; `form`, `message`, and `options` are gone, and
    `schema` is form's own `serializeForm` projection, which drops every `custom` validator on the way
    out.
 3. **Absence is `undefined`.** The driver binds every answer as
-   `fill(name, matchesAnswer(value) ? value : undefined)`, so a blank line is ABSENCE and `required`
+   `fill(name, matchesAnswer(value) ? value : undefined)`, so a blank line is absence and `required`
    refuses it. A field with no default and a bare return leaves its key out of the resolved values
-   entirely. A field WITH a default binds the declared default, never a value a previous pass held.
+   entirely. A field with a default binds the declared default, never a value a previous pass held.
    The `''` sentinel is gone. The blank-line-binds-absence rule is per-control: an empty checkbox
    binds `[]`, which `matchesAnswer` counts as an answer, so `required` cannot refuse an unchecked
    checkbox the way it refuses a blank text line.
 4. **A refusal is structured, and the client retries it.** `answer` returns
    `Result<FormValues, AnswerError>`. `{ reason: 'unknown' }` means no form is parked under that id,
    or the one that was has already settled. `{ reason: 'rejected', errors }` carries the
-   authoritative form's own `FieldError` list, and the parked form STAYS parked. The client seeds a
+   authoritative form's own `FieldError` list, and the parked form stays parked. The client seeds a
    fresh local form with the values it sent, applies each failure through `invalidate`, and asks
    again — until the answer is accepted, the id comes back `unknown`, the form expires, or the client
    is destroyed. That loop is what makes a server-side `custom` rule enforceable, because the rule
    never crossed the wire and the client could not have checked it. There is no retry counter: the
    lifecycle bounds the loop. A retry cannot withdraw an earlier answer: the parked form is
-   authoritative and RETAINS every prior fill, so a corrected retry can only add or replace the
-   fields the last refusal named. A parked form settled OUT OF BAND — its form destroyed or
+   authoritative and retains every prior fill, so a corrected retry can only add or replace the
+   fields the last refusal named. A parked form settled out of band — its form destroyed or
    submitted through some path other than this `answer` call — leaves the broker's own record
    `pending`: the record is marked `answered` or `expired` only inside `#answer` and `#expire`, so a
    later `answer` for that id does not come back `unknown`. It is submitted against the now-settled
    form and comes back `{ reason: 'rejected', errors }` instead.
 5. **Ctrl-c is the one exception to "the promise is the form's answer".** `ask` normally resolves or
    rejects with the form's own `answer`, so a caller holding the form can await either. Ctrl-c at the
-   driver rejects `ask` with a `TerminalError` coded `CANCEL` and LEAVES THE FORM `editing`, with its
+   driver rejects `ask` with a `TerminalError` coded `CANCEL` and leaves the form `editing`, with its
    own `answer` still pending for whoever owns it. A driver never owns a form's lifetime: to
-   interrupt the FORM, destroy it, and the walk stops on its abandon.
+   interrupt the form, destroy it, and the walk stops on its abandon.
 6. **Expiry and release abandon the form.** An unanswered form is destroyed after `timeout` ms
-   through the INJECTED timer; `expire` fires and the caller's promise rejects with form's own
+   through the injected timer; `expire` fires and the caller's promise rejects with form's own
    `ABANDONED` error, not a `TerminalError`. `stop(id)`, `stop(ids)`, and `stop()` use that same
    `expired` status and `expire` event while leaving the broker usable. `destroy()` releases every
    still-parked form the same way, then destroys the broker. `park` itself throws `TerminalError` —
@@ -509,40 +505,40 @@ These invariants hold across `src/core`, `src/server`, and this guide.
 7. **Display is sanitized; identity and answers are not.** Every string a wire schema renders passes
    through `sanitizeDisplayText` — labels, help, placeholders, masks, choice labels and help, file
    accept entries, and pattern source text — which strips ANSI sequences, every C0 control, DEL, tab,
-   line feed, and carriage return. Schema, group, and field NAMES, group references, choice VALUES,
-   and every DEFAULT stay verbatim, because rewriting them would sever the local rendering copy from
+   line feed, and carriage return. Schema, group, and field names, group references, choice values,
+   and every default stays verbatim, because rewriting them would sever the local rendering copy from
    the authoritative form: the client would answer under keys the parked form does not have, and
    every retry would produce the same rejection forever. Field metadata is dropped, since terminal
-   neither renders nor interprets it. A preserved identity or answer string that reaches the SCREEN —
+   neither renders nor interprets it. A preserved identity or answer string that reaches the screen —
    a prefilled default, a locked held value, an open select's suggested values, a group or label
    fallback, an authoritative rejection message — is sanitized at that output boundary only, and the
-   submitted value stays byte-for-byte what arrived. The server driver's `#report` sanitizes BOTH
+   submitted value stays byte-for-byte what arrived. The server driver's `#report` sanitizes both
    operands it writes — the field's label (falling back to its raw name) and the failure message —
    so a hostile field name never reaches the screen through a refusal line. A form carrying refusals
    when `ask` is called renders them at walk entry, before any field is filled, so a caller who
    re-asks an already-invalid form sees why before typing anything.
 8. **A wire `pattern` never executes locally, and its cost is bounded in length only.** Form
    evaluates a `pattern` rule with a real `RegExp`, at construction and on every fill, so the client
-   strips `rule.pattern` from each LOCAL rendering form before building it. Every other rule stays.
+   strips `rule.pattern` from each local rendering form before building it. Every other rule stays.
    The authoritative parked form still holds and runs the original pattern, so a pattern refusal
    comes back as a `FieldError`, is applied through `invalidate`, and re-renders — the rule is
    enforced exactly once, at the broker. The residual is honest: form's `PATTERN_LIMIT` bounds a
-   pattern SOURCE's length, never its matching TIME, so a catastrophically backtracking pattern short
+   pattern source's length, never its matching time, so a catastrophically backtracking pattern short
    enough to pass that limit costs the machine that runs it. That machine is the broker, which owns
    the schema it parked. A broker that parks a schema it did not author owns that decision.
 9. **The reducers are pure, total, and copy-on-write.** Each `reduce*` is a total
    `(state, key) → PromptStep` — it never throws, never mutates the state it is given, and always
    returns a rendered `view` and a `status`. A key it does not consume returns the same state with
-   `status: 'active'`. `value` is present ONLY on a `submit` step, and it is a CANDIDATE: the form
+   `status: 'active'`. `value` is present only on a `submit` step, and it is a candidate: the form
    validates it after the driver fills it. `parseKey` is equally total — a known control byte or
    escape sequence maps to its canonical name, a printable character names itself, and anything else
-   carries NO `name` with the raw sequence preserved, so the driver cannot crash on a stray byte.
+   carries no `name` with the raw sequence preserved, so the driver cannot crash on a stray byte.
    `KeyEvent.name` is therefore optional and absence is `undefined`: an undecoded key has no name
    rather than an empty one, and every reducer reads it as a key it does not consume.
 10. **Every control reaches a reducer.** `text`, `number`, `date`, `time`, `datetime`, `color`, and
     each `file` entry are read as one line of text through `fieldToText`, which appends that
     control's format cue to the label; `password`, `confirm`, `editor`, `select`, and `checkbox`
-    each drive their own reducer. An OPEN select is a suggestion list plus a typed line, because
+    each drive their own reducer. An open select is a suggestion list plus a typed line, because
     `open` means the answer need not come from the list. A disabled choice is named on an
     unavailable line and never offered, since the form refuses its value at every door. A `hidden`
     field and a field in `form.disabled` are skipped; a `locked` field renders read-only
@@ -550,7 +546,7 @@ These invariants hold across `src/core`, `src/server`, and this guide.
     form's own `parseValue`, and an answer the control cannot hold binds as absence and invalidates
     the field, so it comes back with the reason on screen rather than vanishing.
 11. **An unanswerable form is abandoned, not looped.** After the walk the form is submitted. A
-    refusal prints every failure, then re-walks only the erroring fields the walk can EDIT. When
+    refusal prints every failure, then re-walks only the erroring fields the walk can edit. When
     that set is empty — every failure sits on a hidden, locked, or runtime-disabled field — or the
     input stream has already ended, the form is destroyed and `ask` rejects on its `answer`. Asking
     again could not change the answer, so it does not ask again.
@@ -566,7 +562,7 @@ These invariants hold across `src/core`, `src/server`, and this guide.
     requires `to` to be mounted, records the `from` → `to` edge keyed by the parked form's id, and
     parks through `to`'s broker: an unknown `to` rejects `TARGET`, and an edge that would close a
     transitive cycle over the current in-flight edges rejects `DEADLOCK` without parking. The edge
-    clears on acceptance, expiry, removal, and teardown — but NOT on a rejection, because the ask is
+    clears on acceptance, expiry, removal, and teardown — but not on a rejection, because the ask is
     still live. `open` restores an empty broker from the store; `save` persists the endpoint's
     configured timeout.
 14. **The wire seam carries no HTTP.** `serializePending`, `serializeExpire`, and
@@ -581,12 +577,12 @@ These invariants hold across `src/core`, `src/server`, and this guide.
 
 **A view line wider than the terminal leaves residue.** The in-place re-render climbs
 `lineCount(view)`, the view's NEWLINE count, while a line the terminal wraps occupies more physical
-rows than that. `redrawPrefix` therefore returns to the start of the wrap's LAST row and erases from
+rows than that. `redrawPrefix` therefore returns to the start of the wrap's last row and erases from
 there down, leaving the earlier rows of the previous view on screen above the new one. Keep every
 label, choice, help string, and hint inside the narrowest terminal you support, or drive the
 non-TTY fallback, which writes each line fresh and never re-renders in place. A resize mid-walk is
 the same limit from the other side. Closing it needs the columns fact console's
-`StreamTargetInterface` already carries, read from the resolved output stream, and cursor-COLUMN
+`StreamTargetInterface` already carries, read from the resolved output stream, and cursor-column
 tracking in the redraw, which tracks lines only.
 
 **Fixed, not seams.** A theme moves glyphs and styled fragments. The rest of a view is fixed by
@@ -595,9 +591,9 @@ choice's help; the parentheses around the confirm group; the `N selected` summar
 clear mechanics, and the fallback's numbered-list format. Build a bespoke view from the exported
 reducers and view helpers rather than reading these as extension points.
 
-**Deliberately not here.** The SSE-server END of the bridge: the broker emits `pending` on its
+**Deliberately not here.** The SSE-server end of the bridge: the broker emits `pending` on its
 emitter and a consumer mounts it on their own HTTP spine with an answer POST route, and this package
-ships the bridge rather than that spine. Cursor movement WITHIN a line: the reducers edit at the end
+ships the bridge rather than that spine. Cursor movement within a line: the reducers edit at the end
 of the buffer, and `ctrl-a` / `ctrl-e` decode but no left / right insertion is modelled.
 
 ## Patterns
@@ -614,6 +610,7 @@ const form = createForm({
 	label: 'Sign up',
 	fields: [
 		{ control: 'text', name: 'name', label: 'Your name', rule: { required: true, minimum: 2 } },
+		{ control: 'text', name: 'email', label: 'Email', rule: { required: true, email: true } },
 		{ control: 'password', name: 'token', label: 'Token' },
 		{ control: 'confirm', name: 'terms', label: 'Accept the terms', rule: { required: true } },
 		{
@@ -664,7 +661,7 @@ prompt.pending(id) // this one, or undefined once it settles
 // ...elsewhere, an answer arrives over the transport:
 const result = prompt.answer(id, { name: 'root' })
 if (!result.success && result.error.reason === 'rejected') {
-	result.error.errors // the AUTHORITATIVE form's own FieldError list; the form stays parked
+	result.error.errors // the authoritative form's own FieldError list; the form stays parked
 }
 prompt.answer(id, { name: 'Ada' }) // { success: true, value: { name: 'Ada' } }
 const values = await form.answer // { name: 'Ada' }
@@ -686,7 +683,7 @@ import { createTerminal } from '@orkestrel/terminal/server'
 
 const client = createPromptClient({
 	url: 'http://host/forms',
-	terminal: createTerminal(), // the LOCAL TerminalInterface each remote form is driven through
+	terminal: createTerminal(), // the local TerminalInterface each remote form is driven through
 	token: process.env.TOKEN,
 	on: { connect: () => log('connected'), error: (error) => log(error) },
 	fetch: globalFetch, // the default; inject a scripted fetch to drive this with no network
@@ -756,9 +753,9 @@ const clean = sanitizeSchema({
 	fields: [
 		{
 			control: 'select',
-			name: 'ro\u0000le', // an IDENTITY: preserved byte for byte
-			label: '\u001b[31mRole', // DISPLAY: the ANSI run is stripped
-			default: 'ad\u0000min', // an ANSWER: preserved byte for byte
+			name: 'ro\u0000le', // an identity: preserved byte for byte
+			label: '\u001b[31mRole', // display: the ANSI run is stripped
+			default: 'ad\u0000min', // an answer: preserved byte for byte
 			choices: [{ value: 'ad\u0000min', label: 'Ad\u0000min' }], // value preserved, label cleaned
 			meta: { anything: true }, // dropped: terminal neither renders nor interprets it
 		},
@@ -822,7 +819,7 @@ let select = createSelectState({
 	],
 })
 select = reduceSelect(select, parseKey('\u001b[B')).state // down, wrapping at the ends
-renderSelectView(select) // a MULTI-LINE view with the focused row marked
+renderSelectView(select) // a multi-line view with the focused row marked
 
 let checkbox = createCheckboxState({
 	control: 'checkbox',
@@ -864,7 +861,7 @@ import {
 import { createStyler } from '@orkestrel/console'
 import { createTerminal } from '@orkestrel/terminal/server'
 
-// A theme is DATA: a glyph per icon slot, a console `Style` per semantic role. Every slot you do
+// A theme is data: a glyph per icon slot, a console `Style` per semantic role. Every slot you do
 // not name keeps its default, and each supplied style is frozen through console's own freezeStyle.
 const theme = createPromptTheme({
 	icons: { pointer: '=>', selected: '*' },
@@ -874,7 +871,7 @@ const theme = createPromptTheme({
 	},
 })
 theme.icons.question // '?' — untouched
-DEFAULT_PROMPT_THEME.roles.content // the EMPTY style: unthemed content renders as bare text
+DEFAULT_PROMPT_THEME.roles.content // the empty style: unthemed content renders as bare text
 
 // Pass the partial bag to the driver; every view it renders is painted through it.
 const terminal = createTerminal({ theme: { icons: { pointer: '=>' } } })
@@ -927,10 +924,10 @@ manager.answer('agent', parked.id, { name: 'Ada' }) // { success: true, value: {
 await answers // { name: 'Ada' }
 
 await manager.save('agent') // persist the endpoint's configured timeout (needs a store)
-await manager.open('agent') // the live broker, or an EMPTY one restored from the store
+await manager.open('agent') // the live broker, or an empty one restored from the store
 
 manager.add('bounded', { cap: 100 }) // refuse a 101st park with LIMIT instead of growing memory
-manager.remove(['agent']) // the array overload is declared FIRST; true only when all succeed
+manager.remove(['agent']) // the array overload is declared first; it is true only when every name was mounted
 manager.remove() // remove every endpoint; the manager stays usable
 manager.destroy() // destroy every broker, then the manager's own emitter
 ```
@@ -1023,7 +1020,7 @@ fieldToText({ control: 'date', name: 'born', label: 'Birthday' })
 valueToText(true) // 'yes' — the word the confirm reducer commits
 valueToText(['read', 'write']) // 'read, write'
 
-// Each line below comes back already painted through the theme. The comments show it with the
+// Each line that follows comes back already painted through the theme. The comments show it with the
 // styling stripped.
 const styler = createStyler()
 const theme = createPromptTheme()
@@ -1043,11 +1040,15 @@ renderNumberedList(styler, theme, filterEnabled(choices)) // '  1) Admin' — th
 ## Tests
 
 - [`tests/guides.test.ts`](../tests/guides.test.ts) — the `## Surface` ↔ source bijection across
-  `src/core` and `src/server`, the interface ↔ implementing-class method bijection, and that every
-  documented name resolves to a real export.
+  `src/core` and `src/server`, the interface ↔ implementing-class method bijection, that every
+  documented name resolves to a real export, and the equality gate: every `Summary` cell against
+  its declaration's description paragraph, the titled `Ask one form at this keyboard` fence against
+  the `@example` block of that title (pinned so the titled pair cannot be retired silently), and
+  the README pitch against this guide's tagline. It also runs the flagship fences and asserts the
+  values their comments claim.
 - [`tests/integration.test.ts`](../tests/integration.test.ts) — the whole round trip over a real
   loopback socket: a parked form, a real HTTP/SSE fixture forwarding the broker's own wire frames, a
-  real client, and a real TTY walk that settles the AUTHORITATIVE form; plus a hostile schema driven
+  real client, and a real TTY walk that settles the authoritative form; plus a hostile schema driven
   end to end with no control byte in the rendered output, proven against a failing control.
 - [`tests/src/core/helpers.test.ts`](../tests/src/core/helpers.test.ts) — `parseKey` totality, the
   reducers over every key path, `editLine`, the theme merge and glyph sanitization, schema
@@ -1075,7 +1076,7 @@ renderNumberedList(styler, theme, filterEnabled(choices)) // '  1) Admin' — th
   scripted TTY: every control settling one form, the blank line binding as absence, a refused
   value re-asked, an open select accepting a value outside its list, hidden / disabled / locked /
   group handling, the unanswerable form abandoned, ctrl-c leaving the form editing, and the shared
-  readline fallback; plus the `#report` output-boundary regression — a hostile field NAME carrying
+  readline fallback; plus the `#report` output-boundary regression — a hostile field name carrying
   NUL/DEL bytes, proven sanitized in the rendered failure line against a raw-write negative control
   that does contain those bytes.
 - [`tests/src/server/helpers.test.ts`](../tests/src/server/helpers.test.ts) — the stream guards, the

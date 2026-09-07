@@ -74,12 +74,13 @@ import {
 } from './helpers.js'
 
 /**
- * Implements {@link TerminalInterface} for a human at this machine's keyboard — the interactive form
- * DRIVER, and the only impure part of the terminal stack. {@link ask} walks one
- * form's fields in schema order, feeds raw-mode stdin bytes through `parseKey` into the matching
- * pure reducer, renders each returned view in place, and binds every answer through the form's own
- * `fill`. It owns no form logic: the schema, the rules, the values, and the settlement all belong to
- * the form it is given, and this class owns only raw mode, the cursor, and the re-render.
+ * Implements {@link TerminalInterface} for a human at this machine's keyboard — the interactive
+ * form driver, and the only impure part of the terminal stack. {@link ask} walks one form's fields
+ * in schema order, feeds raw-mode stdin bytes through `parseKey` into the matching pure reducer,
+ * renders each returned view in place, binds every answer through the form's own `fill`, and
+ * re-asks what the form refused. It owns no form logic: the schema, the rules, the values, and the
+ * settlement all belong to the form it is given, and this class owns only raw mode, the cursor, and
+ * the re-render.
  *
  * @remarks
  * See {@link TerminalInterface} for the driving contract. The walk itself:

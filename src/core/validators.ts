@@ -22,7 +22,8 @@ export const isPendingFormStatus: Guard<PendingFormStatus> = literalOf(
 )
 
 /**
- * Narrows an unknown wire value to a {@link PendingForm} envelope.
+ * Narrows an unknown wire value to a {@link PendingForm} envelope — the envelope alone, because the
+ * form package's `parseForm` owns the schema payload.
  *
  * @remarks
  * This guard checks the transport record and proves only that `schema` is a record. The Form
@@ -46,7 +47,8 @@ export function isPendingForm(value: unknown): value is PendingForm {
 }
 
 /**
- * Narrows an unknown value to a transport-neutral {@link WireEvent}.
+ * Narrows an unknown value to a transport-neutral {@link WireEvent} — the guard a consumer's own
+ * transport applies to an inbound frame.
  *
  * @param value - The candidate wire event
  * @returns True if the value carries an event name, serialized data, and an optional id; false otherwise
@@ -57,8 +59,8 @@ export const isWireEvent: Guard<WireEvent> = recordOf(
 )
 
 /**
- * Narrows an unknown value to a {@link TerminalSnapshot} — the read boundary a store applies to an
- * untrusted persisted row.
+ * Narrows an unknown value to a {@link TerminalSnapshot} — a non-empty `id` and an optional numeric
+ * `timeout`, the read boundary a store applies to an untrusted persisted row.
  *
  * @param value - The candidate snapshot read back from storage
  * @returns True if the value carries a non-empty `id` and an optional numeric `timeout`; false otherwise

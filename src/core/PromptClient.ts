@@ -31,8 +31,9 @@ import { createForm, isFieldError, parseForm } from '@orkestrel/form'
 import { createSSEParser } from '@orkestrel/sse'
 
 /**
- * Implements the SSE form bridge. It ingests serialized forms from a remote broker, renders them through a
- * local terminal, and posts answers back without blocking the event stream.
+ * Implements the SSE form bridge. It ingests serialized forms from a remote broker without waiting
+ * on a render, drives one form at a time through a local terminal, posts each answer back, and asks
+ * again when the authoritative form refuses one.
  *
  * @remarks
  * - **Connect + reconnect.** {@link connect} opens the SSE stream and reconnects after a transport

@@ -63,9 +63,9 @@ export type PromptIcon =
 	| 'error'
 
 /**
- * Names one styling slot a rendered field paints through — the semantic axis of a {@link PromptTheme}. A
- * role says what a fragment MEANS; the theme decides what that meaning looks like, so a consumer
- * re-maps styled output by naming roles rather than reimplementing a renderer.
+ * Names one styling slot a rendered field paints through — the semantic axis of a
+ * {@link PromptTheme}. A role says what a fragment means; the theme decides what that meaning looks
+ * like, so a consumer re-maps styled output by naming roles rather than reimplementing a renderer.
  *
  * @remarks
  * - `question` — the leading mark on an active field's line.
@@ -97,9 +97,9 @@ export type PromptRole =
 	| 'description'
 
 /**
- * Represents a resolved PRESENTATION — the glyph for every {@link PromptIcon} and the console {@link Style}
- * for every {@link PromptRole}. Plain JSON data with no functions, so it crosses the wire with the
- * form it decorates. Built by {@link import('./helpers.js').createPromptTheme}.
+ * Represents a resolved presentation — the glyph for every {@link PromptIcon} and the console
+ * {@link Style} for every {@link PromptRole}. Plain JSON data with no functions, so it crosses the
+ * wire with the form it decorates. Built by {@link import('./helpers.js').createPromptTheme}.
  *
  * @remarks
  * A role's value is the console module's own {@link Style} — the one style model the whole console
@@ -114,8 +114,8 @@ export interface PromptTheme {
 }
 
 /**
- * Represents the PARTIAL {@link PromptTheme} an option bag carries — every icon and every role is optional,
- * and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
+ * Represents the partial {@link PromptTheme} an option bag carries — every icon and every role is
+ * optional, and {@link import('./helpers.js').createPromptTheme} merges what is supplied over
  * {@link import('./constants.js').DEFAULT_PROMPT_THEME} leaf by leaf. Supplying one icon or one
  * role leaves every other slot at its default.
  */
@@ -182,7 +182,8 @@ export interface ConfirmState {
 }
 
 /**
- * Represents the immutable state a select field's reducer carries.
+ * Represents the immutable state a select field's reducer carries — the choices the list offers and
+ * the index the cursor sits on.
  *
  * @remarks
  * - `message` — the sanitized label the header renders.
@@ -248,9 +249,10 @@ export interface EditorState {
 export type PromptStatus = 'active' | 'submit' | 'cancel'
 
 /**
- * Represents the result of one reducer step — the next `state`, the rendered `view`, the `status`, and, on
- * `submit`, the resolved `value`. The whole contract between a pure reducer and the impure driver:
- * the driver applies the next `state`, writes the `view`, and reads `value` on `submit`.
+ * Represents the result of one reducer step — the next `state`, the rendered `view`, the `status`,
+ * and, on `submit` alone, the candidate `value`. The whole contract between a pure reducer and the
+ * impure driver: the driver applies the next `state`, writes the `view`, and reads `value` on
+ * `submit`.
  *
  * @typeParam T - The value this field resolves to, as its control admits it.
  * @typeParam S - The reducer's concrete state shape, carried directly so `state` stays precisely
@@ -305,9 +307,9 @@ export type TerminalErrorCode =
 // === The interactive driver
 
 /**
- * Declares the contract for asking a form of a human at a keyboard — one method, because a form is one
- * question however many fields it holds. The server `Terminal` implements it against a real TTY;
- * a {@link PromptClientInterface} holds one to answer forms parked elsewhere.
+ * Declares the contract for asking a form of a human at a keyboard — `ask` and nothing beside it,
+ * because a form is one question however many fields it holds. The server `Terminal` implements it
+ * against a real TTY; a {@link PromptClientInterface} holds one to answer forms parked elsewhere.
  *
  * @remarks
  * `ask` drives the form the caller passes: it walks the schema's fields in order, binds each
@@ -321,15 +323,19 @@ export type TerminalErrorCode =
  * is the only cancellation channel, which is why this contract needs no second method.
  */
 export interface TerminalInterface {
+	/**
+	 * Walks the given form to settlement and resolves its values. The Contract section names the
+	 * ctrl-c exception.
+	 */
 	ask(form: FormInterface): Promise<FormValues>
 }
 
 // === The headless broker
 
 /**
- * Names the lifecycle status of a parked {@link PendingForm} — where the TICKET stands, which is not
- * where the form stands. A ticket is `pending` until somebody answers it; the form it carries has
- * its own status, and the two are separate facts about separate entities.
+ * Names the lifecycle status of a parked {@link PendingForm} — where the ticket stands, which is
+ * not where the form stands. A ticket is `pending` until somebody answers it; the form it carries
+ * has its own status, and each is a separate fact about a separate entity.
  *
  * @remarks
  * - `pending` — parked, awaiting {@link PromptInterface.answer}.
@@ -339,8 +345,8 @@ export interface TerminalInterface {
 export type PendingFormStatus = 'pending' | 'answered' | 'expired'
 
 /**
- * Represents one form PARKED by the broker — an id-keyed, wire-safe record of a live form awaiting a remote
- * answer. The value a `pending` listener receives and the broker serializes over SSE to a
+ * Represents one form parked by the broker — an id-keyed, wire-safe record of a live form awaiting
+ * a remote answer. The value a `pending` listener receives and the broker serializes over SSE to a
  * {@link PromptClientInterface}.
  *
  * @remarks
@@ -387,6 +393,7 @@ export type TimerCancelFunction = () => void
  */
 export interface ParkedForm {
 	readonly form: FormInterface
+	/** Lists every parked record (`pending()`), or looks one up by id (`pending(id)`). */
 	readonly pending: PendingForm
 	readonly cancel: TimerCancelFunction
 }
@@ -401,6 +408,10 @@ export interface ParkedForm {
  */
 export type PromptEventMap = {
 	readonly pending: readonly [form: PendingForm]
+	/**
+	 * Fills and submits the authoritative parked form. Accepted, it settles and the record is
+	 * dropped; refused, the form stays parked.
+	 */
 	readonly answer: readonly [id: string, values: FormValues]
 	readonly expire: readonly [id: string]
 }
@@ -443,7 +454,9 @@ export interface ParkRequest {
 }
 
 /**
- * Explains why {@link PromptInterface.answer} refused. Names its axis with `reason`.
+ * Explains why {@link PromptInterface.answer} refused — `unknown` for an id no form is parked
+ * under, `rejected` for values the authoritative form itself refused, carrying the `FieldError`
+ * list it reported. Names its axis with `reason`.
  *
  * @remarks
  * - `unknown` — no form is parked under that id, or the one that was has already settled.
@@ -458,10 +471,10 @@ export type AnswerError =
 	| { readonly reason: 'rejected'; readonly errors: readonly FieldError[] }
 
 /**
- * Declares the headless form BROKER — parks a live form until somebody elsewhere answers it. The headless
- * arm of the local-TTY / headless / remote trio: there is no terminal here, so a transport forwards
- * each `pending` record to whoever can answer, and {@link answer} drives the parked form to
- * settlement.
+ * Declares the headless form broker — parks a live form until somebody elsewhere answers it. The
+ * headless arm of the local-TTY, headless, and remote trio: there is no terminal here, so a
+ * transport forwards each `pending` record to whoever can answer, and {@link answer} drives the
+ * parked form to settlement.
  *
  * @remarks
  * - **The form is the unit.** {@link park} takes a live form, mints an id, emits `pending`, and
@@ -488,15 +501,34 @@ export type AnswerError =
  * ```
  */
 export interface PromptInterface {
+	/** Holds the typed emitter every broker event is published on. */
 	readonly emitter: EmitterInterface<PromptEventMap>
+	/** Reports how many forms this broker holds parked. */
 	readonly count: number
+	/**
+	 * Parks a live form, mints its id, emits `pending`, and arms the expiry deadline. Returns the id;
+	 * the caller already holds the promise.
+	 */
 	park(form: FormInterface, request?: ParkRequest): string
+	/** Lists every parked record (`pending()`), or looks one up by id (`pending(id)`). */
 	pending(): readonly PendingForm[]
 	pending(id: string): PendingForm | undefined
+	/**
+	 * Fills and submits the authoritative parked form. Accepted, it settles and the record is
+	 * dropped; refused, the form stays parked.
+	 */
 	answer(id: string, values: FormValues): Result<FormValues, AnswerError>
+	/**
+	 * Releases a batch (`stop(ids)`, the array overload declared first), one id, or every parked
+	 * form. The broker stays usable.
+	 */
 	stop(ids: readonly string[]): boolean
 	stop(id: string): boolean
 	stop(): void
+	/**
+	 * Tears the broker down — abandons every parked form, cancels every deadline, then destroys the
+	 * emitter. Idempotent.
+	 */
 	destroy(): void
 }
 
@@ -570,10 +602,10 @@ export interface PromptClientOptions {
 }
 
 /**
- * Declares the SSE form BRIDGE — the client-side counterpart to {@link PromptInterface}. It receives
- * serialized {@link PendingForm} records from a remote broker, rebuilds each schema locally, drives
- * it through a {@link TerminalInterface}, and POSTs the answer back, so a human at this machine
- * answers forms a broker parked elsewhere.
+ * Declares the SSE form bridge — the client-side counterpart to {@link PromptInterface}. It
+ * receives serialized {@link PendingForm} records from a remote broker, rebuilds each schema
+ * locally, drives it through a {@link TerminalInterface}, and POSTs the answer back, so a human at
+ * this machine answers forms a broker parked elsewhere.
  *
  * @remarks
  * - **Connect.** {@link connect} opens the SSE stream through the injected `fetch` and resolves
@@ -589,19 +621,34 @@ export interface PromptClientOptions {
  * - **`connected`** reflects whether the stream is open.
  */
 export interface PromptClientInterface {
+	/** Holds the typed emitter every client event is published on. */
 	readonly emitter: EmitterInterface<PromptClientEventMap>
+	/** Holds the remote broker's SSE endpoint this client reads from and answers to. */
 	readonly url: string
+	/** Reports whether the SSE stream is open. */
 	readonly connected: boolean
+	/**
+	 * Opens the stream and pumps it, queueing each received form for the local terminal; reconnects
+	 * on the `delay` backoff.
+	 */
 	connect(): Promise<void>
+	/**
+	 * Stops the current connection and the reconnect loop. An active local render continues, and a
+	 * later `connect()` can restart the stream.
+	 */
 	disconnect(): void
+	/**
+	 * Tears the client down permanently — disconnects, drops the queue, abandons the active local
+	 * form, and destroys the emitter.
+	 */
 	destroy(): void
 }
 
 // === The terminal manager
 
 /**
- * Declares the manager's event map — the name-attributed re-emission of every mounted broker's events, so a
- * caller subscribes once for ALL endpoints instead of once per broker.
+ * Declares the manager's event map — the name-attributed re-emission of every mounted broker's
+ * events, so a caller subscribes once for every endpoint instead of once per broker.
  *
  * @remarks
  * - `pending` — an endpoint parked a form; the record itself carries `from` and `to`.
@@ -643,8 +690,8 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'target' }
 
 /**
  * Declares a registry of named {@link PromptInterface} brokers, one per endpoint, so several
- * parties (agents, tools, humans) can ask forms of each other BY NAME, attributed with a
- * `from` → `to` edge on every parked record.
+ * parties (agents, tools, humans) can ask forms of each other by name, attributed with a `from` →
+ * `to` edge on every parked record.
  *
  * @remarks
  * - **Accessors.** `terminal(name)` looks up one endpoint's broker; `terminals()` lists every
@@ -667,20 +714,51 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'target' }
  * - **`destroy`** tears down every broker, then the manager's own emitter.
  */
 export interface TerminalManagerInterface {
+	/**
+	 * Holds the typed emitter every mounted broker's events are re-published on, attributed by name.
+	 */
 	readonly emitter: EmitterInterface<TerminalManagerEventMap>
+	/** Reports how many endpoints are mounted. */
 	readonly count: number
+	/** Looks up one endpoint's broker by name. */
 	terminal(name: string): PromptInterface | undefined
+	/** Lists every mounted broker, in insertion order. */
 	terminals(): readonly PromptInterface[]
+	/**
+	 * Mints, or returns unchanged, the broker for `name`. Idempotent; it never clobbers a live
+	 * endpoint.
+	 */
 	add(name: string, options?: PromptOptions): PromptInterface
+	/**
+	 * Parks `form` from `from` to `to` and resolves with the settled values. Rejects `TARGET` or
+	 * `DEADLOCK`.
+	 */
 	ask(from: string, to: string, form: FormInterface): Promise<FormValues>
+	/**
+	 * Lists every endpoint's parked records (`pending()`), or scopes to one endpoint (`pending(to)`).
+	 */
 	pending(): readonly PendingForm[]
 	pending(to: string): readonly PendingForm[]
+	/**
+	 * Routes an answer to the named endpoint's broker; `{ reason: 'target' }` when no endpoint
+	 * carries that name.
+	 */
 	answer(to: string, id: string, values: FormValues): Result<FormValues, TerminalAnswerError>
+	/**
+	 * Returns the live broker for `name`, or restores an empty one from the `store`. Parked forms are
+	 * never resurrected.
+	 */
 	open(name: string): Promise<PromptInterface | undefined>
+	/** Persists an endpoint's config snapshot; false with no store, or an unknown name. */
 	save(name: string): Promise<boolean>
+	/**
+	 * Removes a batch (`remove(names)`, the array overload declared first, true only when every name
+	 * was mounted), one endpoint, or every endpoint.
+	 */
 	remove(names: readonly string[]): boolean
 	remove(name: string): boolean
 	remove(): void
+	/** Tears down every broker, then the manager's own emitter. */
 	destroy(): void
 }
 
@@ -701,9 +779,9 @@ export interface WireEvent {
 // === Terminal store
 
 /**
- * Represents one endpoint's persisted CONFIG snapshot — `id` is the endpoint name and `timeout` its configured
- * default. Parked forms are process-bound and are never resurrected, so `open` always restores an
- * EMPTY broker.
+ * Represents one endpoint's persisted config snapshot — `id` is the endpoint name and `timeout` its
+ * configured default. Parked forms are process-bound and are never resurrected, so `open` always
+ * restores an empty broker.
  */
 export interface TerminalSnapshot {
 	readonly id: string
@@ -725,7 +803,10 @@ export interface TerminalSnapshotRow {
  * Every primitive is async; deleting an absent id is a no-op.
  */
 export interface TerminalStoreInterface {
+	/** Resolves the snapshot stored for `id`, or `undefined` when none is. */
 	get(id: string): Promise<TerminalSnapshot | undefined>
+	/** Inserts or replaces under the snapshot's own `id`; there is no id argument. */
 	set(snapshot: TerminalSnapshot): Promise<void>
+	/** Drops a snapshot by id. An absent id is a no-op, never a throw. */
 	delete(id: string): Promise<void>
 }

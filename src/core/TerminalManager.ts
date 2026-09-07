@@ -19,9 +19,9 @@ import { Emitter } from '@orkestrel/emitter'
 import { isArray } from '@orkestrel/contract'
 
 /**
- * Registers named {@link PromptInterface} brokers (one per endpoint), so several parties can
- * `ask` forms of each other by NAME with a `from` → `to` attribution edge on every parked form,
- * and a transitive DEADLOCK check across all in-flight asks.
+ * Registers named {@link PromptInterface} brokers, one per endpoint, so several parties can `ask`
+ * forms of each other by name with a `from` → `to` attribution edge on every parked form, and
+ * refuses `DEADLOCK` on a transitive cycle across every in-flight ask.
  *
  * @remarks
  * - **Registry.** `add(name, options?)` mints (or, if `name` is already mounted, returns the

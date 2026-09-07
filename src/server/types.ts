@@ -29,11 +29,17 @@ import type { StreamTargetInterface } from '@orkestrel/console/server'
  * - `isTTY` — `true` on a real terminal, absent or `false` when piped to a file or another process.
  */
 export interface InputStreamInterface {
+	/** Subscribes a `'data'` chunk listener — the irreducible event seam. */
 	on(event: 'data', listener: (chunk: string | Uint8Array) => void): void
+	/** Unsubscribes that listener. The driver always pairs it, so no listener leaks. */
 	off(event: 'data', listener: (chunk: string | Uint8Array) => void): void
+	/** Switches the TTY in and out of raw mode. Absent on a piped stream. */
 	setRawMode?(mode: boolean): void
+	/** Starts the flow of `'data'` events. */
 	resume?(): void
+	/** Stops it again on cleanup. */
 	pause?(): void
+	/** Reports whether the stream is a real terminal; absent or false when piped. */
 	readonly isTTY?: boolean
 }
 

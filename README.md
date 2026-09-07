@@ -1,14 +1,13 @@
 # @orkestrel/terminal
 
-The terminal side of a form, for the `@orkestrel` line. `@orkestrel/form` owns
-the document — the schema, the controls, the rules, the values, and the
-settle-once `answer` promise. This package owns what form has no opinion about:
-a key decoder, a theme, pure per-field reducers, and the surfaces one form
-can be answered on. The server `Terminal` implements the one driving contract
-against a real TTY (raw-mode stdin, live in-place re-render, a `node:readline`
-fallback when piped). The headless `Prompt` broker PARKS a live form until
-somebody elsewhere answers it. The `PromptClient` bridge carries a form parked
-elsewhere to this machine's keyboard over SSE. Built beside
+> The terminal side of a form: a key decoder, a presentation theme, the pure per-field reducers,
+> the headless broker that parks a live form until somebody elsewhere answers it, the SSE bridge
+> that carries a parked form to a machine with a keyboard, and the manager that routes parked
+> forms between named endpoints.
+
+`@orkestrel/form` owns the document — the schema, the controls, the rules,
+the values, and the settle-once `answer` promise — and this package declares
+none of it a second time. Part of the `@orkestrel` line, built beside
 `@orkestrel/console` (the shared style engine), `@orkestrel/contract`,
 `@orkestrel/emitter`, `@orkestrel/database`, and `@orkestrel/sse`.
 
@@ -42,7 +41,7 @@ const values = await terminal.ask(
 )
 ```
 
-A bare return binds ABSENCE, not the empty string, so `required` refuses it and
+A bare return binds absence, not the empty string, so `required` refuses it and
 the walk asks again.
 
 Park a live form and answer it from anywhere else:
@@ -56,7 +55,7 @@ prompt.emitter.on('pending', (form) => send(form)) // the wire-safe record
 
 const form = createForm({ fields: [{ control: 'text', name: 'name' }] })
 const id = prompt.park(form) // the id; you await the form's own `answer`
-prompt.answer(id, { name: 'Ada' }) // fills and submits the AUTHORITATIVE form
+prompt.answer(id, { name: 'Ada' }) // fills and submits the authoritative form
 const values = await form.answer // { name: 'Ada' }
 ```
 

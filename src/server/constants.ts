@@ -9,9 +9,9 @@ import type { FieldControl } from '@orkestrel/form'
 import { CSI } from '@orkestrel/console'
 
 /**
- * Holds the cursor-UP sequence TEMPLATE (`ESC[{count}A`) — {@link import('./helpers.js').renderCursorUp}
- * interpolates the `{count}` placeholder with the number of lines to climb. Kept as a template so
- * the count stays out of the constant.
+ * Holds the cursor-up sequence template (`ESC[{count}A`) —
+ * {@link import('./helpers.js').renderCursorUp} interpolates the `{count}` placeholder with the
+ * number of lines to climb. Kept as a template so the count stays out of the constant.
  */
 export const CSI_UP = `${CSI}{count}A`
 
@@ -25,9 +25,9 @@ export const CURSOR_HIDE = `${CSI}?25l`
 export const CURSOR_SHOW = `${CSI}?25h`
 
 /**
- * Erases from the cursor down to the end of the screen (`ESC[J`) — wipes the WHOLE previous (possibly
- * multi-line `select` / `checkbox`) view in one write before the new view is rendered, so a redraw
- * never leaves orphaned rows below.
+ * Erases from the cursor down to the end of the screen (`ESC[J`) — wipes the whole previous view,
+ * which a `select` or `checkbox` can spread over several lines, in one write before the new view is
+ * rendered, so a redraw never leaves orphaned rows behind.
  */
 export const CLEAR_DOWN = `${CSI}J`
 
@@ -66,10 +66,16 @@ export const CONTROL_HINTS: Readonly<Partial<Record<FieldControl, string>>> = Ob
 /** Holds the instruction a `file` field with `multiple` shows before its entries — one path per line, and a blank line ends the list. */
 export const FILE_HINT = 'One path per line, blank to finish'
 
-/** Holds the lead on the line listing an open `select`'s offered values, which a typed answer may ignore. */
+/**
+ * Holds the lead on the line listing an open `select`'s offered values, which a typed answer can
+ * ignore.
+ */
 export const SUGGESTION_LEAD = 'Suggestions'
 
-/** Holds the lead on the line listing the choices a `select` or `checkbox` shows but refuses, so a reader sees why one is missing from the list below. */
+/**
+ * Holds the lead on the line listing the choices a `select` or `checkbox` shows but refuses, so a
+ * reader sees why one is missing from the list it heads.
+ */
 export const UNAVAILABLE_LEAD = 'Unavailable'
 
 /** Holds the mark on a locked field's line — the walk renders its value and moves on, because the form refuses an edit there. */

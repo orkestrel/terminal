@@ -19,8 +19,9 @@ import { Emitter } from '@orkestrel/emitter'
 import { isFieldError, isFormError, serializeForm } from '@orkestrel/form'
 
 /**
- * Implements the headless form broker. It parks live forms, exposes their serialized schemas, and applies
- * remote answers to the authoritative form.
+ * Implements the headless form broker. It parks live forms, exposes their serialized schemas,
+ * applies remote answers to the authoritative form, and abandons a parked form on timeout, release,
+ * or teardown.
  *
  * @remarks
  * A parked record carries one call to `serializeForm`. A failed fill or submit leaves the record
