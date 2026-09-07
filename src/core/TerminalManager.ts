@@ -28,7 +28,7 @@ import { isArray } from '@orkestrel/contract'
  *   EXISTING broker UNCHANGED — idempotent, never clobbers a live/parked endpoint). Every mounted
  *   broker's `pending` / `answer` / `expire` events are re-emitted on the manager, attributed by
  *   `name`.
- * - **`ask`.** The target must already be mounted via {@link add} — `ask` never auto-adds it;
+ * - **`ask`.** The target must already be mounted through {@link add} — `ask` never auto-adds it;
  *   rejects `TARGET` for an unknown `to` (listing the known names). Rejects `DEADLOCK` when parking
  *   `from → to` would close a cycle over the CURRENT in-flight edge set (walked transitively);
  *   otherwise parks the caller's live form through the target's broker and returns that form's own

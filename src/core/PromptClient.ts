@@ -44,8 +44,9 @@ import { createSSEParser } from '@orkestrel/sse'
  * - **Safe local form.** The rendering copy omits every wire `pattern`, because Form compiles a
  *   pattern during local evaluation. The broker's parked form retains it and remains authoritative.
  * - **Refusal retry.** A structured `rejected` response seeds a new rendering form with the values
- *   just submitted, applies every {@link FieldError} through `invalidate`, and asks again. No retry
- *   counter truncates the loop; acceptance, expiry, and the broker's own teardown are its bounds.
+ *   the refused attempt submitted, applies every {@link FieldError} through `invalidate`, and asks
+ *   again. No retry counter truncates the loop; acceptance, expiry, and the broker's own teardown
+ *   are its bounds.
  * - **Replay safety.** A replayed id is skipped while it is queued, rendering, or posting. Once an
  *   attempt ends, a later delivery of that id may be rendered again.
  *

@@ -586,7 +586,7 @@ export interface PromptClientOptions {
  *   the wire is never executed locally. The authoritative form decides.
  * - **Refusal retries.** A rejected answer comes back with the parked form's own errors; the client
  *   applies them to the local form and asks again until the answer is accepted or the form expires.
- * - **`connected`** reflects whether the stream is currently open.
+ * - **`connected`** reflects whether the stream is open.
  */
 export interface PromptClientInterface {
 	readonly emitter: EmitterInterface<PromptClientEventMap>
@@ -711,9 +711,9 @@ export interface TerminalSnapshot {
 }
 
 /**
- * Represents one opaque persisted row — the shape a `TableInterface<TerminalSnapshotRow>`-backed store reads
- * and writes. `snapshot` is narrowed with {@link import('./validators.js').isTerminalSnapshot} on
- * read.
+ * Represents one opaque persisted row — the shape a table-backed store reads and writes. The store
+ * is a `TableInterface<TerminalSnapshotRow>`, and `snapshot` is narrowed with
+ * {@link import('./validators.js').isTerminalSnapshot} on read.
  */
 export interface TerminalSnapshotRow {
 	readonly id: string

@@ -94,9 +94,8 @@ import {
  *   control's own shape, so a bare return on a field with no default binds as ABSENCE and the
  *   form's `required` rule refuses it. A typed answer the control cannot hold binds as absence and
  *   invalidates the field, so the walk asks again with the reason on screen.
- * - **Visibility is honored.** A `hidden` field and a field currently in `form.disabled` are
- *   skipped; a `locked` field renders read-only; entering a new group writes its label as a section
- *   header.
+ * - **Visibility is honored.** A `hidden` field and a field in `form.disabled` are skipped; a
+ *   `locked` field renders read-only; entering a new group writes its label as a section header.
  * - **Refusal re-asks.** After the walk the form is submitted. A refusal re-walks only the erroring
  *   fields the walk can edit and submits again. When every erroring field is one the walk cannot
  *   edit — hidden, locked, or disabled — the form is abandoned instead, because asking again could

@@ -8,13 +8,13 @@ import { createRecorder } from '@orkestrel/test'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 
-/** A recording output stream. */
+/** Holds a recording output stream. */
 export interface StreamTargetResult {
 	readonly target: StreamTargetInterface
 	readonly writes: RecorderInterface<readonly [text: string]>
 }
 
-/** Create an injected output stream that records every written byte. */
+/** Creates an injected output stream that records every written byte. */
 export function createStreamTarget(options?: { readonly isTTY?: boolean }): StreamTargetResult {
 	const writes = createRecorder<readonly [text: string]>()
 	const target: StreamTargetInterface = {
@@ -27,7 +27,7 @@ export function createStreamTarget(options?: { readonly isTTY?: boolean }): Stre
 	return { target, writes }
 }
 
-/** A recording TTY backed by a real EventEmitter. */
+/** Describes a recording TTY backed by a real EventEmitter. */
 export interface FakeTTYInterface {
 	readonly input: InputStreamInterface
 	readonly output: StreamTargetInterface
@@ -106,7 +106,7 @@ export function createFakeTTY(options?: FakeTTYOptions): FakeTTYInterface {
 	}
 }
 
-/** Create an ended readable stream containing scripted lines. */
+/** Creates an ended readable stream containing scripted lines. */
 export function createLineInput(lines: readonly string[], finalNewline = true): PassThrough {
 	const input = new PassThrough()
 	const text = lines.join('\n')
@@ -114,7 +114,7 @@ export function createLineInput(lines: readonly string[], finalNewline = true): 
 	return input
 }
 
-/** Concatenate all raw output bytes. */
+/** Concatenates all raw output bytes. */
 export function rawOutput(tty: FakeTTYInterface): string {
 	return tty.writes.calls.map(([text]) => text).join('')
 }

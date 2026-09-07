@@ -14,14 +14,14 @@ import { parseKey } from '@src/core'
 import { serializeForm } from '@orkestrel/form'
 import { createRecorder } from '@orkestrel/test'
 
-/** A manually driven timer used at broker and reconnect boundaries. */
+/** Describes a manually driven timer used at broker and reconnect boundaries. */
 export interface ManualTimerInterface {
 	readonly handler: TimerHandler
 	readonly pending: number
 	flush(): void
 }
 
-/** Create an injected timer that fires only when the test calls `flush`. */
+/** Creates an injected timer that fires only when the test calls `flush`. */
 export function createManualTimer(): ManualTimerInterface {
 	let timers: Array<{ readonly callback: () => void; cancelled: boolean }> = []
 	return {
@@ -43,7 +43,7 @@ export function createManualTimer(): ManualTimerInterface {
 	}
 }
 
-/** Build a finite protocol-faithful SSE response from inert event data. */
+/** Builds a finite protocol-faithful SSE response from inert event data. */
 export function createSSEResponse(
 	events: ReadonlyArray<{ readonly event: string; readonly data: unknown }>,
 ): Response {
@@ -63,7 +63,7 @@ export function createSSEResponse(
 	)
 }
 
-/** Build one JSON response from inert test data. */
+/** Builds one JSON response from inert test data. */
 export function createJSONResponse(value: unknown, status = 200): Response {
 	return new Response(JSON.stringify(value), {
 		status,
@@ -71,7 +71,7 @@ export function createJSONResponse(value: unknown, status = 200): Response {
 	})
 }
 
-/** Fold raw key strings through a real reducer. */
+/** Folds raw key strings through a real reducer. */
 export function feedReducer<TValue, TState>(
 	reduce: (state: TState, key: ReturnType<typeof parseKey>) => PromptStep<TValue, TState>,
 	state: TState,
@@ -82,7 +82,7 @@ export function feedReducer<TValue, TState>(
 	return step
 }
 
-/** The immutable observation captured when a recording terminal receives a live form. */
+/** Holds the immutable observation captured when a recording terminal receives a live form. */
 export interface RecordedForm {
 	readonly schema: FormSchema
 	readonly values: FormValues
@@ -97,7 +97,7 @@ export interface RecordingTerminalOptions {
 }
 
 /**
- * A real TerminalInterface implementation for tests. It accepts scripted answers as inert data,
+ * Implements a real TerminalInterface for tests. It accepts scripted answers as inert data,
  * drives each supplied live form through its real fill and submit methods, and records the form at
  * the interface boundary. Deferred mode leaves the form live until `release` or external destroy.
  */
@@ -146,12 +146,12 @@ export class RecordingTerminal implements TerminalInterface {
 	}
 }
 
-/** Build a recording TerminalInterface and expose its observations and release control. */
+/** Builds a recording TerminalInterface and exposes its observations and release control. */
 export function createRecordingTerminal(options: RecordingTerminalOptions = {}): RecordingTerminal {
 	return new RecordingTerminal(options)
 }
 
-/** A compact valid schema used by broker and client fixtures. */
+/** Builds a compact valid schema used by broker and client fixtures. */
 export function createFormSchema(): FormSchema {
 	return {
 		name: 'profile',
@@ -160,7 +160,7 @@ export function createFormSchema(): FormSchema {
 	}
 }
 
-/** Build one form covering every supported field control. */
+/** Builds one form covering every supported field control. */
 export function createEveryControlSchema(): FormSchema {
 	return {
 		label: 'Registration',
@@ -197,7 +197,7 @@ export function createEveryControlSchema(): FormSchema {
 	}
 }
 
-/** Build one valid pending-form envelope around a supplied schema. */
+/** Builds one valid pending-form envelope around a supplied schema. */
 export function createPendingForm(
 	schema: FormSchema = createFormSchema(),
 	options?: { readonly id?: string; readonly from?: string; readonly to?: string },
@@ -212,19 +212,20 @@ export function createPendingForm(
 	}
 }
 
-/** Add ANSI, C0, whitespace controls, and DEL around one clean string. */
+/** Adds ANSI, C0, whitespace controls, and DEL around one clean string. */
 export function createHostileText(text: string): string {
 	return `\u001b[31m${text}\u001b[0m\u0000\t\n\r\u007f`
 }
 
-/** Add a valid OSC ANSI sequence and C0 bytes around regex source without making it uncompilable. */
+/** Adds a valid OSC ANSI sequence and C0 bytes around regex source without making it uncompilable. */
 export function createHostilePattern(text: string): string {
 	return `\u001b]0;title\u0007${text}\u0000\t\n\r\u007f`
 }
 
 /**
- * A valid schema with hostile bytes in every schema string position terminal can render or use to
- * relate rendered records. It covers every field control and every control-specific string slot.
+ * Builds a valid schema with hostile bytes in every schema string position terminal can render or
+ * use to relate rendered records. It covers every field control and every control-specific string
+ * slot.
  */
 export function createHostileSchema(): FormSchema {
 	const hostile = createHostileText
@@ -310,9 +311,10 @@ export function createHostileSchema(): FormSchema {
 }
 
 /**
- * The wire-valid hostile schema used end to end. Form intentionally refuses control bytes inside
- * format-constrained date, time, datetime, and color defaults, so those invalid authored values
- * remain in the direct sanitizer fixture above and are omitted at the parse boundary here.
+ * Builds the wire-valid hostile schema used end to end. Form intentionally refuses control bytes
+ * inside format-constrained date, time, datetime, and color defaults, so those invalid authored
+ * values remain in the direct sanitizer fixture earlier in this module and are omitted at the parse
+ * boundary here.
  */
 export function createHostileWireSchema(): FormSchema {
 	const schema = createHostileSchema()
@@ -335,14 +337,14 @@ export function createHostileWireSchema(): FormSchema {
 	}
 }
 
-/** One shared store-contract case used by both store implementations. */
+/** Names one shared store-contract case every store implementation must satisfy. */
 export interface TerminalStoreScenario {
 	readonly label: string
 	readonly act: (store: TerminalStoreInterface) => Promise<unknown>
 	readonly expected: unknown
 }
 
-/** Shared point-store cases. */
+/** Lists the shared point-store cases. */
 export const TERMINAL_STORE_SCENARIOS: readonly TerminalStoreScenario[] = Object.freeze([
 	{
 		label: 'misses an absent id',

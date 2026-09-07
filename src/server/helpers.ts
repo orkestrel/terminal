@@ -31,7 +31,7 @@ import {
  * @remarks
  * Only `on` / `off` are required (the irreducible event seam); `setRawMode` / `resume` / `pause` /
  * `isTTY` are optional on {@link InputStreamInterface}, so their absence does not disqualify a stream
- * — a piped, non-TTY stream is still a valid input, just one the driver reads through the readline
+ * — a piped, non-TTY stream is still a valid input, one the driver reads through the readline
  * fallback rather than raw mode.
  *
  * @param value - Any value crossing the boundary (a process stream, an injected fake, `unknown`)
@@ -87,7 +87,7 @@ export function supportsRawMode(input: InputStreamInterface): boolean {
 /**
  * Counts the terminal LINES a rendered prompt `view` occupies — one more than its newline count
  * (a view with no newline is a single line; N newlines span N+1 lines). The basis of the in-place
- * re-render: the driver records the line count of the view it just wrote so the next redraw knows how
+ * re-render: the driver records the line count of the view it wrote so the next redraw knows how
  * far up to move the cursor before overwriting. Total; an empty string is one (empty) line.
  *
  * @param view - The rendered (possibly multi-line, possibly ANSI-styled) view string
@@ -124,12 +124,12 @@ export function renderCursorUp(count: number): string {
  *
  * @remarks
  * For the FIRST render `previousLines` is `1` (the cursor sits on the line the prompt opened on) so
- * the prefix is just a carriage return + clear-down — the prompt draws from the current line. For a
+ * the prefix is a carriage return + clear-down — the prompt draws from the current line. For a
  * subsequent render it climbs `previousLines - 1` lines (the cursor is on the LAST line of the prior
  * view) before clearing. Keeping the math here (not in the driver) makes the re-render unit-testable
  * without a real terminal.
  *
- * @param previousLines - The line count of the view currently on screen (from {@link lineCount})
+ * @param previousLines - The line count of the view on screen (from {@link lineCount})
  * @returns The control-sequence prefix to write before the new view
  */
 export function redrawPrefix(previousLines: number): string {

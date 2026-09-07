@@ -545,7 +545,7 @@ These invariants hold across `src/core`, `src/server`, and this guide.
     each drive their own reducer. An OPEN select is a suggestion list plus a typed line, because
     `open` means the answer need not come from the list. A disabled choice is named on an
     unavailable line and never offered, since the form refuses its value at every door. A `hidden`
-    field and a field currently in `form.disabled` are skipped; a `locked` field renders read-only
+    field and a field in `form.disabled` are skipped; a `locked` field renders read-only
     and is still submitted; entering a group writes its label as a section header. Coercion is
     form's own `parseValue`, and an answer the control cannot hold binds as absence and invalidates
     the field, so it comes back with the reason on screen rather than vanishing.
