@@ -25,18 +25,18 @@ import { isArray } from '@orkestrel/contract'
  *
  * @remarks
  * - **Registry.** `add(name, options?)` mints (or, if `name` is already mounted, returns the
- *   EXISTING broker UNCHANGED — idempotent, never clobbers a live/parked endpoint). Every mounted
+ *   existing broker unchanged — idempotent, never clobbers a live/parked endpoint). Every mounted
  *   broker's `pending` / `answer` / `expire` events are re-emitted on the manager, attributed by
  *   `name`.
  * - **`ask`.** The target must already be mounted through {@link add} — `ask` never auto-adds it;
  *   rejects `TARGET` for an unknown `to` (listing the known names). Rejects `DEADLOCK` when parking
- *   `from → to` would close a cycle over the CURRENT in-flight edge set (walked transitively);
+ *   `from → to` would close a cycle over the current in-flight edge set (walked transitively);
  *   otherwise parks the caller's live form through the target's broker and returns that form's own
  *   `answer` promise. Edge cleanup never alters the value or rejection the caller observes.
  * - **Durable open / save.** `open(name)` restores an EMPTY broker from the `store` (parked
  *   Promises are process-bound and never resurrected); `save(name)` persists the endpoint's
  *   configured `timeout`.
- * - **Removal.** `remove` drops one endpoint, a batch (the array overload declared FIRST), or every
+ * - **Removal.** `remove` drops one endpoint, a batch (the array overload declared first), or every
  *   endpoint when called without an argument. It destroys each broker, which expires every form
  *   still parked on it. `destroy` is idempotent.
  *

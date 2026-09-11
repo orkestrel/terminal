@@ -263,7 +263,7 @@ export type PromptStatus = 'active' | 'submit' | 'cancel'
  *   is the final state.
  * - `view` — the styled string to render now, possibly multi-line. On a refused `submit` it carries
  *   the failure; the driver re-renders it each step.
- * - `value` — present ONLY on a `submit` step.
+ * - `value` — present only on a `submit` step.
  */
 export interface PromptStep<T, S> {
 	readonly state: S
@@ -315,7 +315,7 @@ export type TerminalErrorCode =
  * `ask` drives the form the caller passes: it walks the schema's fields in order, binds each
  * keystroke through the form's own `fill`, submits, and returns the settled values. The returned
  * promise is the form's `answer`, so a caller holding the form can await either one. Ctrl-c at an
- * interactive driver is the one exception: it rejects THIS promise with a `TerminalError` coded
+ * interactive driver is the one exception: it rejects this promise with a `TerminalError` coded
  * `CANCEL` and leaves the form `editing`, so the form's own `answer` stays pending for its owner.
  *
  * A driver never owns the form's lifetime. To interrupt an active walk, destroy the form: it
@@ -386,7 +386,7 @@ export type TimerCancelFunction = () => void
  * broker exposes, and the cancel for its expiry timer.
  *
  * @remarks
- * `form` is the AUTHORITATIVE form the caller parked, not a copy: an answer fills and submits this
+ * `form` is the authoritative form the caller parked, not a copy: an answer fills and submits this
  * one, so a `custom` rule that never crossed the wire still decides. Expiry destroys it, which
  * abandons it and settles the caller's promise through the form's own lifecycle. `pending` is the
  * wire record, whose `status` tracks the ticket.
@@ -409,8 +409,7 @@ export interface ParkedForm {
 export type PromptEventMap = {
 	readonly pending: readonly [form: PendingForm]
 	/**
-	 * Fills and submits the authoritative parked form. Accepted, it settles and the record is
-	 * dropped; refused, the form stays parked.
+	 * Reports an accepted answer, carrying the parked form id and settled values.
 	 */
 	readonly answer: readonly [id: string, values: FormValues]
 	readonly expire: readonly [id: string]
@@ -445,7 +444,7 @@ export interface PromptOptions {
  * say.
  *
  * @remarks
- * `from` and `to` are the attribution edge, set ONLY by a {@link TerminalManagerInterface}: which
+ * `from` and `to` are the attribution edge, set only by a {@link TerminalManagerInterface}: which
  * endpoint asked, which endpoint must answer. A direct broker caller passes no request at all.
  */
 export interface ParkRequest {
@@ -480,7 +479,7 @@ export type AnswerError =
  * - **The form is the unit.** {@link park} takes a live form, mints an id, emits `pending`, and
  *   returns the id. It wraps no promise, because the caller already holds one: the form's own
  *   `answer`.
- * - **The parked form is authoritative.** {@link answer} fills and submits THAT form, so every rule
+ * - **The parked form is authoritative.** {@link answer} fills and submits that form, so every rule
  *   it carries decides, including a `custom` validator the wire dropped. A refusal returns the
  *   form's own errors and leaves the form parked.
  * - **Timeout abandons.** An unanswered form is destroyed after `timeout` ms; `expire` fires and
@@ -576,8 +575,8 @@ export type PromptClientEventMap = {
  *
  * @remarks
  * - `url` — the remote broker's SSE endpoint. A GET opens the stream; answers POST back to it.
- * - `terminal` — the LOCAL {@link TerminalInterface} each remote form is driven through, so a human
- *   at THIS machine answers a form parked elsewhere.
+ * - `terminal` — the local {@link TerminalInterface} each remote form is driven through, so a human
+ *   at this machine answers a form parked elsewhere.
  * - `token` — an optional auth token, sent as the {@link import('./constants.js').HEADER_TOKEN}
  *   header on every request.
  * - `reconnect` — whether to reconnect after the stream drops, default true.
@@ -708,7 +707,7 @@ export type TerminalAnswerError = AnswerError | { readonly reason: 'target' }
  * - **`open`** restores, or returns the live, broker for `name` from the `store`.
  * - **`save`** persists an endpoint's config snapshot; false when there is no store, or `name` is
  *   unknown.
- * - **Batch `remove`.** The array overload is declared FIRST: `remove(names)` removes every listed
+ * - **Batch `remove`.** The array overload is declared first: `remove(names)` removes every listed
  *   endpoint and reports true only when all of them were mounted; `remove(name)` removes one;
  *   `remove()` removes every endpoint without destroying the manager.
  * - **`destroy`** tears down every broker, then the manager's own emitter.

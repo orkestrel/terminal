@@ -92,7 +92,7 @@ import {
  *   `open` means the answer need not come from the list.
  * - **The binding projects through `matchesAnswer`.** Every answer is filled as
  *   `fill(name, matchesAnswer(value) ? value : undefined)` after `parseValue` has coerced it to the
- *   control's own shape, so a bare return on a field with no default binds as ABSENCE and the
+ *   control's own shape, so a bare return on a field with no default binds as absence and the
  *   form's `required` rule refuses it. A typed answer the control cannot hold binds as absence and
  *   invalidates the field, so the walk asks again with the reason on screen.
  * - **Visibility is honored.** A `hidden` field and a field in `form.disabled` are skipped; a

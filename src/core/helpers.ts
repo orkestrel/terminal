@@ -55,7 +55,7 @@ import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/cons
  * - **Single control byte.** A one-character control input (`return` / `backspace` / `tab` /
  *   `escape` / `space`, or a Ctrl combo `c` / `d` / `u` / `a` / `e`), or the two-byte `\r\n`
  *   CRLF pair, is looked up in {@link CONTROL_NAMES}, carrying its `ctrl` flag.
- * - **Escape sequence.** A multi-byte ESC sequence (`up` / `down` / `left` / `right` in BOTH the
+ * - **Escape sequence.** A multi-byte ESC sequence (`up` / `down` / `left` / `right` in both the
  *   `ESC[A` and `ESCOA` forms, plus `home` / `end` / `delete`) is looked up in
  *   {@link SEQUENCE_NAMES} and flagged `meta`.
  * - **Printable character.** A single printable character becomes `name` = that character, with

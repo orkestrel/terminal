@@ -123,9 +123,9 @@ export function renderCursorUp(count: number): string {
  * this immediately followed by the new view.
  *
  * @remarks
- * For the FIRST render `previousLines` is `1` (the cursor sits on the line the prompt opened on) so
+ * For the first render `previousLines` is `1` (the cursor sits on the line the prompt opened on) so
  * the prefix is a carriage return + clear-down — the prompt draws from the current line. For a
- * subsequent render it climbs `previousLines - 1` lines (the cursor is on the LAST line of the prior
+ * subsequent render it climbs `previousLines - 1` lines (the cursor is on the last line of the prior
  * view) before clearing. Keeping the math here (not in the driver) makes the re-render unit-testable
  * without a real terminal.
  *
