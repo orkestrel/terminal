@@ -1,26 +1,31 @@
 # Form
 
-> The environment-agnostic form document. A `FormSchema` states what is asked, a `Form` holds the
-> answers given against it, declarative `FieldRule` data states what those answers must satisfy, and
-> one submit settles the form exactly once. Nothing here renders, reads a keyboard, or opens a
-> socket.
->
-> **A terminal prompt and a browser form are the same abstraction.** Both ask a person a set of
-> questions, hold partial answers, check them against rules, and finish once. What differs is the
-> host, and each host contributes the one part it owns. Parking is the server environment's
-> contribution: `answer` is a form whose result nobody has resolved yet, so a server can hand the
-> document out, wait, and receive the answers back through the same promise a local caller awaits.
-> Rendering is the browser's contribution, and it lives in the browser, not here. This package ships
-> the document both hosts share.
->
-> The core is pure and total. Every guard returns `false` off-shape rather than throwing, every
-> parser returns `undefined` on refusal, and every value the form hands back is a frozen owned copy.
-> Form-owned refusals raise `FormError`, and each one names a caller mistake. A custom validator's
-> own throw escapes the mutation call unchanged.
+> The environment-agnostic form document: a `FormSchema` stating what is asked, a `Form` holding
+> the answers given against it, declarative `FieldRule` data stating what those answers must
+> satisfy, and one submit that settles the form exactly once.
+
+**A terminal prompt and a browser form are the same abstraction.** Both ask a person a set of
+questions, hold partial answers, check them against rules, and finish once. What differs is the
+host, and each host contributes the one part it owns. Parking is the server environment's
+contribution: `answer` is a form whose result nobody has resolved yet, so a server can hand the
+document out, wait, and receive the answers back through the same promise a local caller awaits.
+Rendering is the browser's contribution, and it lives in the browser, not here. Nothing here
+renders, reads a keyboard, or opens a socket. This package ships the document both hosts share.
+
+The core is pure and total. Every guard returns `false` off-shape rather than throwing, every parser
+returns `undefined` on refusal, and every value the form hands back is a frozen owned copy.
+Form-owned refusals raise `FormError`, and each one names a caller mistake. A custom validator's own
+throw escapes the mutation call unchanged.
 
 ## Surface
 
-Open a form, answer it, and settle it:
+Everything in this guide is exported from `@orkestrel/form` ([`src/core`](../src/core)). Nothing is
+internal: every declaration in the module is reachable from the barrel, so a consumer holds exactly
+the mechanisms the package uses on itself.
+
+### Open a form, answer it, and settle it
+
+Builds a two-field sign-up form, fills both answers, submits, and awaits the settled result.
 
 ```ts
 import { createForm } from '@orkestrel/form'
@@ -38,120 +43,142 @@ const result = form.submit() // { success: true, value: { email: 'ada@example.co
 const answers = await form.answer // { email: 'ada@example.com', terms: true }
 ```
 
-Everything in this guide is exported from `@orkestrel/form` ([`src/core`](../src/core)). Nothing is internal:
-every declaration in the module is reachable from the barrel, so a consumer holds exactly the
-mechanisms the package uses on itself.
-
 ### Schema and fields
 
-The document itself — what a form asks, in the order it asks it. All data, no behavior.
+The document itself — what a form asks, in the order it asks it. All data, no behavior. Each
+control's own interface adds its members to `FieldBase`, and the control values themselves are
+worked through in [Controls](#controls).
 
-| API             | Kind      | Summary                                                                                                                                   |
-| --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `FormSchema`    | interface | Everything a form asks — optional `name` / `label` / `help` / `groups`, and the required `fields` in presentation order.                  |
-| `FormGroup`     | interface | A named section of a form — `name` / `label` / optional `help`. Grouping arranges a form and changes no answer.                           |
-| `FormField`     | type      | Any field a schema can declare — the union discriminated on `control`.                                                                    |
-| `FieldBase`     | interface | What every field carries whatever its control — `name` / `label` / `help` / `group` / `hidden` / `disabled` / `locked` / `rule` / `meta`. |
-| `FieldControl`  | type      | The control a field presents — the discriminant that fixes the field's options and its value shape.                                       |
-| `FieldChoice`   | interface | One option a `select` or `checkbox` offers — `value` is stored, `label` is read, `help` explains, `disabled` refuses it.                  |
-| `TextField`     | interface | A single line of text — optional `default` and `placeholder`.                                                                             |
-| `EditorField`   | interface | Text over many lines — optional `default` and `placeholder`.                                                                              |
-| `PasswordField` | interface | A secret, obscured as it is typed — optional `mask`, and no `default` by design.                                                          |
-| `NumberField`   | interface | A number — optional `default` and `placeholder`.                                                                                          |
-| `DateField`     | interface | A calendar date held as the control's own `YYYY-MM-DD` string — optional `default`.                                                       |
-| `TimeField`     | interface | A time of day held as the control's own `HH:MM` string, seconds optional — optional `default`.                                            |
-| `DatetimeField` | interface | A date and time together with no zone, the browser's datetime-local — optional `default`.                                                 |
-| `ColorField`    | interface | A color held as a six-digit `#rrggbb` string — optional `default`.                                                                        |
-| `ConfirmField`  | interface | A single on/off box holding a boolean — optional `default`.                                                                               |
-| `SelectField`   | interface | One choice out of a list — required `choices`, optional `default`, and `open` to admit a value the list does not offer.                   |
-| `CheckboxField` | interface | Any number of choices out of a list, holding the checked values — required `choices`, optional `default`.                                 |
-| `FileField`     | interface | One or more files, by name — optional `accept` media types and `multiple`.                                                                |
+A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
+optional member and `plus` introducing its call-signature members, and a type alias's own type
+literal with a union's arms escaped as `\|`. An extended interface's name comes before `plus`,
+with the members it adds after.
+
+| API             | Kind      | Shape                                                                                                                                                                            | Summary                                                                                       |
+| --------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `FormSchema`    | interface | `{ name?, label?, help?, groups?, fields }`                                                                                                                                      | Describes everything a form asks.                                                             |
+| `FormGroup`     | interface | `{ name, label, help? }`                                                                                                                                                         | Represents a named section of a form.                                                         |
+| `FormField`     | type      | `TextField \| EditorField \| PasswordField \| NumberField \| DateField \| TimeField \| DatetimeField \| ColorField \| ConfirmField \| SelectField \| CheckboxField \| FileField` | Represents any field a schema can declare.                                                    |
+| `FieldBase`     | interface | `{ name, label?, help?, group?, hidden?, disabled?, locked?, rule?, meta? }`                                                                                                     | Declares what every field carries, whatever its control.                                      |
+| `FieldControl`  | type      | `'text' \| 'editor' \| 'password' \| 'number' \| 'date' \| 'time' \| 'datetime' \| 'color' \| 'confirm' \| 'select' \| 'checkbox' \| 'file'`                                     | Names the control a field presents to the person answering it.                                |
+| `FieldChoice`   | interface | `{ value, label, help?, disabled? }`                                                                                                                                             | Represents one option a `select` or `checkbox` field offers.                                  |
+| `TextField`     | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents a single line of text.                                                             |
+| `EditorField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents text over many lines.                                                              |
+| `PasswordField` | interface | `FieldBase plus { control, mask? }`                                                                                                                                              | Represents a secret, obscured as it is typed.                                                 |
+| `NumberField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents a number.                                                                          |
+| `DateField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a calendar date, held as the control's own `YYYY-MM-DD` string.                    |
+| `TimeField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a time of day, held as the control's own `HH:MM` string, with seconds optional.    |
+| `DatetimeField` | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a date and a time of day together, with no zone, held as the control's own string. |
+| `ColorField`    | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a color, held as the control's own six-digit `#rrggbb` string.                     |
+| `ConfirmField`  | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a single on/off box, holding a boolean.                                            |
+| `SelectField`   | interface | `FieldBase plus { control, choices, default?, open? }`                                                                                                                           | Represents one choice out of a list.                                                          |
+| `CheckboxField` | interface | `FieldBase plus { control, choices, default? }`                                                                                                                                  | Represents any number of choices out of a list, holding the checked values.                   |
+| `FileField`     | interface | `FieldBase plus { control, accept?, multiple? }`                                                                                                                                 | Represents one or more files, by name.                                                        |
 
 ### Answers and rules
 
 What a form holds, what its answers must satisfy, and how a failure reports itself.
 
-| API                 | Kind      | Summary                                                                                                                                                                                            |
-| ------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FieldValue`        | type      | Every value a field can hold — a `string`, a `number`, a `boolean`, or a `readonly string[]`.                                                                                                      |
-| `FormValues`        | type      | A form's answers keyed by field name. A name with no key is a field nobody has answered.                                                                                                           |
-| `FieldRule`         | interface | The constraints one field's value must satisfy — `required` / `minimum` / `maximum` / `step` / `pattern` / `email` / `url` / `integer` / `alphanumeric` / `custom`.                                |
-| `FieldRuleName`     | type      | Every rule that reports its failure by name — `FieldRule` without `custom`, and the key `FormOptions.messages` is keyed by.                                                                        |
-| `FieldValidator`    | type      | The cross-field check `custom` runs — it receives the value or `undefined` and every answer the form holds, and returns `true` or a message; its own throw escapes after any earlier state change. |
-| `FieldError`        | interface | One failed check — the `field`, the `message`, and the `rule` that produced it where a named rule did.                                                                                             |
-| `EvaluationOptions` | interface | How to check a schema against answers — per-rule `messages` overrides, and the `disabled` set that replaces the schema's own declarations.                                                         |
+A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
+optional member and `plus` introducing its call-signature members, and a type alias's own type
+literal with a union's arms escaped as `\|`.
+
+| API                 | Kind      | Shape                                                                                                | Summary                                                    |
+| ------------------- | --------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `FieldValue`        | type      | `string \| number \| boolean \| readonly string[]`                                                   | Represents every value a field can hold.                   |
+| `FormValues`        | type      | `Readonly<Record<string, FieldValue>>`                                                               | Represents a form's answers, keyed by field name.          |
+| `FieldRule`         | interface | `{ required?, minimum?, maximum?, step?, pattern?, email?, url?, integer?, alphanumeric?, custom? }` | Represents the constraints one field's value must satisfy. |
+| `FieldRuleName`     | type      | `Exclude<keyof FieldRule, 'custom'>`                                                                 | Lists every rule that reports its failure by name.         |
+| `FieldValidator`    | type      | `(value: FieldValue \| undefined, values: FormValues) => true \| string`                             | Checks one value against the whole form.                   |
+| `FieldError`        | interface | `{ field, message, rule? }`                                                                          | Represents one failed check against one field.             |
+| `EvaluationOptions` | interface | `{ messages?, disabled? }`                                                                           | Describes how to check a schema against a set of answers.  |
 
 ### The form
 
 The entity, its factory, its contract, and the error it raises.
 
-| API             | Kind      | Summary                                                                                                         |
-| --------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
-| `Form`          | class     | A form — a schema, the answers given against it, and the errors they carry. Implements `FormInterface` exactly. |
-| `FormInterface` | interface | The form contract — the readonly state in the `## Surface` rows plus the methods in `## Methods`.               |
-| `createForm`    | function  | A form opened against a schema. The schema is copied, and the copy is what the form asks.                       |
-| `FormOptions`   | interface | How to open a form — `on` listeners, an `error` handler, seeded `values`, and per-rule `messages` overrides.    |
-| `FormStatus`    | type      | Where a form sits in its life — `editing`, `settled`, or `abandoned`. Both end states are terminal.             |
-| `FormResult`    | type      | What a submit answers with — the values on success, or every `FieldError` that stopped them.                    |
-| `FormEventMap`  | type      | Everything a form announces — `fill` / `validate` / `disable` / `enable` / `submit` / `clear` / `abandon`.      |
-| `FormError`     | class     | An error raised by the form domain — a machine-readable `code` and optional structured `context`.               |
-| `FormErrorCode` | type      | The reason a `FormError` carries — `SCHEMA` / `FIELD` / `CONTROL` / `SETTLED` / `ABANDONED`.                    |
-| `isFormError`   | function  | Whether a caught value is a `FormError`, so a `catch` branches on `code` without an assertion.                  |
+A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
+optional member and `plus` introducing its call-signature members, and a type alias's own type
+literal with a union's arms escaped as `\|`. A function row's `Shape` cell holds its signature,
+and a guard row's the type it narrows to. A class row's `Shape` cell holds the interface it
+implements, or its constructor signature where it implements none.
 
-`FormInterface`'s readonly data members stay here rather than in `## Methods`: `emitter` (the typed
-event surface), `schema` (the owned frozen copy), `values` (the answers the form holds), `baseline`
-(the answers the form opened with, fixed for its whole life), `errors` (current after each completed
-evaluation), `touched` (the fields somebody has visited), `disabled` (the fields out of the form),
-`status`, `valid`, `dirty`, and `answer` (the promise that resolves on the first valid submit).
+| API             | Kind      | Shape                                                                                                                                                                         | Summary                                                                                                            |
+| --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Form`          | class     | `FormInterface`                                                                                                                                                               | Implements `FormInterface` exactly, over an owned schema, the answers given against it, and the errors they carry. |
+| `FormInterface` | interface | `{ emitter, schema, values, baseline, errors, touched, disabled, status, valid, dirty, answer } plus field, fill, touch, invalidate, disable, enable, submit, clear, destroy` | Declares the contract a form exposes: the state it holds and the calls that move it.                               |
+| `createForm`    | function  | `(schema: FormSchema, options?: FormOptions) => FormInterface`                                                                                                                | Opens a form against a schema.                                                                                     |
+| `FormOptions`   | interface | `{ on?, error?, values?, messages? }`                                                                                                                                         | Describes how to open a form.                                                                                      |
+| `FormStatus`    | type      | `'editing' \| 'settled' \| 'abandoned'`                                                                                                                                       | Represents where a form sits in its life.                                                                          |
+| `FormResult`    | type      | `Result<FormValues, readonly FieldError[]>`                                                                                                                                   | Reports what a submit answers with: the values, or every error that stopped them.                                  |
+| `FormEventMap`  | type      | `{ fill, validate, disable, enable, submit, clear, abandon }`                                                                                                                 | Lists everything a form announces.                                                                                 |
+| `FormError`     | class     | `new (code: FormErrorCode, message: string, context?: JSONRecord) => FormError`                                                                                               | Represents an error raised by the form domain.                                                                     |
+| `FormErrorCode` | type      | `'SCHEMA' \| 'FIELD' \| 'CONTROL' \| 'SETTLED' \| 'ABANDONED'`                                                                                                                | Names the machine-readable code a form error carries.                                                              |
+| `isFormError`   | function  | `FormError`                                                                                                                                                                   | Determines whether an unknown value is a form error.                                                               |
+
+`FormInterface`'s readonly data members are the names in its `Shape` cell before `plus`, and they
+stay here rather than in `## Methods`; the call-signature members after `plus` are documented under
+[Methods](#methods).
 
 ### Constants
 
 The control and status registries, the permitted-member table each control is checked against, the
 default rule copy, and the shipped patterns — every one of them frozen, so a shared `RegExp` cannot
-be recompiled under a consumer. The budgets are numbers.
+be recompiled under a consumer. `EMAIL_PATTERN`, `URL_PATTERN`, `ALPHANUMERIC_PATTERN`, and
+`INTEGER_PATTERN` are the tests behind the rules they are named for, `INTEGER_PATTERN` on a text
+control; `COLOR_PATTERN`, `DATE_PATTERN`, `TIME_PATTERN`, and `DATETIME_PATTERN` are the shapes a
+`color`, `date`, `time`, and `datetime` value must have. Each budget's row names its ceiling.
+[Budgets](#budgets) then works each ceiling through beside the unit it counts, and
+[Patterns and where trust lives](#patterns-and-where-trust-lives) does the same for `PATTERN_LIMIT`.
 
-| API                    | Kind  | Summary                                                                                         |
-| ---------------------- | ----- | ----------------------------------------------------------------------------------------------- |
-| `FIELD_CONTROLS`       | const | Every field control, in the order the public contract declares them.                            |
-| `FIELD_BASE_KEYS`      | const | The members every field declares, whatever its control.                                         |
-| `FIELD_KEYS`           | const | Every member one control permits — the base members plus its own — as `isFormField` reads them. |
-| `FORM_STATUSES`        | const | Every form lifecycle status — `editing`, `settled`, `abandoned`.                                |
-| `RULE_MESSAGES`        | const | The default failure copy for every named rule; `{limit}` is replaced with the rule's operand.   |
-| `EMAIL_PATTERN`        | const | A practical whole-address email shape — the `email` rule's test.                                |
-| `URL_PATTERN`          | const | An absolute HTTP or HTTPS URL shape — the `url` rule's test.                                    |
-| `ALPHANUMERIC_PATTERN` | const | One or more ASCII letters or digits — the `alphanumeric` rule's test.                           |
-| `INTEGER_PATTERN`      | const | A signed or unsigned base-ten integer string — the `integer` rule's test on a text control.     |
-| `COLOR_PATTERN`        | const | A six-digit hexadecimal color string — the shape a `color` value must have.                     |
-| `DATE_PATTERN`         | const | An ISO calendar date in `YYYY-MM-DD` form — the shape a `date` value must have.                 |
-| `TIME_PATTERN`         | const | A 24-hour time with optional seconds — the shape a `time` value must have.                      |
-| `DATETIME_PATTERN`     | const | An ISO local date and time with optional seconds — the shape a `datetime` value must have.      |
-| `PATTERN_LIMIT`        | const | The longest authored regular-expression source this package will compile: 256 characters.       |
-| `FIELD_LIMIT`          | const | The most fields one schema may declare: 512.                                                    |
-| `GROUP_LIMIT`          | const | The most groups one schema may declare: 64.                                                     |
-| `CHOICE_LIMIT`         | const | The most choices one `select` or `checkbox` may offer: 1024.                                    |
-| `LIST_LIMIT`           | const | The most entries one list-valued answer may hold: 1024.                                         |
-| `NAME_LIMIT`           | const | The longest schema, group, or field name: 128 UTF-16 code units.                                |
-| `STRING_LIMIT`         | const | The longest single retained string: 65536 UTF-16 code units.                                    |
-| `TEXT_LIMIT`           | const | The most string code units one schema may retain in total: 1048576.                             |
-| `NODE_LIMIT`           | const | The most records, arrays, and leaves one schema may retain in total: 16384.                     |
+A `Shape` cell holds the constant's declared type.
+
+| API                    | Kind  | Shape                                               | Summary                                                                                                                         |
+| ---------------------- | ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `FIELD_CONTROLS`       | const | `readonly FieldControl[]`                           | Lists every field control, in the order declared by the public contract.                                                        |
+| `FIELD_BASE_KEYS`      | const | `readonly string[]`                                 | Lists the members every field declares, whatever its control.                                                                   |
+| `FIELD_KEYS`           | const | `Readonly<Record<FieldControl, readonly string[]>>` | Lists every member one field control permits, composed from `FIELD_BASE_KEYS` and the members the control's own interface adds. |
+| `FORM_STATUSES`        | const | `readonly FormStatus[]`                             | Lists every form lifecycle status.                                                                                              |
+| `RULE_MESSAGES`        | const | `Readonly<Record<FieldRuleName, string>>`           | Holds the default failure copy for every named field rule.                                                                      |
+| `EMAIL_PATTERN`        | const | `Readonly<RegExp>`                                  | Matches a practical whole-address email shape.                                                                                  |
+| `URL_PATTERN`          | const | `Readonly<RegExp>`                                  | Matches an absolute HTTP or HTTPS URL shape.                                                                                    |
+| `ALPHANUMERIC_PATTERN` | const | `Readonly<RegExp>`                                  | Matches one or more ASCII letters or digits.                                                                                    |
+| `INTEGER_PATTERN`      | const | `Readonly<RegExp>`                                  | Matches a signed or unsigned base-ten integer string.                                                                           |
+| `COLOR_PATTERN`        | const | `Readonly<RegExp>`                                  | Matches a six-digit hexadecimal color string.                                                                                   |
+| `DATE_PATTERN`         | const | `Readonly<RegExp>`                                  | Matches an ISO calendar date string in `YYYY-MM-DD` form.                                                                       |
+| `TIME_PATTERN`         | const | `Readonly<RegExp>`                                  | Matches a 24-hour time string with optional seconds.                                                                            |
+| `DATETIME_PATTERN`     | const | `Readonly<RegExp>`                                  | Matches an ISO local date and time string with optional seconds.                                                                |
+| `PATTERN_LIMIT`        | const | `number`                                            | Caps the accepted source length for an authored regular expression, at 256.                                                     |
+| `FIELD_LIMIT`          | const | `number`                                            | Caps the number of fields one schema may declare, at 512.                                                                       |
+| `GROUP_LIMIT`          | const | `number`                                            | Caps the number of groups one schema may declare, at 64.                                                                        |
+| `CHOICE_LIMIT`         | const | `number`                                            | Caps the number of choices one `select` or `checkbox` field may offer, at 1024.                                                 |
+| `LIST_LIMIT`           | const | `number`                                            | Caps the number of entries one list-valued answer may hold, at 1024.                                                            |
+| `NAME_LIMIT`           | const | `number`                                            | Caps the length, in UTF-16 code units, of a schema, group, or field name, at 128.                                               |
+| `STRING_LIMIT`         | const | `number`                                            | Caps the length, in UTF-16 code units, of any single retained string, at 65536.                                                 |
+| `TEXT_LIMIT`           | const | `number`                                            | Caps the total length, in UTF-16 code units, of every string one schema retains, at 1048576.                                    |
+| `NODE_LIMIT`           | const | `number`                                            | Caps the total number of records, arrays, and leaves one schema retains, at 16384.                                              |
 
 ### Guards
 
 Total `is*` guards over unknown input. None throws, none coerces, and each returns `false` for
-anything off-shape — including a hostile prototype, a symbol key, or a cyclic value.
+anything off-shape — including a hostile prototype, a symbol key, or a cyclic value. `isFieldValue`
+also refuses a number that is not finite, so `NaN` and `Infinity` are not field values, and
+`isFormSchema` reads structure alone: domain soundness is `auditSchema`'s question.
 
-| API              | Kind     | Summary                                                                                            |
-| ---------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| `isFieldControl` | function | Whether a value is one of the declared controls.                                                   |
-| `isFormStatus`   | function | Whether a value is a form lifecycle status.                                                        |
-| `isFieldValue`   | function | Whether a value has a field-value shape — string, finite number, boolean, or list of strings.      |
-| `isFieldChoice`  | function | Whether a value is one exact `FieldChoice` record; an unknown member refuses it.                   |
-| `isFieldRule`    | function | Whether a value is one structurally valid `FieldRule` record.                                      |
-| `isFormField`    | function | Whether a value is one exact discriminated `FormField`, checked against its control's own options. |
-| `isFormGroup`    | function | Whether a value is one exact `FormGroup` record.                                                   |
-| `isFormSchema`   | function | Whether a value is one exact structural `FormSchema` — structure only, not domain soundness.       |
-| `isFormValues`   | function | Whether a value is a record whose every own key is a string and every value a `FieldValue`.        |
-| `isFieldError`   | function | Whether a value is one exact `FieldError` record.                                                  |
+In a guard table a `Shape` cell holds the type the guard narrows to.
+
+| API              | Kind     | Shape          | Summary                                                                    |
+| ---------------- | -------- | -------------- | -------------------------------------------------------------------------- |
+| `isFieldControl` | function | `FieldControl` | Determines whether an unknown value is a declared field control.           |
+| `isFormStatus`   | function | `FormStatus`   | Determines whether an unknown value is a form lifecycle status.            |
+| `isFieldValue`   | function | `FieldValue`   | Determines whether an unknown value has a form field value shape.          |
+| `isFieldChoice`  | function | `FieldChoice`  | Determines whether an unknown value is one exact field choice record.      |
+| `isFieldRule`    | function | `FieldRule`    | Determines whether an unknown value is one exact field rule record.        |
+| `isFormField`    | function | `FormField`    | Determines whether an unknown value is one exact discriminated form field. |
+| `isFormGroup`    | function | `FormGroup`    | Determines whether an unknown value is one exact form group record.        |
+| `isFormSchema`   | function | `FormSchema`   | Determines whether an unknown value is one exact structural form schema.   |
+| `isFormValues`   | function | `FormValues`   | Determines whether an unknown value is a record of field values.           |
+| `isFieldError`   | function | `FieldError`   | Determines whether an unknown value is one exact field error record.       |
 
 ### Helpers
 
@@ -159,24 +186,24 @@ The pure leaves the form composes: the prototype-safe record write, `createField
 failure builder, the control shape test, the evaluation engine, the derivations, and the wire
 projection.
 
-| API                | Kind     | Summary                                                                                                             |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------- |
-| `defineEntry`      | function | One own enumerable entry written onto a record, so a `__proto__` key lands on the record rather than its prototype. |
-| `freezeEntry`      | function | The same prototype-safe write, frozen — the entry is neither writable nor configurable.                             |
-| `matchesField`     | function | Whether one control can hold a value — the shape gate every write and every seed passes through.                    |
-| `matchesAnswer`    | function | Whether a raw binding value counts as an answer — the documented projection a binding fills through.                |
-| `appliesRule`      | function | Whether one named rule applies to one field control.                                                                |
-| `evaluateField`    | function | Every failure one field's rule produces against its current value, in rule order.                                   |
-| `evaluateForm`     | function | Every failure the whole schema produces, in schema order then rule order; a disabled field is skipped.              |
-| `computeDefaults`  | function | The values a schema explicitly seeds. `password` and `file` declare no default, so neither ever appears.            |
-| `matchesValue`     | function | Whether two field values hold the same answer, comparing list values element by element.                            |
-| `extractChanges`   | function | The names whose answers differ between two value records, absence included.                                         |
-| `matchesValues`    | function | Whether two answer records hold the same answers, comparing list values element by element.                         |
-| `formatMessage`    | function | One rule's resolved failure text — an override first, then `RULE_MESSAGES` — with `{limit}` substituted.            |
-| `createFieldError` | function | One frozen named-rule failure: the field's name, the resolved message, and the rule.                                |
-| `serializeForm`    | function | A schema projected into JSON, without any `custom` validator or absent member.                                      |
-| `extractGroups`    | function | The groups a schema's fields actually reference, in first-reference order and without duplicates.                   |
-| `auditSchema`      | function | The domain-invariant faults a structurally valid schema carries, as human-readable diagnostics.                     |
+| API                | Kind     | Summary                                                                         |
+| ------------------ | -------- | ------------------------------------------------------------------------------- |
+| `defineEntry`      | function | Writes one own enumerable data property onto a record.                          |
+| `freezeEntry`      | function | Writes one own enumerable data property that cannot be rewritten or removed.    |
+| `matchesField`     | function | Checks whether a value has the shape required by one field control.             |
+| `matchesAnswer`    | function | Decides whether a raw binding value projects to an answered field.              |
+| `appliesRule`      | function | Checks whether a named rule applies to one field control.                       |
+| `evaluateField`    | function | Evaluates one field rule against its current value.                             |
+| `evaluateForm`     | function | Evaluates every active field in schema order.                                   |
+| `computeDefaults`  | function | Computes the values explicitly seeded by a schema.                              |
+| `matchesValue`     | function | Compares two field values by scalar identity or ordered list content.           |
+| `extractChanges`   | function | Extracts the names whose answers differ between two form value records.         |
+| `matchesValues`    | function | Compares two form value records by keys and value content.                      |
+| `formatMessage`    | function | Resolves and interpolates one rule message.                                     |
+| `createFieldError` | function | Creates one named-rule failure against a field.                                 |
+| `serializeForm`    | function | Projects a schema into JSON while removing custom validators and absent values. |
+| `extractGroups`    | function | Selects referenced groups in first-reference field order.                       |
+| `auditSchema`      | function | Audits a structurally valid schema for domain invariants.                       |
 
 ### Cloners
 
@@ -184,23 +211,23 @@ Owned frozen snapshots. The form takes one of the schema at construction, so a l
 schema the caller passed changes nothing inside the form, and no list the form hands back is a live
 internal reference.
 
-| API               | Kind     | Summary                                                                                      |
-| ----------------- | -------- | -------------------------------------------------------------------------------------------- |
-| `cloneValue`      | function | One owned field value — a scalar unchanged, a list as a frozen copy.                         |
-| `cloneChoices`    | function | A field's choices owned as a frozen list of frozen choice records.                           |
-| `cloneFormField`  | function | One owned field, with its rule, its choices, its `meta`, and any list-valued default frozen. |
-| `cloneFormSchema` | function | A whole owned schema, with every nested group, field, rule, choice, and list frozen.         |
+| API               | Kind     | Summary                                                 |
+| ----------------- | -------- | ------------------------------------------------------- |
+| `cloneValue`      | function | Clones one form value into an owned frozen snapshot.    |
+| `cloneChoices`    | function | Clones a field's choices into an owned frozen snapshot. |
+| `cloneFormField`  | function | Clones one form field into an owned frozen snapshot.    |
+| `cloneFormSchema` | function | Clones a form schema into an owned frozen snapshot.     |
 
 ### Parsers
 
 The wire boundary. Each returns `undefined` on refusal rather than throwing, and each returns an
 owned value rather than the caller's.
 
-| API           | Kind     | Summary                                                                                                            |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------ |
-| `parseForm`   | function | Unknown wire data parsed into an owned, structurally valid, semantically sound schema; a `custom` rule is dropped. |
-| `parseValue`  | function | One answer parsed against its field's control, coercing a numeric string and `'true'` / `'false'`.                 |
-| `parseValues` | function | A strict answer record parsed against a schema — one unknown key or one refused value refuses the whole record.    |
+| API           | Kind     | Summary                                                                 |
+| ------------- | -------- | ----------------------------------------------------------------------- |
+| `parseForm`   | function | Parses unknown wire data into an owned, semantically sound form schema. |
+| `parseValue`  | function | Parses one answer against its field control.                            |
+| `parseValues` | function | Parses a strict answer record against the fields declared by a schema.  |
 
 ## Controls
 
@@ -224,22 +251,24 @@ a switch is a `confirm` — both are the same question wearing a different affor
 affordance to draw is the renderer's decision. A datalist is a `select` with `open`, which is
 exactly what "suggest these, accept anything" means.
 
-| Control    | Value               | Its own options              | Notes                                                          |
-| ---------- | ------------------- | ---------------------------- | -------------------------------------------------------------- |
-| `text`     | `string`            | `default`, `placeholder`     | Carries email and url as rules, and tel and search as neither. |
-| `editor`   | `string`            | `default`, `placeholder`     | Text over many lines.                                          |
-| `password` | `string`            | `mask`                       | No `default`: a seeded secret is a secret written down.        |
-| `number`   | `number`            | `default`, `placeholder`     | Also carries a range, as `minimum` plus `maximum` plus `step`. |
-| `date`     | `string`            | `default`                    | `YYYY-MM-DD`.                                                  |
-| `time`     | `string`            | `default`                    | `HH:MM`, seconds optional.                                     |
-| `datetime` | `string`            | `default`                    | The browser's datetime-local, no zone.                         |
-| `color`    | `string`            | `default`                    | `#rrggbb`, six digits.                                         |
-| `confirm`  | `boolean`           | `default`                    | A lone browser checkbox, and a switch.                         |
-| `select`   | `string`            | `choices`, `default`, `open` | A radio group, and a datalist when `open` is true.             |
-| `checkbox` | `readonly string[]` | `choices`, `default`         | The multi-choice group.                                        |
-| `file`     | `readonly string[]` | `accept`, `multiple`         | Names only. Bytes never enter the document.                    |
+| Control    | Value               | Notes                                                          |
+| ---------- | ------------------- | -------------------------------------------------------------- |
+| `text`     | `string`            | Carries email and url as rules, and tel and search as neither. |
+| `editor`   | `string`            | Text over many lines.                                          |
+| `password` | `string`            | No `default`: a seeded secret is a secret written down.        |
+| `number`   | `number`            | Also carries a range, as `minimum` plus `maximum` plus `step`. |
+| `date`     | `string`            | `YYYY-MM-DD`.                                                  |
+| `time`     | `string`            | `HH:MM`, seconds optional.                                     |
+| `datetime` | `string`            | The browser's datetime-local, no zone.                         |
+| `color`    | `string`            | `#rrggbb`, six digits.                                         |
+| `confirm`  | `boolean`           | A lone browser checkbox, and a switch.                         |
+| `select`   | `string`            | A radio group, and a datalist when `open` is true.             |
+| `checkbox` | `readonly string[]` | The multi-choice group.                                        |
+| `file`     | `readonly string[]` | Names only. Bytes never enter the document.                    |
 
 ### text
+
+Declares a `TextField` carrying a placeholder and a required-and-email rule.
 
 ```ts
 import type { TextField } from '@orkestrel/form'
@@ -254,6 +283,8 @@ const email: TextField = {
 ```
 
 ### editor
+
+Declares an `EditorField` bounded by a maximum-length rule.
 
 ```ts
 import type { EditorField } from '@orkestrel/form'
@@ -301,6 +332,8 @@ const volume: NumberField = {
 
 ### date
 
+Declares a `DateField` bounded by a minimum and a maximum calendar date.
+
 ```ts
 import type { DateField } from '@orkestrel/form'
 
@@ -313,6 +346,8 @@ const start: DateField = {
 ```
 
 ### time
+
+Declares a `TimeField` with a default and a minimum-and-maximum time-of-day rule.
 
 ```ts
 import type { TimeField } from '@orkestrel/form'
@@ -328,6 +363,8 @@ const opens: TimeField = {
 
 ### datetime
 
+Declares a `DatetimeField` bounded by a minimum date and time.
+
 ```ts
 import type { DatetimeField } from '@orkestrel/form'
 
@@ -341,6 +378,8 @@ const slot: DatetimeField = {
 
 ### color
 
+Declares a `ColorField` seeded with a default six-digit color.
+
 ```ts
 import type { ColorField } from '@orkestrel/form'
 
@@ -353,6 +392,8 @@ const brand: ColorField = {
 ```
 
 ### confirm
+
+Declares a `ConfirmField` a submit refuses to pass until it is required and checked.
 
 ```ts
 import type { ConfirmField } from '@orkestrel/form'
@@ -781,10 +822,11 @@ others.
 
 Regular-expression time, a `custom` validator's own work, and the structural read at the parse door
 stay unbounded, each for its own reason. Regular-expression **time** is not bounded here, exactly as
-Contract 10 states: a source within `PATTERN_LIMIT` can still backtrack catastrophically, and
-evaluating an untrusted pattern spends the caller's thread. And `custom` is in-process code the
-schema's own author wrote, so it is trusted like any other function the host calls; it does not
-cross the wire, and nothing here limits what it does.
+the "Guards are total and parsers refuse" invariant under [Contract](#contract) states: a source
+within `PATTERN_LIMIT` can still backtrack catastrophically, and evaluating an untrusted pattern
+spends the caller's thread. And `custom` is in-process code the schema's own author wrote, so it is
+trusted like any other function the host calls; it does not cross the wire, and nothing here limits
+what it does.
 
 The structural **read** at the parse door is unbounded for a different reason, and refusing an
 over-budget schema is where it shows. The budgets bound what a schema may **retain**, and they bound
@@ -914,7 +956,8 @@ The pending request is private, unnamed state, so `FormStatus` gains no fourth m
 **There is no `check()`.** `errors` is computed at construction and after every mutation whose
 evaluation completes, and the `validate` event fires exactly when that list's content changes. If a
 custom validator throws mid-mutation, the throw escapes after earlier state changes and leaves the
-previous error list in place. Contract 4 states the exact partial-state boundary.
+previous error list in place. The "Errors are current after completed evaluation" invariant under
+[Contract](#contract) states the exact partial-state boundary.
 
 **`valid` and `dirty` are derived on read.** `valid` is true when `errors` is empty. `dirty` is true
 once the answers differ from `baseline`, the ones the form opened with. Neither is stored, so
@@ -1204,6 +1247,11 @@ form.submit()
 
 await parked // { name: 'Ada' }
 ```
+
+### Abandoning a parked answer
+
+Destroying a form before it settles rejects every parked `answer` with a `FormError` coded
+`ABANDONED`, which the parked task recovers through `isFormError`.
 
 ```ts
 import { createForm, isFormError } from '@orkestrel/form'
@@ -1509,9 +1557,11 @@ matchesValues({ topics: ['a'] }, { topics: ['a'] }) // true
 ## Methods
 
 The public methods of `FormInterface`, which the `Form` class implements exactly and adds nothing
-to. Its readonly data members — `emitter`, `schema`, `values`, `baseline`, `errors`, `touched`,
-`disabled`, `status`, `valid`, `dirty`, and `answer` — stay in the preceding `## Surface` rows and
-are not repeated here.
+to. Its readonly data members stay in the preceding `## Surface` rows, in the `Shape` cell before
+`plus`, and are not repeated here.
+
+A record of answers and a list of names are checked in full before anything moves, so a refused call
+changes nothing.
 
 Every other row in the Surface tables is a data shape, a union, a constant, a function, or an error
 class, so none of them carries a method table. `FieldValidator` is a callable function type with one
@@ -1519,19 +1569,19 @@ call signature and no named members.
 
 #### `FormInterface`
 
-| Method       | Returns                    | Behavior                                                                                                           |
-| ------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `field`      | `FormField` or `undefined` | Find one field by name; `undefined` when the schema declares no such name.                                         |
-| `fill`       | `void`                     | Answer one field, or several at once. Every answer is checked first, so a refused write changes nothing.           |
-| `touch`      | `void`                     | Record that somebody has visited a field.                                                                          |
-| `invalidate` | `void`                     | Fail a field from outside, for what the rules cannot see. It lasts until the field is filled or cleared.           |
-| `disable`    | `void`                     | Take every field, one field, or a list of fields out of the form. A list is checked before any of it moves.        |
-| `enable`     | `void`                     | Put every field, one field, or a list of fields back into the form, with any held invalidation.                    |
-| `submit`     | `FormResult`               | Check every answer and settle the form when they all pass; otherwise return the errors it checked when it decided. |
-| `clear`      | `void`                     | Return every answer to `baseline`, and the runtime disabled overlay to the schema's declarations.                  |
-| `destroy`    | `void`                     | Request teardown. Idempotent; an in-flight settlement can win before deferred teardown.                            |
+| Method       | Returns                    | Summary                                                            |
+| ------------ | -------------------------- | ------------------------------------------------------------------ |
+| `field`      | `FormField` or `undefined` | Finds one field by name.                                           |
+| `fill`       | `void`                     | Answers one field, or several at once.                             |
+| `touch`      | `void`                     | Records that somebody has visited a field.                         |
+| `invalidate` | `void`                     | Fails a field from outside, for what the rules cannot see.         |
+| `disable`    | `void`                     | Takes one field, several fields, or every field out of the form.   |
+| `enable`     | `void`                     | Puts one field, several fields, or every field back into the form. |
+| `submit`     | `FormResult`               | Checks every answer and settles the form when they all pass.       |
+| `clear`      | `void`                     | Returns every answer to the ones the form opened with.             |
+| `destroy`    | `void`                     | Tears the form down, abandoning it when it has not settled.        |
 
-### Errors
+## Errors
 
 `FormError` carries a machine-readable `code` and an optional structured `context`. Narrow a caught
 value with `isFormError` and branch on `code`; never match on message text. A custom validator's own
@@ -1707,8 +1757,11 @@ next change knows what it is reopening. `Layer` names who owns the concept, and 
 ## Tests
 
 - [`tests/guides.test.ts`](../tests/guides.test.ts) — the `## Surface` ↔ barrel bijection, the
-  `FormInterface` ↔ `Form` method bijection, and the preceding flagship fences executed against the
-  real source so a documented value that the code contradicts fails.
+  `FormInterface` ↔ `Form` method bijection, and the equality gate: every `Summary` cell against its
+  declaration's description paragraph, the titled `Open a form, answer it, and settle it` fence
+  against the `@example` block of that title (pinned so the titled pair cannot be retired silently),
+  and the README pitch against this guide's tagline. It also runs the preceding flagship fences
+  against the real source, so a documented value that the code contradicts fails.
 - [`tests/src/core/Form.test.ts`](../tests/src/core/Form.test.ts) — construction, state, `baseline`,
   `fill`, `touch`, `invalidate`, `disable`, `enable`, `submit`, `clear`, `destroy`, and the rule
   paths through the entity.
