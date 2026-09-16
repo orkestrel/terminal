@@ -14,7 +14,7 @@ import type { FieldError, FormInterface, FormResult, FormValues } from '@orkestr
 import { DEFAULT_PROMPT_TIMEOUT_MS } from './constants.js'
 import { TerminalError } from './errors.js'
 import { defaultTimer } from './helpers.js'
-import { attempt, isArray } from '@orkestrel/contract'
+import { attempt, isArray, isString } from '@orkestrel/contract'
 import { Emitter } from '@orkestrel/emitter'
 import { isFieldError, isFormError, serializeForm } from '@orkestrel/form'
 
@@ -186,7 +186,7 @@ export class Prompt implements PromptInterface {
 			const named = error.context?.field
 			return [
 				{
-					field: typeof named === 'string' ? named : this.#field(form, field),
+					field: isString(named) ? named : this.#field(form, field),
 					message: error.message,
 				},
 			]

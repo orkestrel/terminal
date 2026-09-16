@@ -21,6 +21,7 @@ import {
 	SUGGESTION_LEAD,
 	UNAVAILABLE_LEAD,
 } from './constants.js'
+import { isBoolean, isFunction, isNumber, isObject, isString } from '@orkestrel/contract'
 
 /**
  * Checks whether `value` is a usable {@link InputStreamInterface} — a record with callable `on` /
@@ -39,12 +40,11 @@ import {
  */
 export function isInputStream(value: unknown): value is InputStreamInterface {
 	return (
-		typeof value === 'object' &&
-		value !== null &&
+		isObject(value) &&
 		'on' in value &&
-		typeof value.on === 'function' &&
+		isFunction(value.on) &&
 		'off' in value &&
-		typeof value.off === 'function'
+		isFunction(value.off)
 	)
 }
 
@@ -61,12 +61,11 @@ export function isInputStream(value: unknown): value is InputStreamInterface {
  */
 export function isReadable(value: unknown): value is NodeJS.ReadableStream {
 	return (
-		typeof value === 'object' &&
-		value !== null &&
+		isObject(value) &&
 		'read' in value &&
-		typeof value.read === 'function' &&
+		isFunction(value.read) &&
 		'pipe' in value &&
-		typeof value.pipe === 'function'
+		isFunction(value.pipe)
 	)
 }
 
@@ -81,7 +80,7 @@ export function isReadable(value: unknown): value is NodeJS.ReadableStream {
  * @returns True if the stream is a TTY with `setRawMode`; false otherwise
  */
 export function supportsRawMode(input: InputStreamInterface): boolean {
-	return input.isTTY === true && typeof input.setRawMode === 'function'
+	return input.isTTY === true && isFunction(input.setRawMode)
 }
 
 /**
@@ -157,12 +156,12 @@ export function fieldToText(field: FormField): TextField {
 	const label = field.label ?? field.name
 	const hint = CONTROL_HINTS[field.control]
 	const seed = 'default' in field ? field.default : undefined
-	const text = typeof seed === 'number' ? String(seed) : seed
+	const text = isNumber(seed) ? String(seed) : seed
 	return {
 		control: 'text',
 		name: field.name,
 		label: hint === undefined ? label : `${label} ${hint}`,
-		...(typeof text === 'string' ? { default: text } : {}),
+		...(isString(text) ? { default: text } : {}),
 	}
 }
 
@@ -176,9 +175,9 @@ export function fieldToText(field: FormField): TextField {
  */
 export function valueToText(value: FieldValue | undefined): string {
 	if (value === undefined) return ''
-	if (typeof value === 'string') return value
-	if (typeof value === 'number') return String(value)
-	if (typeof value === 'boolean') return value ? 'yes' : 'no'
+	if (isString(value)) return value
+	if (isNumber(value)) return String(value)
+	if (isBoolean(value)) return value ? 'yes' : 'no'
 	return value.join(', ')
 }
 

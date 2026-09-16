@@ -1,4 +1,5 @@
 import type { TerminalErrorCode } from './types.js'
+import { isInstance } from '@orkestrel/contract'
 
 // `.claude/rules/typescript.md` § Errors and outcomes: a real error type, not a sentinel. Callers
 // branch on the machine-readable
@@ -59,5 +60,5 @@ export class TerminalError extends Error {
  * ```
  */
 export function isTerminalError(value: unknown): value is TerminalError {
-	return value instanceof TerminalError
+	return isInstance(value, TerminalError)
 }

@@ -34,7 +34,7 @@ import {
 	PROMPT_ROLES,
 	SEQUENCE_NAMES,
 } from './constants.js'
-import { isString } from '@orkestrel/contract'
+import { isError, isString } from '@orkestrel/contract'
 import { createStyler, freezeStyle, strip, stripControls } from '@orkestrel/console'
 
 // The PURE prompt core implementation — all EXPORTED, all pure, all unit-tested:
@@ -961,7 +961,7 @@ export function globalFetch(input: string, init?: FetchInit): Promise<Response> 
  * @returns True if the value is a host `Error` or `DOMException` named `AbortError`; false otherwise
  */
 export function isAbortError(error: unknown): boolean {
-	return (error instanceof DOMException || error instanceof Error) && error.name === 'AbortError'
+	return isError(error) && error.name === 'AbortError'
 }
 
 /**
