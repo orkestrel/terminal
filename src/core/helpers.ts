@@ -239,7 +239,8 @@ export function sanitizeSchema(schema: FormSchema): FormSchema {
 			case 'time':
 			case 'datetime':
 			case 'color':
-			case 'confirm': {
+			case 'confirm':
+			case 'list': {
 				fields.push({
 					...field,
 					...shared,

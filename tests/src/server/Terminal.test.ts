@@ -26,6 +26,9 @@ describe('Terminal', () => {
 				['y'],
 				[`${CSI}B`, RETURN],
 				[' ', `${CSI}B`, ' ', RETURN],
+				['ada@example.com', RETURN],
+				['grace@example.com', RETURN],
+				[RETURN],
 				['a.txt', RETURN],
 				['b.txt', RETURN],
 				[RETURN],
@@ -46,12 +49,13 @@ describe('Terminal', () => {
 			ready: true,
 			role: 'viewer',
 			scope: ['read', 'write'],
+			recipients: ['ada@example.com', 'grace@example.com'],
 			files: ['a.txt', 'b.txt'],
 			notes: 'first\nsecond',
 		})
 		expect(form.status).toBe('settled')
-		expect(tty.enters).toBe(14)
-		expect(tty.exits).toBe(14)
+		expect(tty.enters).toBe(17)
+		expect(tty.exits).toBe(17)
 		expect(tty.raw).toBe(false)
 		expect(tty.listeners()).toBe(0)
 		expect(rawOutput(tty)).not.toContain('s3cret')
@@ -213,6 +217,39 @@ describe('Terminal', () => {
 
 		expect(await terminal.ask(form)).toEqual({ files: ['one.txt', 'two.txt'] })
 		expect(tty.text()).toContain('One path per line, blank to finish')
+	})
+
+	it('collects list entries until a blank line and shows the entry cue and hint', async () => {
+		const tty = createFakeTTY({
+			scripts: [['ada@example.com', RETURN], ['grace@example.com', RETURN], [RETURN]],
+		})
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const form = createForm({
+			fields: [{ control: 'list', name: 'to', label: 'To', rule: { required: true, email: true } }],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ to: ['ada@example.com', 'grace@example.com'] })
+		expect(tty.text()).toContain('One entry per line, blank to finish')
+		expect(tty.text()).toContain('To (entry)')
+	})
+
+	it('re-asks a required list answered blank, and a list keeps its default for a blank answer', async () => {
+		const tty = createFakeTTY({
+			scripts: [[RETURN], [RETURN], ['ada@example.com', RETURN], [RETURN]],
+		})
+		const terminal = createTerminal({ input: tty.input, output: tty.output })
+		const form = createForm({
+			fields: [
+				{ control: 'list', name: 'to', label: 'To', rule: { required: true } },
+				{ control: 'list', name: 'cc', label: 'Cc', default: ['grace@example.com'] },
+			],
+		})
+
+		expect(await terminal.ask(form)).toEqual({
+			to: ['ada@example.com'],
+			cc: ['grace@example.com'],
+		})
+		expect(tty.text()).toContain('To: This field is required')
 	})
 
 	it('skips hidden and disabled fields, renders locked fields and groups, and submits held values', async () => {

@@ -1,5 +1,5 @@
 import type { PromptThemeOptions } from '@src/core'
-import type { CheckboxField, SelectField } from '@orkestrel/form'
+import type { CheckboxField, ListField, SelectField } from '@orkestrel/form'
 import type { Attribute } from '@orkestrel/console'
 import {
 	BACKSPACE,
@@ -49,7 +49,9 @@ import {
 	toggleIndex,
 } from '@src/core'
 import {
+	createHostilePattern,
 	createHostileSchema,
+	createHostileText,
 	createManualTimer,
 	createPendingForm,
 	feedReducer,
@@ -401,10 +403,44 @@ describe('schema sanitization', () => {
 		expect(requireValue(sanitized.fields[11], 'Missing sanitized file field')).toMatchObject({
 			accept: ['text/plain'],
 		})
+		expect(requireValue(sanitized.fields[12], 'Missing sanitized list field')).toMatchObject({
+			control: 'list',
+			label: 'List',
+			help: 'List help',
+		})
 		expect(requireValue(sanitized.fields[4], 'Missing sanitized date field').rule).toEqual(
 			requireValue(hostile.fields[4], 'Missing hostile date field').rule,
 		)
 		expect('meta' in requireValue(sanitized.fields[0], 'Missing sanitized text field')).toBe(false)
+	})
+
+	it('keeps a list field and sanitizes its label, help, and pattern source', () => {
+		const pattern = createHostilePattern('entry')
+		const list: ListField = {
+			control: 'list',
+			name: createHostileText('list'),
+			label: createHostileText('List'),
+			help: createHostileText('List help'),
+			default: [createHostileText('seed')],
+			rule: { pattern },
+			meta: { hostile: createHostileText('metadata') },
+		}
+		const sanitized = requireValue(
+			sanitizeSchema({ fields: [list] }).fields[0],
+			'The sanitizer dropped the list field',
+		)
+
+		// Negative control: the authored list really carries bytes the sanitizer must remove.
+		expect(list.label).not.toBe(sanitizeDisplayText(list.label ?? ''))
+		expect(pattern).not.toBe(sanitizeDisplayText(pattern))
+		expect(sanitized).toEqual({
+			control: 'list',
+			name: list.name,
+			label: 'List',
+			help: 'List help',
+			default: list.default,
+			rule: { pattern: 'entry' },
+		})
 	})
 
 	it('has a hostile negative control that distinguishes raw display text from its projection', () => {

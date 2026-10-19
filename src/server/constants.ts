@@ -60,11 +60,15 @@ export const CONTROL_HINTS: Readonly<Partial<Record<FieldControl, string>>> = Ob
 	time: '(HH:MM)',
 	datetime: '(YYYY-MM-DDTHH:MM)',
 	color: '(#rrggbb)',
+	list: '(entry)',
 	file: '(path)',
 })
 
 /** Holds the instruction a `file` field with `multiple` shows before its entries — one path per line, and a blank line ends the list. */
 export const FILE_HINT = 'One path per line, blank to finish'
+
+/** Holds the instruction a `list` field shows before its entries — one entry per line, and a blank line ends the list. */
+export const LIST_HINT = 'One entry per line, blank to finish'
 
 /**
  * Holds the lead on the line listing an open `select`'s offered values, which a typed answer can

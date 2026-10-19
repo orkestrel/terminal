@@ -191,6 +191,7 @@ export function createEveryControlSchema(): FormSchema {
 					{ value: 'write', label: 'Write' },
 				],
 			},
+			{ control: 'list', name: 'recipients', label: 'Recipients', rule: { email: true } },
 			{ control: 'file', name: 'files', label: 'Files', multiple: true },
 			{ control: 'editor', name: 'notes', label: 'Notes' },
 		],
@@ -305,6 +306,13 @@ export function createHostileSchema(): FormSchema {
 				name: hostile('file'),
 				label: hostile('File'),
 				accept: [hostile('text/plain')],
+			},
+			{
+				control: 'list',
+				name: hostile('list'),
+				label: hostile('List'),
+				help: hostile('List help'),
+				default: [hostile('entry')],
 			},
 		],
 	}

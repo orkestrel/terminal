@@ -11,6 +11,7 @@ import type {
 	ConfirmField,
 	EditorField,
 	FileField,
+	ListField,
 	PasswordField,
 	SelectField,
 } from '@orkestrel/form'
@@ -54,6 +55,7 @@ import {
 	FALLBACK_EDITOR_HINT,
 	FALLBACK_SELECT_HINT,
 	FILE_HINT,
+	LIST_HINT,
 	REFUSAL_MESSAGE,
 } from './constants.js'
 import {
@@ -85,11 +87,12 @@ import {
  * @remarks
  * See {@link TerminalInterface} for the driving contract. The walk itself:
  *
- * - **Controls and reducers.** `text`, `number`, `date`, `time`, `datetime`, `color`, and
- *   each `file` entry are read as one line of text through {@link fieldToText}, which appends that
- *   control's format cue to the label. `password`, `confirm`, `editor`, `select`, and `checkbox`
- *   each drive their own reducer. An open `select` is a suggestion list plus a typed line, because
- *   `open` means the answer need not come from the list.
+ * - **Controls and reducers.** `text`, `number`, `date`, `time`, `datetime`, `color`, each `list`
+ *   entry, and each `file` entry are read as one line of text through {@link fieldToText}, which
+ *   appends that control's format cue to the label; a `list` reads one entry per line until a blank
+ *   one and keeps its declared `default` when none is typed. `password`, `confirm`, `editor`,
+ *   `select`, and `checkbox` each drive their own reducer. An open `select` is a suggestion list
+ *   plus a typed line, because `open` means the answer need not come from the list.
  * - **The binding projects through `matchesAnswer`.** Every answer is filled as
  *   `fill(name, matchesAnswer(value) ? value : undefined)` after `parseValue` has coerced it to the
  *   control's own shape, so a bare return on a field with no default binds as absence and the
@@ -205,6 +208,7 @@ export class Terminal implements TerminalInterface {
 		if (field.control === 'editor') return this.#askEditor(form, field)
 		if (field.control === 'select') return this.#select(form, field)
 		if (field.control === 'checkbox') return this.#checkbox(form, field)
+		if (field.control === 'list') return this.#list(form, field)
 		if (field.control === 'file') return this.#file(form, field)
 		return this.#askText(form, field)
 	}
@@ -344,14 +348,31 @@ export class Terminal implements TerminalInterface {
 	 */
 	async #file(form: FormInterface, field: FileField): Promise<FieldValue | undefined> {
 		if (field.multiple === true) this.#output.write(`${this.#formatHint(FILE_HINT)}${NEWLINE}`)
-		const paths: string[] = []
+		const paths = await this.#collect(form, field, field.multiple === true)
+		return paths.length > 0 ? paths : undefined
+	}
+
+	/**
+	 * Reads free-text entries — one per line until a blank one. An answer with no entry keeps the
+	 * field's declared default, and with no default it is absence rather than an empty list, because
+	 * the reader answered a blank line and the form's own `required` rule decides what that means.
+	 */
+	async #list(form: FormInterface, field: ListField): Promise<FieldValue | undefined> {
+		this.#output.write(`${this.#formatHint(LIST_HINT)}${NEWLINE}`)
+		const entries = await this.#collect(form, field, true)
+		return entries.length > 0 ? entries : field.default
+	}
+
+	/** Reads one text line per entry until a blank one — or after the first, when `many` is false or the input has ended. */
+	async #collect(form: FormInterface, field: FormField, many: boolean): Promise<readonly string[]> {
+		const entries: string[] = []
 		for (;;) {
 			const entry = await this.#askText(form, field)
 			if (entry.length === 0) break
-			paths.push(entry)
-			if (field.multiple !== true || this.#ended) break
+			entries.push(entry)
+			if (!many || this.#ended) break
 		}
-		return paths.length > 0 ? paths : undefined
+		return entries
 	}
 
 	/** Names the choices a field shows but refuses, above the list the walk drives. */

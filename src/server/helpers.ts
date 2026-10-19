@@ -138,7 +138,7 @@ export function redrawPrefix(previousLines: number): string {
 /**
  * Projects any field the walk reads as a line of text into the {@link TextField} the text reducer
  * takes — `text` itself, and the controls a terminal has no widget for: `number`, `date`, `time`,
- * `datetime`, `color`, and one `file` entry. The label carries that control's format cue from
+ * `datetime`, `color`, one `list` entry, and one `file` entry. The label carries that control's format cue from
  * {@link CONTROL_HINTS}, and a declared `default` becomes the line a bare return submits. The
  * projection carries no rule, because the authoritative form still evaluates the answer this line
  * binds; it exists only so one reducer covers every one of them.

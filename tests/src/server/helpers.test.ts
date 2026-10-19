@@ -74,6 +74,7 @@ describe('field projections', () => {
 			{ control: 'time', name: 'time', label: 'Time', default: '12:30' },
 			{ control: 'datetime', name: 'datetime', label: 'Datetime', default: '2026-08-15T12:30' },
 			{ control: 'color', name: 'color', label: 'Color', default: '#112233' },
+			{ control: 'list', name: 'list', label: 'List', default: ['a@example.com'] },
 			{ control: 'file', name: 'file', label: 'File' },
 		]
 
@@ -89,6 +90,8 @@ describe('field projections', () => {
 				default: '2026-08-15T12:30',
 			},
 			{ control: 'text', name: 'color', label: 'Color (#rrggbb)', default: '#112233' },
+			// A list default is an array, so no single line can seed it: the walk applies it as the answer.
+			{ control: 'text', name: 'list', label: 'List (entry)' },
 			{ control: 'text', name: 'file', label: 'File (path)' },
 		])
 	})

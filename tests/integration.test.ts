@@ -210,12 +210,14 @@ describe('terminal end to end', () => {
 		prompt.park(form)
 
 		// The wire order matches `schema.fields`: text, editor, password, number, date, time,
-		// datetime, color, confirm, select, checkbox, file. Every field carries a default or accepts
-		// absence, so a blank return walks the whole form; the editor field needs its explicit finish.
+		// datetime, color, confirm, select, checkbox, file, list. Every field carries a default or
+		// accepts absence, so a blank return walks the whole form; the editor field needs its explicit
+		// finish.
 		const tty = createFakeTTY({
 			scripts: [
 				[RETURN],
 				[CTRL_D],
+				[RETURN],
 				[RETURN],
 				[RETURN],
 				[RETURN],
@@ -244,6 +246,7 @@ describe('terminal end to end', () => {
 			[hostile('confirm')]: false,
 			[hostile('select')]: hostile('one'),
 			[hostile('checkbox')]: [hostile('two')],
+			[hostile('list')]: [hostile('entry')],
 		})
 
 		// `text()` strips the terminal's OWN legitimate styling ANSI (color, cursor, bold), the byte

@@ -87,7 +87,7 @@ describe('PromptClient', () => {
 		)
 		expect(observed.label).toBe('Form')
 		expect(observed.help).toBe('Form help')
-		expect(observed.fields).toHaveLength(12)
+		expect(observed.fields).toHaveLength(schema.fields.length)
 		expect(observed.groups?.[0]).toEqual({
 			name: schema.groups?.[0]?.name,
 			label: 'Group',
@@ -107,6 +107,16 @@ describe('PromptClient', () => {
 		expect(observed.fields[9]).toMatchObject({
 			choices: [{ value: sourceSelect.choices[0]?.value, label: 'One', help: 'One help' }],
 			default: sourceSelect.default,
+		})
+		const sourceList = requireValue(schema.fields[12], 'Missing hostile list field')
+		if (sourceList.control !== 'list') {
+			throw new Error('The hostile schema fixture changed control order')
+		}
+		expect(observed.fields[12]).toMatchObject({
+			control: 'list',
+			label: 'List',
+			help: 'List help',
+			default: sourceList.default,
 		})
 		expect('meta' in requireValue(observed.fields[0], 'Missing observed text field')).toBe(false)
 		client.destroy()
