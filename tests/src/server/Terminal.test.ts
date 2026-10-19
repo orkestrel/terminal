@@ -252,6 +252,86 @@ describe('Terminal', () => {
 		expect(tty.text()).toContain('To: This field is required')
 	})
 
+	it('drains buffered list entries before asking the next field at EOF', async () => {
+		const input = createLineInput(['a', 'b', '', 'next'])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({
+			fields: [
+				{ control: 'list', name: 'tags' },
+				{ control: 'text', name: 'after' },
+			],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ tags: ['a', 'b'], after: 'next' })
+	})
+
+	it('accepts the exact required list minimum and maximum from buffered input at EOF', async () => {
+		const input = createLineInput(['a', 'b', ''])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({
+			fields: [{ control: 'list', name: 'tags', rule: { required: true, minimum: 2, maximum: 2 } }],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ tags: ['a', 'b'] })
+	})
+
+	it('drains buffered list entries until actual EOF without a blank terminator', async () => {
+		const input = createLineInput(['a', 'b'], false)
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({ fields: [{ control: 'list', name: 'tags' }] })
+
+		expect(await terminal.ask(form)).toEqual({ tags: ['a', 'b'] })
+	})
+
+	it('settles an optional list on empty EOF as an omitted answer', async () => {
+		const input = createLineInput([])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({ fields: [{ control: 'list', name: 'tags' }] })
+
+		expect(await terminal.ask(form)).toEqual({})
+	})
+
+	it('drains buffered multiple file paths before asking the next field at EOF', async () => {
+		const input = createLineInput(['one.txt', 'two.txt', '', 'next'])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({
+			fields: [
+				{ control: 'file', name: 'files', multiple: true },
+				{ control: 'text', name: 'after' },
+			],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ files: ['one.txt', 'two.txt'], after: 'next' })
+	})
+
+	it('omits an optional list with no default when answered blank', async () => {
+		const input = createLineInput([''])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({ fields: [{ control: 'list', name: 'tags' }] })
+
+		expect(await terminal.ask(form)).toEqual({})
+	})
+
+	it('distinguishes an absent list default from an explicit empty default on blank answers', async () => {
+		const input = createLineInput(['', ''])
+		const output = createStreamTarget()
+		const terminal = createTerminal({ input, output: output.target })
+		const form = createForm({
+			fields: [
+				{ control: 'list', name: 'absent' },
+				{ control: 'list', name: 'empty', default: [] },
+			],
+		})
+
+		expect(await terminal.ask(form)).toEqual({ empty: [] })
+	})
+
 	it('skips hidden and disabled fields, renders locked fields and groups, and submits held values', async () => {
 		const tty = createFakeTTY({ scripts: [['Ada', RETURN]] })
 		const terminal = createTerminal({ input: tty.input, output: tty.output })

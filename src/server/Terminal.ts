@@ -352,25 +352,21 @@ export class Terminal implements TerminalInterface {
 		return paths.length > 0 ? paths : undefined
 	}
 
-	/**
-	 * Reads free-text entries — one per line until a blank one. An answer with no entry keeps the
-	 * field's declared default, and with no default it is absence rather than an empty list, because
-	 * the reader answered a blank line and the form's own `required` rule decides what that means.
-	 */
+	// A blank list keeps its declared default or absence so the form's own `required` rule decides.
 	async #list(form: FormInterface, field: ListField): Promise<FieldValue | undefined> {
 		this.#output.write(`${this.#formatHint(LIST_HINT)}${NEWLINE}`)
 		const entries = await this.#collect(form, field, true)
 		return entries.length > 0 ? entries : field.default
 	}
 
-	/** Reads one text line per entry until a blank one — or after the first, when `many` is false or the input has ended. */
+	// Let the text reader drain buffered entries before treating EOF as a blank terminator.
 	async #collect(form: FormInterface, field: FormField, many: boolean): Promise<readonly string[]> {
 		const entries: string[] = []
 		for (;;) {
 			const entry = await this.#askText(form, field)
 			if (entry.length === 0) break
 			entries.push(entry)
-			if (!many || this.#ended) break
+			if (!many) break
 		}
 		return entries
 	}
