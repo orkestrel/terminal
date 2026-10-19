@@ -2,15 +2,15 @@
 
 > The environment-agnostic form document: a `FormSchema` stating what is asked, a `Form` holding
 > the answers given against it, declarative `FieldRule` data stating what those answers must
-> satisfy, and one submit that settles the form exactly once.
+> satisfy, acknowledged editing, and a terminal submit that settles the form exactly once.
 
-**A terminal prompt and a browser form are the same abstraction.** Both ask a person a set of
-questions, hold partial answers, check them against rules, and finish once. What differs is the
-host, and each host contributes the one part it owns. Parking is the server environment's
+Terminal prompts and editable forms share questions, answers, and validation. An editable form
+prepares a snapshot and accepts an acknowledgement while further edits remain possible. A terminal
+form settles through `submit`. Each host contributes the part it owns. Parking is the server environment's
 contribution: `answer` is a form whose result nobody has resolved yet, so a server can hand the
 document out, wait, and receive the answers back through the same promise a local caller awaits.
-Rendering is the browser's contribution, and it lives in the browser, not here. Nothing here
-renders, reads a keyboard, or opens a socket. This package ships the document both hosts share.
+Rendering belongs to the browser entry. The core never reads a keyboard or opens a socket;
+the browser binding projects that same document into native controls.
 
 The core is pure and total. Every guard returns `false` off-shape rather than throwing, every parser
 returns `undefined` on refusal, and every value the form hands back is a frozen owned copy.
@@ -19,9 +19,9 @@ throw escapes the mutation call unchanged.
 
 ## Surface
 
-Everything in this guide is exported from `@orkestrel/form` ([`src/core`](../src/core)). Nothing is
-internal: every declaration in the module is reachable from the barrel, so a consumer holds exactly
-the mechanisms the package uses on itself.
+The document exports come from `@orkestrel/form` ([`src/core`](../src/core)); the native binding
+exports come from `@orkestrel/form/browser` ([`src/browser`](../src/browser)). Every declaration
+is reachable through its environment's barrel.
 
 ### Open a form, answer it, and settle it
 
@@ -54,26 +54,27 @@ optional member and `plus` introducing its call-signature members, and a type al
 literal with a union's arms escaped as `\|`. An extended interface's name comes before `plus`,
 with the members it adds after.
 
-| API             | Kind      | Shape                                                                                                                                                                            | Summary                                                                                       |
-| --------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `FormSchema`    | interface | `{ name?, label?, help?, groups?, fields }`                                                                                                                                      | Describes everything a form asks.                                                             |
-| `FormGroup`     | interface | `{ name, label, help? }`                                                                                                                                                         | Represents a named section of a form.                                                         |
-| `FormField`     | type      | `TextField \| EditorField \| PasswordField \| NumberField \| DateField \| TimeField \| DatetimeField \| ColorField \| ConfirmField \| SelectField \| CheckboxField \| FileField` | Represents any field a schema can declare.                                                    |
-| `FieldBase`     | interface | `{ name, label?, help?, group?, hidden?, disabled?, locked?, rule?, meta? }`                                                                                                     | Declares what every field carries, whatever its control.                                      |
-| `FieldControl`  | type      | `'text' \| 'editor' \| 'password' \| 'number' \| 'date' \| 'time' \| 'datetime' \| 'color' \| 'confirm' \| 'select' \| 'checkbox' \| 'file'`                                     | Names the control a field presents to the person answering it.                                |
-| `FieldChoice`   | interface | `{ value, label, help?, disabled? }`                                                                                                                                             | Represents one option a `select` or `checkbox` field offers.                                  |
-| `TextField`     | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents a single line of text.                                                             |
-| `EditorField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents text over many lines.                                                              |
-| `PasswordField` | interface | `FieldBase plus { control, mask? }`                                                                                                                                              | Represents a secret, obscured as it is typed.                                                 |
-| `NumberField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                             | Represents a number.                                                                          |
-| `DateField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a calendar date, held as the control's own `YYYY-MM-DD` string.                    |
-| `TimeField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a time of day, held as the control's own `HH:MM` string, with seconds optional.    |
-| `DatetimeField` | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a date and a time of day together, with no zone, held as the control's own string. |
-| `ColorField`    | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a color, held as the control's own six-digit `#rrggbb` string.                     |
-| `ConfirmField`  | interface | `FieldBase plus { control, default? }`                                                                                                                                           | Represents a single on/off box, holding a boolean.                                            |
-| `SelectField`   | interface | `FieldBase plus { control, choices, default?, open? }`                                                                                                                           | Represents one choice out of a list.                                                          |
-| `CheckboxField` | interface | `FieldBase plus { control, choices, default? }`                                                                                                                                  | Represents any number of choices out of a list, holding the checked values.                   |
-| `FileField`     | interface | `FieldBase plus { control, accept?, multiple? }`                                                                                                                                 | Represents one or more files, by name.                                                        |
+| API             | Kind      | Shape                                                                                                                                                                                         | Summary                                                                                       |
+| --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `FormSchema`    | interface | `{ name?, label?, help?, groups?, fields }`                                                                                                                                                   | Describes everything a form asks.                                                             |
+| `FormGroup`     | interface | `{ name, label, help? }`                                                                                                                                                                      | Represents a named section of a form.                                                         |
+| `FormField`     | type      | `TextField \| EditorField \| PasswordField \| NumberField \| DateField \| TimeField \| DatetimeField \| ColorField \| ConfirmField \| SelectField \| CheckboxField \| ListField \| FileField` | Represents any field a schema can declare.                                                    |
+| `FieldBase`     | interface | `{ name, label?, help?, group?, hidden?, disabled?, locked?, rule?, meta? }`                                                                                                                  | Declares what every field carries, whatever its control.                                      |
+| `FieldControl`  | type      | `'text' \| 'editor' \| 'password' \| 'number' \| 'date' \| 'time' \| 'datetime' \| 'color' \| 'confirm' \| 'select' \| 'checkbox' \| 'list' \| 'file'`                                        | Names the control a field presents to the person answering it.                                |
+| `FieldChoice`   | interface | `{ value, label, help?, disabled? }`                                                                                                                                                          | Represents one option a `select` or `checkbox` field offers.                                  |
+| `TextField`     | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                                          | Represents a single line of text.                                                             |
+| `EditorField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                                          | Represents text over many lines.                                                              |
+| `PasswordField` | interface | `FieldBase plus { control, mask? }`                                                                                                                                                           | Represents a secret, obscured as it is typed.                                                 |
+| `NumberField`   | interface | `FieldBase plus { control, default?, placeholder? }`                                                                                                                                          | Represents a number.                                                                          |
+| `DateField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents a calendar date, held as the control's own `YYYY-MM-DD` string.                    |
+| `TimeField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents a time of day, held as the control's own `HH:MM` string, with seconds optional.    |
+| `DatetimeField` | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents a date and a time of day together, with no zone, held as the control's own string. |
+| `ColorField`    | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents a color, held as the control's own six-digit `#rrggbb` string.                     |
+| `ConfirmField`  | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents a single on/off box, holding a boolean.                                            |
+| `SelectField`   | interface | `FieldBase plus { control, choices, default?, open? }`                                                                                                                                        | Represents one choice out of a list.                                                          |
+| `CheckboxField` | interface | `FieldBase plus { control, choices, default? }`                                                                                                                                               | Represents any number of choices out of a list, holding the checked values.                   |
+| `ListField`     | interface | `FieldBase plus { control, default? }`                                                                                                                                                        | Represents an ordered list of free-text strings.                                              |
+| `FileField`     | interface | `FieldBase plus { control, accept?, multiple? }`                                                                                                                                              | Represents one or more files, by name.                                                        |
 
 ### Answers and rules
 
@@ -103,18 +104,20 @@ literal with a union's arms escaped as `\|`. A function row's `Shape` cell holds
 and a guard row's the type it narrows to. A class row's `Shape` cell holds the interface it
 implements, or its constructor signature where it implements none.
 
-| API             | Kind      | Shape                                                                                                                                                                         | Summary                                                                                                            |
-| --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Form`          | class     | `FormInterface`                                                                                                                                                               | Implements `FormInterface` exactly, over an owned schema, the answers given against it, and the errors they carry. |
-| `FormInterface` | interface | `{ emitter, schema, values, baseline, errors, touched, disabled, status, valid, dirty, answer } plus field, fill, touch, invalidate, disable, enable, submit, clear, destroy` | Declares the contract a form exposes: the state it holds and the calls that move it.                               |
-| `createForm`    | function  | `(schema: FormSchema, options?: FormOptions) => FormInterface`                                                                                                                | Opens a form against a schema.                                                                                     |
-| `FormOptions`   | interface | `{ on?, error?, values?, messages? }`                                                                                                                                         | Describes how to open a form.                                                                                      |
-| `FormStatus`    | type      | `'editing' \| 'settled' \| 'abandoned'`                                                                                                                                       | Represents where a form sits in its life.                                                                          |
-| `FormResult`    | type      | `Result<FormValues, readonly FieldError[]>`                                                                                                                                   | Reports what a submit answers with: the values, or every error that stopped them.                                  |
-| `FormEventMap`  | type      | `{ fill, validate, disable, enable, submit, clear, abandon }`                                                                                                                 | Lists everything a form announces.                                                                                 |
-| `FormError`     | class     | `new (code: FormErrorCode, message: string, context?: JSONRecord) => FormError`                                                                                               | Represents an error raised by the form domain.                                                                     |
-| `FormErrorCode` | type      | `'SCHEMA' \| 'FIELD' \| 'CONTROL' \| 'SETTLED' \| 'ABANDONED'`                                                                                                                | Names the machine-readable code a form error carries.                                                              |
-| `isFormError`   | function  | `FormError`                                                                                                                                                                   | Determines whether an unknown value is a form error.                                                               |
+| API                     | Kind      | Shape                                                                                                                                                                                                          | Summary                                                                                                            |
+| ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Form`                  | class     | `FormInterface`                                                                                                                                                                                                | Implements `FormInterface` exactly, over an owned schema, the answers given against it, and the errors they carry. |
+| `FormInterface`         | interface | `{ emitter, schema, values, baseline, pending, errors, touched, disabled, status, valid, dirty, answer } plus field, fill, touch, invalidate, disable, enable, submit, prepare, accept, abort, clear, destroy` | Declares the contract a form exposes: the state it holds and the calls that move it.                               |
+| `createForm`            | function  | `(schema: FormSchema, options?: FormOptions) => FormInterface`                                                                                                                                                 | Opens a form against a schema.                                                                                     |
+| `FormOptions`           | interface | `{ on?, error?, values?, messages? }`                                                                                                                                                                          | Describes how to open a form.                                                                                      |
+| `FormStatus`            | type      | `'editing' \| 'settled' \| 'abandoned'`                                                                                                                                                                        | Represents where a form sits in its life.                                                                          |
+| `FormResult`            | type      | `Result<FormValues, readonly FieldError[]>`                                                                                                                                                                    | Reports what a submit answers with: the values, or every error that stopped them.                                  |
+| `FormSubmission`        | interface | `{ values, signal }`                                                                                                                                                                                           | Carries an owned, frozen answer snapshot and the signal for its pending acknowledgement.                           |
+| `FormPreparationResult` | type      | `Result<FormSubmission, readonly FieldError[]>`                                                                                                                                                                | Reports a prepared submission, or every error that prevented its preparation.                                      |
+| `FormEventMap`          | type      | `{ fill, touch, validate, disable, enable, submit, prepare, accept, abort, clear, abandon }`                                                                                                                   | Lists everything a form announces.                                                                                 |
+| `FormError`             | class     | `new (code: FormErrorCode, message: string, context?: JSONRecord) => FormError`                                                                                                                                | Represents an error raised by the form domain.                                                                     |
+| `FormErrorCode`         | type      | `'SCHEMA' \| 'FIELD' \| 'CONTROL' \| 'SETTLED' \| 'ABANDONED' \| 'PENDING'`                                                                                                                                    | Names the machine-readable code a form error carries.                                                              |
+| `isFormError`           | function  | `FormError`                                                                                                                                                                                                    | Determines whether an unknown value is a form error.                                                               |
 
 `FormInterface`'s readonly data members are the names in its `Shape` cell before `plus`, and they
 stay here rather than in `## Methods`; the call-signature members after `plus` are documented under
@@ -228,6 +231,47 @@ owned value rather than the caller's.
 | `parseForm`   | function | Parses unknown wire data into an owned, semantically sound form schema. |
 | `parseValue`  | function | Parses one answer against its field control.                            |
 | `parseValues` | function | Parses a strict answer record against the fields declared by a schema.  |
+
+### Native browser binding
+
+The browser entry publishes the controlled native form and its host readers.
+
+| Symbol                 | Kind      | Shape                                                                   | Summary                                                                                 |
+| ---------------------- | --------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `FormControl`          | type      | `HTMLInputElement` or `HTMLSelectElement` or `HTMLTextAreaElement`      | Represents a native answer control admitted by the binding.                             |
+| `FormBindingErrorCode` | type      | `'CONTROL'` or `'PENDING'` or `'DOM'`                                   | Names a native binding refusal.                                                         |
+| `FormBindingEventMap`  | type      | `{ render, write, submit, error }`                                      | Lists the native binding's notifications after their associated DOM effects.            |
+| `FormBindingOptions`   | interface | `{ feedback?, summary?, presentations?, defer?, on?, error? }`          | Configures neutral feedback destinations and isolated event listeners.                  |
+| `FormBindingInterface` | interface | `{ element, document, destroyed, emitter } plus read, refresh, destroy` | Declares a native form's borrowed document and synchronization lifecycle.               |
+| `FormBindingAttribute` | interface | `{ original, value }`                                                   | Records an attribute's authored value and the binding's last contribution.              |
+| `FormBindingValidity`  | interface | `{ original, value }`                                                   | Records the binding's custom-validity contribution beside the authored message.         |
+| `FormBinding`          | class     | `FormBindingInterface`                                                  | Implements a controlled native form over a borrowed document.                           |
+| `FormBindingError`     | class     | `{ code, context }`                                                     | Reports an incompatible control, overlapping submission, or native DOM failure.         |
+| `createFormBinding`    | function  | `(element, document, options?) => FormBindingInterface`                 | Creates a native form binding exposed through its lifecycle interface.                  |
+| `isFormBindingError`   | function  | `(value: unknown) => value is FormBindingError`                         | Checks whether a value is a native binding refusal.                                     |
+| `isFormControl`        | function  | `(value: unknown) => value is FormControl`                              | Checks whether a value is a native answer control.                                      |
+| `matchesFormControls`  | function  | `(field, controls) => boolean`                                          | Checks a native control population against a field's declared value shape.              |
+| `readNativeMessages`   | function  | `(control, errors) => readonly string[]`                                | Reads native constraint messages not already reported by document rules.                |
+| `readFormControls`     | function  | `(field, controls) => FieldValue or undefined`                          | Reads one compatible native population using the document's blank-to-absence semantics. |
+
+The standalone reader uses the same admission rules as the binding.
+
+```ts
+import {
+	FormBindingError,
+	isFormBindingError,
+	isFormControl,
+	matchesFormControls,
+	readFormControls,
+} from '@orkestrel/form/browser'
+
+const input = document.createElement('input')
+input.value = 'Ada'
+isFormControl(input) // true
+matchesFormControls({ control: 'text', name: 'name' }, [input]) // true
+readFormControls({ control: 'text', name: 'name' }, [input]) // 'Ada'
+isFormBindingError(new FormBindingError('CONTROL', 'Duplicate controls')) // true
+```
 
 ## Controls
 
@@ -453,6 +497,41 @@ const topics: CheckboxField = {
 }
 ```
 
+### list
+
+`ListField` holds an ordered array of free-text strings, including duplicates. `required` rejects
+absence and an empty array. `minimum` and `maximum` are nonnegative integer entry counts; the
+minimum cannot exceed `LIST_LIMIT`, and a required list cannot have a zero maximum. String rules
+check each entry. Their messages prefix the failing value, quoted with JSON escaping, and retain
+the rule name for native-message deduplication. Failures appear in rule order, then entry order.
+`custom` runs once against the whole array, after the named rules.
+
+Declare a recipient list with an email constraint.
+
+```ts
+import type { ListField } from '@orkestrel/form'
+
+const to: ListField = {
+	control: 'list',
+	name: 'to',
+	label: 'To',
+	rule: { required: true, maximum: 50, email: true },
+}
+```
+
+A browser list binds to one native `select multiple`. The page can add and remove options and
+dispatch native input or change events to import the selection. Document fills create missing
+options and order selected options to match the array, preserving repeated values. Disabled options
+and options in disabled groups do not contribute an answer. Each selected enabled value posts under
+the select's name in FormData. The closed `checkbox` field retains its declared vocabulary.
+
+Native reset restores the list's options, optgroups, and selection captured before its first
+projection, including authored options the page removed. It imports that restored selection into
+the document after clearing touch and pending work. For lists this is the authored selection even
+after acknowledgement; it can therefore differ from the acknowledged baseline and leave `dirty`
+true. A direct document `clear()` retains its baseline semantics. Other fields retain their
+acknowledged-reset behavior. Destroying the binding retains the live options and selections.
+
 ### file
 
 A file value is a list of names. `multiple` admits more than one, and without it a second name is
@@ -542,8 +621,10 @@ Object.getPrototypeOf(form.field('email')?.meta ?? {}) // null
 
 A renderer picks an affordance from what a field asks a person for, not from the name its control
 carries. The categories that decision is made in are the portable ones the `enterprise-bootstrap`
-skill catalogs in its `references/inputs.md` file, which every scaffold target carries at
-`.agents/skills/enterprise-bootstrap/references/inputs.md`. The category names in the
+skill catalogs in its `references/inputs.md` file. Resolve that skill through this repository's
+Scaffold pointer: `../scaffold/.agents/skills/enterprise-bootstrap/references/inputs.md` beside a
+checkout, otherwise `node_modules/@orkestrel/scaffold/dist/host/agents/skills/enterprise-bootstrap/references/inputs.md`.
+The category names in the
 table are that catalog's own, and a category name is the join key: read the row here, then open the
 section carrying that name there.
 
@@ -576,9 +657,8 @@ invents a control:
   admit a value the list does not offer. `choices` is data in the schema, so the search field, the
   ranking, and the menu belong to the renderer, and a list fetched while somebody types is the host
   building a new schema.
-- **An ordered set of tags** — `checkbox` over a fixed vocabulary, whose value keeps the order it
-  was filled in. Tags a person types freely are outside the document: `checkbox` admits a listed
-  value only, and no control holds a list of unlisted ones.
+- **An ordered set of tags** — `checkbox` over a fixed vocabulary, or `list` for free-text entries.
+  Both keep the order of the filled array; `list` also retains duplicates.
 - **A rating** — `select` over the fixed values, which is the radio group the catalog draws, or
   `number` with `minimum`, `maximum`, and `step` where the scale is continuous.
 - **A step in a sequence** — outside the document. A step indicator reports position rather than
@@ -590,18 +670,18 @@ A rule is data, not a closure. That is what lets a schema cross a wire and valid
 side exactly as it validated here — with the single exception of `custom`, which is a function and
 therefore does not travel.
 
-| Rule           | Operand          | What it measures                                                                                                                                  |
-| -------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `required`     | `true`           | That an answer exists at all. Presence only: `''`, `[]`, `false`, and `0` are answers and satisfy it.                                             |
-| `minimum`      | number or string | Characters for text, editor, and password; magnitude for number; chronology for `date`, `time`, and `datetime`; selections for checkbox and file. |
-| `maximum`      | number or string | The same measure as `minimum`, at the other end.                                                                                                  |
-| `step`         | number           | The interval a numeric value must land on, counted from `minimum` or from zero. Number only.                                                      |
-| `pattern`      | string           | Regular-expression source the whole value must match. String-valued controls only.                                                                |
-| `email`        | `true`           | That the whole value is an email address, per `EMAIL_PATTERN`.                                                                                    |
-| `url`          | `true`           | That the whole value is an absolute HTTP or HTTPS URL, per `URL_PATTERN`.                                                                         |
-| `integer`      | `true`           | That a number has no fractional part, or that a string is a base-ten integer.                                                                     |
-| `alphanumeric` | `true`           | That the whole value is ASCII letters and digits, per `ALPHANUMERIC_PATTERN`.                                                                     |
-| `custom`       | `FieldValidator` | Anything the rest cannot say. It runs last, on an absent value too, and it is the only rule that sees the rest of the form.                       |
+| Rule           | Operand          | What it measures                                                                                                                                         |
+| -------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `required`     | `true`           | Requires an entry for `list`; requires a present answer for other controls, including `''`, `[]`, `false`, and `0`.                                      |
+| `minimum`      | number or string | Characters for text, editor, and password; magnitude for number; chronology for `date`, `time`, and `datetime`; selections for checkbox, list, and file. |
+| `maximum`      | number or string | The same measure as `minimum`, at the other end.                                                                                                         |
+| `step`         | number           | The interval a numeric value must land on, counted from `minimum` or from zero. Number only.                                                             |
+| `pattern`      | string           | Regular-expression source the whole value must match. String-valued controls and each list entry.                                                        |
+| `email`        | `true`           | That the whole value or each list entry is an email address, per `EMAIL_PATTERN`.                                                                        |
+| `url`          | `true`           | That the whole value or each list entry is an absolute HTTP or HTTPS URL, per `URL_PATTERN`.                                                             |
+| `integer`      | `true`           | That a number has no fractional part, or that a string or each list entry is a base-ten integer.                                                         |
+| `alphanumeric` | `true`           | That the whole value or each list entry is ASCII letters and digits, per `ALPHANUMERIC_PATTERN`.                                                         |
+| `custom`       | `FieldValidator` | Anything the rest cannot say. It runs last, on an absent value too, and it is the only rule that sees the rest of the form.                              |
 
 The operand's type follows the control family. `minimum` and `maximum` take a number wherever the
 measure is a count or a magnitude, and take a string written in the control's own format wherever
@@ -635,9 +715,9 @@ formatMessage('required', undefined, { required: 'We need this one' }) // 'We ne
 ### How an answer is counted
 
 **`undefined` is the only absence.** A field is unanswered when `values` has no key for it, and
-answered otherwise. `''`, a string of spaces, `[]`, `false`, and `0` are all answers, so `required`
-is satisfied by every one of them. `required` asks whether an answer exists, never whether it says
-anything: a length rule is `minimum`, and a "must be ticked" rule is `custom`.
+answered otherwise. `''`, a string of spaces, `[]`, `false`, and `0` are all answers. `required`
+accepts every present answer except an empty `list`, which requires at least one entry. A length
+rule is `minimum`, and a "must be ticked" rule is `custom`.
 
 **This is not HTML's model, and the difference is deliberate.** A browser fails `required` on the
 exact empty string, so an empty text input is unanswered there and answered here. Neither model is
@@ -717,10 +797,8 @@ evaluateField(vat, undefined, { account: 'business' })
 evaluateField(vat, undefined, { account: 'personal' }) // []
 ```
 
-The same seam closes a list of addresses. `TextField` has no `multiple`, because that word already
-means a list of file names on `FileField` and one word cannot hold two value shapes. A field that
-takes several addresses is `text` plus a `custom` that splits the value and tests each part with the
-exported `EMAIL_PATTERN` — the same pattern the `email` rule uses, so the two agree by construction.
+Use a `list` with `email: true` for recipient arrays. A page retaining a comma-separated text field
+can still use `custom` to split and check that scalar value with `EMAIL_PATTERN`.
 
 ```ts
 import { evaluateField, EMAIL_PATTERN } from '@orkestrel/form'
@@ -866,7 +944,7 @@ group, a default its own control cannot hold, a rule on a control that cannot me
 above its maximum, an uncompilable pattern, or a breach of any named budget. It also reports the
 bounds no answer could satisfy: a required closed `select` with no enabled choice, a `checkbox` whose
 positive `minimum` exceeds its enabled-choice count, and a negative `maximum` on a control that
-measures a length or a count — `text`, `editor`, `password`, `checkbox`, or `file`. A required
+measures a length or a count — `text`, `editor`, `password`, `checkbox`, `list`, or `file`. A required
 `checkbox` alone remains satisfiable because `[]` is a present answer, `maximum: 0` on a `text` is
 satisfiable by `''`, and a negative `maximum` on a `number` is an ordinary value bound.
 
@@ -945,7 +1023,8 @@ matchesField(when, '2026-13-01') // false — month 13 is not spelled correctly
 
 A form opens `editing`, turns `settled` on its first valid submit, and turns `abandoned` when it is
 destroyed before settling. Both end states are terminal, and every write to a form in either one is
-refused with a `FormError`. Every getter keeps answering afterwards.
+refused with a `FormError`. Callback-facing `accept`, `abort`, and receipt-aware `invalidate` return
+`false` for inactive receipts even after teardown. Every getter keeps answering afterwards.
 
 A destroy requested while a mutation batch is open records the request, refuses every subsequent
 write from that instant, and defers teardown until the outermost batch closes. The batch's own
@@ -960,7 +1039,7 @@ previous error list in place. The "Errors are current after completed evaluation
 [Contract](#contract) states the exact partial-state boundary.
 
 **`valid` and `dirty` are derived on read.** `valid` is true when `errors` is empty. `dirty` is true
-once the answers differ from `baseline`, the ones the form opened with. Neither is stored, so
+when the answers differ from `baseline`, the acknowledged answers. Neither is stored, so
 neither can drift.
 
 **`touched` is the fields somebody has visited.** It is what lets a renderer withhold an error until
@@ -1181,13 +1260,13 @@ written, so a refused write changes nothing. Passing `undefined` clears one fiel
 coupon already spent. One field holds one external failure, a second call replaces the first, and
 the failure lasts until that field is filled again or the form is cleared.
 
-`baseline` is those opening answers, held as a value: the schema's defaults overlaid with any seeded
-`values`, fixed when the form opens and never moved again. It is what `dirty` measures against and
-what `clear` returns to, so a host that wants to know _which_ answers moved — not merely that one
-did — reads `extractChanges(form.values, form.baseline)` and gets the names.
+`baseline` starts with the schema's defaults overlaid with seeded `values`. Acceptance advances the
+captured enabled fields to their submitted values or absence. It is what `dirty` measures against
+and what `clear` returns to. Read `extractChanges(form.values, form.baseline)` for the changed names.
 
 `clear` returns every answer to `baseline`. It also clears `touched`, every external failure, and
-every runtime `disable` or `enable`, so the form reads exactly as it opened.
+every runtime `disable` or `enable`. Pending acknowledgement is aborted; the disabled state returns
+to the schema's declarations and the answers return to the acknowledged baseline.
 
 ```ts
 import { createForm, extractChanges } from '@orkestrel/form'
@@ -1204,7 +1283,7 @@ const form = createForm({
 	],
 })
 
-form.baseline // { plan: 'free' } — the answers it opened with, fixed for its whole life
+form.baseline // { plan: 'free' } — the opening answers until a submission is accepted
 
 form.fill('email', 'ada@example.com')
 form.valid // true
@@ -1307,7 +1386,10 @@ form holds now.
 itself settles it, and that settlement is what the outer call returns — one `submit` event, one
 resolved `answer`, and no evaluation after it.
 
-### Retrying a submit
+### Retrying terminal completion
+
+This sequence applies when the host intends to finish the document terminally. For repeated saves
+that leave the document editable, use [Prepare and acknowledge repeated saves](#prepare-and-acknowledge-repeated-saves).
 
 **`submit` is the commit, not the attempt.** It is the moment this document is finished with, which
 is why it settles the form and why nothing may be written afterwards. A network request that can be
@@ -1364,6 +1446,283 @@ form.submit().success // true
 form.status // 'settled'
 ```
 
+### Prepare and acknowledge repeated saves
+
+Use `prepare` for an editable form. It checks an owned snapshot of enabled fields and marks those
+fields touched. Failure returns the checked errors without a receipt. Success installs `pending`
+before emitting `prepare`, and leaves `status` at `editing` and `answer` unresolved. A pending
+receipt refuses another `prepare` or terminal `submit` with `PENDING`; ordinary editing continues.
+
+Pass the exact receipt to `accept` after persistence succeeds. Acceptance advances the baseline
+for its captured enabled names, including deleting an absent answer. Excluded fields retain their
+previous baseline. Live values, disabled state, touched fields, and errors stay intact. Receipt
+values and lists are owned and frozen; its native `signal` remains usable by a transport.
+
+This example acknowledges A after B was typed, then saves B:
+
+```ts
+import { createForm } from '@orkestrel/form'
+
+const form = createForm({ fields: [{ control: 'text', name: 'name', default: 'Opening' }] })
+form.fill('name', 'A')
+const first = form.prepare()
+if (first.success) {
+	form.fill('name', 'B')
+	form.accept(first.value) // true
+	form.baseline.name // 'A'
+	form.values.name // 'B'
+	form.dirty // true
+	first.value.signal.aborted // false
+}
+const second = form.prepare()
+if (second.success) form.accept(second.value) // true
+form.dirty // false
+form.status // 'editing'
+```
+
+On a refused save, apply field failures with `invalidate(name, message, receipt)` while the receipt
+is active, then call `abort(receipt)`. Ticketed invalidation returns `false` if the field was excluded
+or refilled after capture, including A-to-B-to-A edits and same-value refills. An unknown field
+still throws `FIELD`. Unticketed invalidation keeps its local behavior and returns `true`.
+
+Abort consumes the active identity before aborting its signal and emitting `abort`. It leaves the
+baseline and live values intact. A copied, foreign, consumed, or reset receipt returns `false` from
+completion methods without events. Successful acceptance leaves the signal un-aborted.
+
+The following refusal remains retryable:
+
+```ts
+import { createForm } from '@orkestrel/form'
+
+const form = createForm({ fields: [{ control: 'text', name: 'email' }] })
+form.fill('email', 'ada@example.com')
+const prepared = form.prepare()
+if (prepared.success) {
+	form.invalidate('email', 'Already registered', prepared.value) // true
+	form.abort(prepared.value) // true
+	prepared.value.signal.aborted // true
+	form.accept(prepared.value) // false
+}
+form.fill('email', 'grace@example.com')
+const retry = form.prepare()
+if (retry.success) form.accept(retry.value) // true
+form.dirty // false
+```
+
+Preparation refuses nested `prepare` and `submit` during validation. A failed check retains its
+checked errors even when an observer repairs them. A passing check drains observer edits through
+one further check, then keeps that check's snapshot even if its notifications produce later edits.
+The live errors retain those later mutations. A throwing validator produces no usable receipt and
+doesn't advance the baseline. A `prepare` observer may fill, invalidate, accept, abort, or destroy;
+the returned receipt still describes the prepared snapshot, so check `pending` before starting
+delayed work. Acceptance and abortion consume before notification, allowing a listener to prepare
+a successor without an older operation clearing it.
+
+`clear` aborts pending work, restores the acknowledged baseline, clears touch and external failures,
+and restores the schema's disabled declarations. If a listener clears while preparation is checking,
+that interrupted preparation throws `PENDING`. Destroy aborts pending work at the existing deferred
+outer-batch teardown boundary. Transport scheduling, retries, and persistence remain the caller's
+responsibility; use the receipt's signal where the transport supports cancellation.
+
+## Native binding
+
+The binding borrows one document. Construction paints its answers into controls, including controls
+associated through the native `form` attribute. Unknown names and submitters stay outside the schema.
+Missing controls keep their logical answers. Incompatible controls and duplicate scalar controls
+raise a `CONTROL` binding error before answers or native values change. Radio and checkbox groups
+are supported; a confirm field uses one checkbox. Native input and change events import answers,
+and focusout touches the field. Explicit `read()` and `refresh()` also rediscover membership.
+A mutation observer follows membership, association, and native constraint attributes without polling.
+During mutation-driven painting, a focused text input or textarea whose value changed since its last
+projection keeps that edit until the input event reads it. Explicit document fills and refreshes still
+project the document's answer. Replacement controls receive the document's value.
+
+### Bind an editable native form
+
+This executable browser example prepares a receipt, accepts its snapshot after another edit, and
+resets to the acknowledged answer. Its native composition is proved in
+[`tests/src/browser/integration.test.ts`](../tests/src/browser/integration.test.ts).
+
+```ts
+import { createForm } from '@orkestrel/form'
+import { createFormBinding } from '@orkestrel/form/browser'
+
+const element = document.createElement('form')
+element.innerHTML = '<input name="name"><button>Save</button>'
+document.body.append(element)
+const model = createForm({ fields: [{ name: 'name', control: 'text', default: 'Ada' }] })
+const binding = createFormBinding(element, model)
+const input = element.querySelector('input')
+if (input === null) throw new Error('Missing name control')
+input.value // 'Ada'
+input.value = 'Grace'
+binding.read()
+element.requestSubmit()
+const receipt = model.pending
+if (receipt === undefined) throw new Error('Submission refused')
+receipt.values.name // 'Grace'
+model.fill('name', 'Later edit')
+model.accept(receipt) // true
+model.dirty // true
+element.reset()
+input.value // 'Grace'
+model.dirty // false
+binding.refresh()
+binding.destroy()
+model.status // 'editing'
+model.destroy()
+element.remove()
+```
+
+The binding owns native `noValidate` during its lifetime. An admitted submit prevents navigation,
+imports controls, touches enabled fields, checks native validity, and prepares the document. Its
+`submit` event carries the active receipt and the native submitter, or `undefined` without one.
+A receipt consumed during a core prepare listener is never dispatched to persistence. The consumer
+alone persists, accepts, or aborts it. A duplicate submission raises the binding's `PENDING` domain
+error, creates no receipt, and leaves edits enabled. The form and submit actions carry `aria-busy`;
+their dimensions and enabled state stay native. A prevented submit or reset has no binding effect.
+An admitted reset calls the document's clear operation and prevents HTML default-value restoration.
+List controls then restore their captured authored options and selection as described under
+[List fields](#list).
+
+Neutral feedback uses owned spans carrying `data-form-feedback="field"`, each with a unique ID.
+Supply `feedback: new Map([['field', destination]])` to choose a parent; authored children remain.
+Otherwise the binding places the span after the field's last native control. Touched errors set
+`aria-invalid` and add the feedback ID to authored `aria-describedby` tokens. An optional `summary`
+destination receives an owned `ul[data-form-summary]`; its links focus eligible controls, and errors
+without reachable controls remain text. An invalid submission focuses the first eligible invalid
+control. The binding never invokes a native validity popup. A `render` event follows DOM effects,
+including effects triggered by core changes, so a presentation adapter can apply its own classes.
+
+Native and document validation remain distinct sources. A named rule's message replaces feedback
+for that native constraint. Required, bounds, length, step, pattern, email, and URL failures match
+by rule identity, never localized text. A lone uncovered failure keeps the platform's message.
+Competing native failures receive separate constraint-specific sentences, so an uncovered failure
+cannot repeat a covered rule's sentence. Authored custom validity retains its exact text, and bad
+input retains a failure message. Native step feedback does not assume a zero step base.
+Native validity still refuses preparation and never overwrites the document's external invalidation slot.
+Unchanged reads never refill a field, so application invalidations survive refresh and resubmission.
+The binding removes only its own custom-validity contribution, preserves authored custom errors,
+and withholds visual feedback until touch. Application changes to custom validity require an input
+event or explicit refresh because the platform emits no custom-validity mutation event.
+
+### Represent a native control
+
+The `write` event carries the native control after its projected value changes. Multiple-select
+options finish changing before the event. Unchanged values and metadata changes emit no `write`.
+Use the construction hook to observe initial projection, or subscribe through the binding's emitter
+for subsequent writes. A listener can refresh its presentation without dispatching input or change.
+
+Map a native control to its presenting focus target through `presentations`. Leaving that target
+touches the native field; moving focus from the native control to its presentation does not. The
+mapping also directs summary links, invalid-submit focus, and feedback attributes to the presenter.
+It stops participating when the native control leaves the form. The presenting input's text
+does not become the native control's answer. A component still owns its selection, popup, focus
+forwarding, and native validation bubble behavior.
+
+For a select presented by an input, pass the native select and the visible input when binding.
+
+```ts
+import { createFormBinding } from '@orkestrel/form/browser'
+
+const binding = createFormBinding(element, model, {
+	presentations: new Map([[select, input]]),
+	on: {
+		write: (control) => {
+			if (control === select) input.value = select.selectedOptions[0]?.textContent ?? ''
+		},
+	},
+})
+```
+
+### Bind Mail Compose recipients over Veneer Input tags
+
+Given a mounted Veneer `tags` instance, bind its native select and presenting input. The tags
+component commits free text with native input and change events. Initialize it before binding so
+the presenting input has no submitted name.
+
+```ts
+import { createForm } from '@orkestrel/form'
+import { createFormBinding } from '@orkestrel/form/browser'
+
+const select = tags.control
+const element = select.form
+if (element === null) throw new Error('Recipients require a form')
+const model = createForm({
+	fields: [
+		{
+			control: 'list',
+			name: select.name,
+			label: 'To',
+			default: Array.from(select.selectedOptions, (option) => option.value),
+			rule: { required: true, maximum: 50, email: true },
+		},
+	],
+})
+const binding = createFormBinding(element, model, {
+	presentations: new Map([[select, tags.input]]),
+	on: {
+		write: (control) => {
+			if (control === select) tags.refresh()
+		},
+		render: () => tags.refresh(),
+	},
+})
+```
+
+Read repeated recipients with `new FormData(element).getAll(select.name)`. On page teardown, destroy
+the binding before the tags component and the document. This replaces the closed-checkbox contact
+workaround and the scalar comma-splitting validator for recipient arrays.
+
+### Keep a footer press stable
+
+Set `defer: true` to hold blur-triggered touch while a primary pointer press on an enabled button
+associated with this form is active. This includes externally associated buttons and presses on
+their descendants. Touch resumes in a task after pointer release or cancellation, leaving the click
+sequence free of blur feedback that moves the button. Keyboard blur remains immediate; input reads
+and submission validation remain immediate. Reset and destruction discard deferred touch.
+
+Enable deferral where feedback can move an action under the pointer.
+
+```ts
+import { createFormBinding } from '@orkestrel/form/browser'
+
+const binding = createFormBinding(element, model, { defer: true })
+```
+
+### Native capability boundaries
+
+The browser admits text, search, email, URL, telephone, hidden, password, textarea, number, range,
+date, time, datetime-local, color, confirm, radio, single select, multiple select, checkbox groups,
+and file inputs. Blank strings become absence through the core's answer predicate; false, zero, and
+empty lists remain answers. A password field accepts both `password` and `text` inputs, so a reveal
+toggle retains discovery, validation, and summary links without mirroring the value.
+Numeric bad input remains a native error and never becomes NaN or a
+valid absent answer. Explicit refresh discards that unreadable native text and repaints the document's
+answer; ordinary input, touch, and submit keep the text available for correction. Native constraints
+still apply, including authored custom errors. Compatible
+required and numeric/temporal bounds are reflected when appropriate; presence-only required never
+becomes must-be-checked for confirm or must-be-nonempty for a list.
+
+Native disabled controls, including disabled fieldsets with their first-legend exception, exclude
+a mounted field when every control in its group is disabled. A partially disabled choice group reads
+its enabled controls. Declared and observable application disables retain their logical authority.
+The binding reverses only its own native exclusion. Repeating disable while the field is already
+excluded is the core's no-op; it does not acquire a second exclusion lease. A removed population
+releases the binding's exclusion and retains its answer. Locked values remain logically enabled;
+text-like controls become readonly, while selections repaint the document's answer on mutation.
+
+Files carry names in the document and bytes only in the native input. A mismatching document value
+clears the native selection; a nonempty saved filename never repopulates bytes. Explicit reading of
+an empty file picker imports an empty list. Display retained filenames separately when an application
+needs them, and keep upload transport outside the binding. Native range/color defaults and calendar
+sanitization also remain browser capabilities: a core value the browser cannot represent can display
+the native empty/default value, and a subsequent read imports that displayed answer.
+
+Destroy disconnects observation and listeners, removes owned feedback and summary nodes, restores
+owned attributes and validity, and releases binding-owned native exclusion. It retains control values
+and authored content, and leaves the document alive. Reads and refreshes after destroy do nothing.
+
 ## Events
 
 Each event carries what a listener needs to act without reading the form back.
@@ -1375,6 +1734,10 @@ Each event carries what a listener needs to act without reading the form back.
 | `disable`  | the field's `name`                    | Once per field taken out of the form, in schema order. A call that moves nothing announces nothing. A `clear` is the exception; see its row.                                                                                                                                                                   |
 | `enable`   | the field's `name`                    | Once per field put back into the form, in schema order. A call that moves nothing announces nothing. A `clear` is the exception; see its row.                                                                                                                                                                  |
 | `submit`   | the submitted `FormValues`            | On the submit that settles the form, and only that one.                                                                                                                                                                                                                                                        |
+| `touch`    | the field's `name`                    | On the first touch since clear, including fields touched by preparation or failed terminal submission.                                                                                                                                                                                                         |
+| `prepare`  | the `FormSubmission` receipt          | After installing the validated snapshot as pending.                                                                                                                                                                                                                                                            |
+| `accept`   | the `FormSubmission` receipt          | After adopting its captured enabled answers into baseline and consuming the pending identity.                                                                                                                                                                                                                  |
+| `abort`    | the `FormSubmission` receipt          | After consuming the pending identity and aborting its signal, including clear and destroy.                                                                                                                                                                                                                     |
 | `clear`    | nothing                               | On a completed `clear`, before any `validate` it caused. `clear` is the whole announcement of the reset: restored answers emit no `fill`, and the overlay reset emits no `disable` or `enable`. A custom-validator throw during reevaluation resets state but emits no `clear` and leaves the previous errors. |
 | `abandon`  | nothing                               | On the `destroy` that abandons an unsettled form. Never on a settled one.                                                                                                                                                                                                                                      |
 
@@ -1569,17 +1932,30 @@ call signature and no named members.
 
 #### `FormInterface`
 
-| Method       | Returns                    | Summary                                                            |
-| ------------ | -------------------------- | ------------------------------------------------------------------ |
-| `field`      | `FormField` or `undefined` | Finds one field by name.                                           |
-| `fill`       | `void`                     | Answers one field, or several at once.                             |
-| `touch`      | `void`                     | Records that somebody has visited a field.                         |
-| `invalidate` | `void`                     | Fails a field from outside, for what the rules cannot see.         |
-| `disable`    | `void`                     | Takes one field, several fields, or every field out of the form.   |
-| `enable`     | `void`                     | Puts one field, several fields, or every field back into the form. |
-| `submit`     | `FormResult`               | Checks every answer and settles the form when they all pass.       |
-| `clear`      | `void`                     | Returns every answer to the ones the form opened with.             |
-| `destroy`    | `void`                     | Tears the form down, abandoning it when it has not settled.        |
+| Method       | Returns                    | Summary                                                                                        |
+| ------------ | -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `field`      | `FormField` or `undefined` | Finds one field by name.                                                                       |
+| `fill`       | `void`                     | Answers one field, or several at once.                                                         |
+| `touch`      | `void`                     | Records that somebody has visited a field.                                                     |
+| `invalidate` | `boolean`                  | Fails a field from outside, for what the rules cannot see.                                     |
+| `disable`    | `void`                     | Takes one field, several fields, or every field out of the form.                               |
+| `enable`     | `void`                     | Puts one field, several fields, or every field back into the form.                             |
+| `submit`     | `FormResult`               | Checks every answer and settles the form when they all pass.                                   |
+| `prepare`    | `FormPreparationResult`    | Prepares an owned enabled snapshot for acknowledgement while leaving the form editable.        |
+| `accept`     | `boolean`                  | Adopts the active submission's captured answers into the baseline without changing live state. |
+| `abort`      | `boolean`                  | Consumes the active submission and aborts its signal without changing answers or baseline.     |
+| `clear`      | `void`                     | Returns every answer to its acknowledged baseline and aborts pending acknowledgement.          |
+| `destroy`    | `void`                     | Tears the form down, abandoning it when it has not settled.                                    |
+
+#### `FormBindingInterface`
+
+The native binding exposes only synchronization and teardown methods.
+
+| Method    | Returns | Summary                                                                   |
+| --------- | ------- | ------------------------------------------------------------------------- |
+| `read`    | `void`  | Imports mounted enabled controls without acknowledging their answers.     |
+| `refresh` | `void`  | Rediscovers controls and projects the document into the native form.      |
+| `destroy` | `void`  | Releases owned DOM effects and listeners without destroying the document. |
 
 ## Errors
 
@@ -1594,6 +1970,7 @@ throw is the caller's exception and escapes unchanged.
 | `CONTROL`   | A value written or seeded is one its field's control cannot hold.                                                                                                                                                                 |
 | `SETTLED`   | A write reached a form that has already settled.                                                                                                                                                                                  |
 | `ABANDONED` | A write reached a form that was destroyed before it settled, or `answer` rejected for that reason.                                                                                                                                |
+| `PENDING`   | Preparation or terminal submission overlaps preparation or an active receipt, or clear interrupts preparation.                                                                                                                    |
 
 ```ts
 import { createForm, isFormError } from '@orkestrel/form'
@@ -1658,7 +2035,7 @@ These invariants hold across [`src/core`](../src/core) and this guide.
    `validate` listener wrote during that submit, `errors` can already differ from it.
 5. **`valid` and `dirty` are derived.** Both are computed on read, from `errors` and from the
    answers against `baseline`, so neither can drift from what the form holds. `baseline` itself is
-   fixed when the form opens and never moves again.
+   advances only for enabled names captured by an accepted submission. Later edits remain dirty.
 6. **A write is all-or-nothing.** `fill` checks every answer against its control before writing any,
    and `disable` and `enable` check every name against the schema before any field moves, so a
    `FIELD` or `CONTROL` failure leaves the form exactly as it was.
@@ -1671,7 +2048,8 @@ These invariants hold across [`src/core`](../src/core) and this guide.
    listener is that one settlement: the outer call returns it, `submit` still fires once, and nothing
    is evaluated after it.
 8. **`undefined` is the only absence.** A field is unanswered when `values` holds no key for it, and
-   answered otherwise, so `''`, whitespace, `[]`, `false`, and `0` all satisfy `required`. This is
+   answered otherwise. `required` accepts `''`, whitespace, `false`, and `0`; an empty `[]` passes
+   for `checkbox` and `file`, while `list` requires an entry. This is
    not HTML's model, which fails `required` on the exact empty string. A binding that wants HTML's
    answer projects at the binding — `fill(name, matchesAnswer(raw) ? raw : undefined)` — and core
    evaluation never applies that projection itself.
@@ -1738,12 +2116,12 @@ next change knows what it is reopening. `Layer` names who owns the concept, and 
 | Warnings and first-error-only modes    | host          | Every failure is an error and `errors` carries all of them in order. A severity axis, or a switch that reports only the first, is display policy applied over that list.                                                                                                              |
 | Server-error bags                      | host          | A map of field names to server messages is a loop over `invalidate`, which already holds one external failure per field and drops it when the field is refilled.                                                                                                                      |
 | Form-level validators                  | seam          | A rule about the form as a whole. `custom` already reads every answer, so the same check runs today attached to the field it would fail.                                                                                                                                              |
-| Address lists                          | seam          | `TextField` has no `multiple`: that word already means a list of file names on `FileField`, and one word cannot carry two value shapes. Several addresses is `custom` plus the exported `EMAIL_PATTERN`.                                                                              |
+| Address lists                          | seam          | `ListField` holds free-text arrays; its `email` rule checks every address and names failures.                                                                                                                                                                                         |
 | Group-level disable                    | seam          | `disable` takes no group argument. A host expands a group from the schema in one line, and a second way to name the same set is a second thing to keep consistent.                                                                                                                    |
 | Computed fields                        | host          | A field deriving its value from siblings would be a second writer of `values` and could disagree with `fill`. The host computes and fills, so one writer stays one writer.                                                                                                            |
 | Async and live choices                 | host          | `choices` is data in the schema. A list fetched or filtered while somebody types is the host building a new schema, which `parseForm` audits for it.                                                                                                                                  |
 | Drafts and autosave                    | host          | `values` is readable at any moment and `parseValues` reads a stored record back, so persistence is a host loop over `values` and `parseValues` with the host's own storage and cadence.                                                                                               |
-| Undo and history                       | host          | The form holds the answers and `baseline` holds the ones it opened with. A stack of everything in between is a host concern with a host's retention policy.                                                                                                                           |
+| Undo and history                       | host          | The form holds live answers and `baseline` holds acknowledged answers. A history stack and its retention policy belong to the host.                                                                                                                                                   |
 | Schema migration                       | host          | Versioning a stored schema and moving old answers onto a new one is the host's data problem. `parseForm` and `parseValues` are the gates on each side of it.                                                                                                                          |
 | Trim and normalize                     | binding       | The form stores what it is given. Trimming, case folding, and Unicode normalization belong to the binding, and `matchesAnswer` is where a value that is blank after trimming becomes absence.                                                                                         |
 | Localization                           | host          | `FormOptions.messages` replaces a rule's copy, and `label` and `help` are the schema author's strings. Locale selection, plurals, and message catalogs are the host's.                                                                                                                |
@@ -1751,10 +2129,18 @@ next change knows what it is reopening. `Layer` names who owns the concept, and 
 | Group and choice `meta`                | out           | `meta` is on `FieldBase` alone, because a field carrier is what the first consumer asked for. The exact guards refuse it on `FormGroup` and `FieldChoice` until one asks.                                                                                                             |
 | Constraint-API binding                 | `src/browser` | Reflecting `required` and `minimum` onto real elements, and reading `validity` back, is binding work. It belongs where the elements are.                                                                                                                                              |
 | `FormData` and duplicate names         | `src/browser` | Several values under one name, the submitter button, and the `FormData` encoding are host wire formats. `FormValues` holds one answer per field name by design.                                                                                                                       |
-| Browser binding                        | `src/browser` | Binding a schema to real elements belongs in a future `src/browser`, taking a form and an element. It is not in this round because nothing renders here yet.                                                                                                                          |
+| Browser binding                        | `src/browser` | The native binding projects an existing document, admits native submission and reset, and owns neutral validation feedback. Applications retain persistence and navigation policy.                                                                                                    |
 | Terminal adoption                      | terminal      | A terminal driver parking a whole form rather than one prompt belongs in the terminal package, on the same `answer` promise this document already exposes.                                                                                                                            |
 
 ## Tests
+
+- [`tests/src/browser/FormBinding.test.ts`](../tests/src/browser/FormBinding.test.ts) covers native
+  ownership, events, disabled state, feedback, focus, pending refusal, and reentrant teardown.
+- [`tests/src/browser/helpers.test.ts`](../tests/src/browser/helpers.test.ts) covers the native control
+  population and file-name boundary; [`tests/src/browser/validators.test.ts`](../tests/src/browser/validators.test.ts)
+  covers total native guards.
+- [`tests/src/browser/integration.test.ts`](../tests/src/browser/integration.test.ts) executes the
+  native guide example and a real keyboard/click editing and acknowledgement flow.
 
 - [`tests/guides.test.ts`](../tests/guides.test.ts) — the `## Surface` ↔ barrel bijection, the
   `FormInterface` ↔ `Form` method bijection, and the equality gate: every `Summary` cell against its
