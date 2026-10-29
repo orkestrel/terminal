@@ -164,7 +164,7 @@ A `Shape` cell holds the constant's declared type.
 ### Guards
 
 Total `is*` guards over unknown input. None throws, none coerces, and each returns `false` for
-anything off-shape — including a hostile prototype, a symbol key, or a cyclic value. `isFieldValue`
+anything off-shape — including an unexpected prototype, a symbol key, or a cyclic value. `isFieldValue`
 also refuses a number that is not finite, so `NaN` and `Infinity` are not field values, and
 `isFormSchema` reads structure alone: domain soundness is `auditSchema`'s question.
 
@@ -778,7 +778,7 @@ evaluateField(again, 'hunter3', { password: 'hunter2' })
 // [{ field: 'again', message: 'Both passwords must match' }]
 ```
 
-**`custom` runs on an absent value too**, after every named rule, which is what makes "required once
+**`custom` runs on an absent value too**, after every named rule, which is what makes "required after
 the sibling says yes" expressible without a second mechanism. An unanswered field can therefore
 carry a `required` message and this validator's own together, and each one is a separate
 `FieldError`.
@@ -829,7 +829,7 @@ rule name would ever be read for it.
 
 ### Patterns and where trust lives
 
-`pattern` is authored regular-expression source, so it is the one rule that can carry an attack.
+`pattern` is authored regular-expression source, so its evaluation can cause excessive backtracking.
 `PATTERN_LIMIT` bounds the source this package will compile, and the wire boundary keeps a schema
 data only. Each is deliberate.
 
@@ -880,7 +880,7 @@ package checks against.
 They bind at the schema door and the value door, and which door a limit sits at is the whole story.
 
 **The schema door reports.** `auditSchema` counts fields, groups, choices, names, strings, total
-text, and total nodes — `meta` included, since it is retained like everything else — and returns one
+text, and total nodes — `meta` included, because it is retained like everything else — and returns one
 human diagnostic per breach, beside `PATTERN_LIMIT`'s. `createForm` throws `SCHEMA` carrying them
 and `parseForm` refuses the schema, so no over-budget schema is ever held.
 
@@ -1380,7 +1380,7 @@ submit can see more than one.
 failed stays the answer even when a listener then repairs or disables the field that failed. So
 `submit()` can return `{ success: false, error: [...] }` while `form.errors` reads `[]` and `valid`
 reads `true` the line after. The returned result is what the submit decided; the form is what the
-form holds now.
+form holds.
 
 **A settlement made during listener work wins.** A listener that repairs the form and calls `submit`
 itself settles it, and that settlement is what the outer call returns — one `submit` event, one
@@ -1408,7 +1408,7 @@ That gives one sequence, and it is short:
 3. **Report a refusal through `invalidate`, not through a submit.** The message lands as a
    `FieldError` on the field it belongs to, `valid` turns false, and the form is still open for the
    person to fix it and for the host to try again.
-4. **Call `submit` only once the attempt succeeded.** That commits: `answer` resolves, `submit`
+4. **Call `submit` only after the attempt succeeded.** That commits: `answer` resolves, `submit`
    fires, and the form is terminal.
 
 **`idle`, `submitting`, `succeeded`, and `failed` are the host's request states, not the form's.**
@@ -2064,7 +2064,7 @@ These invariants hold across [`src/core`](../src/core) and this guide.
    disabled or not: it reads the schema alone, so no declaration and no runtime set changes a
    diagnostic, and a passing schema carries none of the faults it enumerates whatever is disabled
    at runtime. It claims nothing beyond that list, and `custom` is outside it.
-10. **Guards are total and parsers refuse.** No `is*` throws for any input — hostile prototype,
+10. **Guards are total and parsers refuse.** No `is*` throws for any input — unexpected prototype,
     symbol key, cycle, or depth. No `parse*` throws; each returns `undefined` on refusal. A
     guard-valid value is never refused by its parser, and every parsed result satisfies its guard.
     A pattern within `PATTERN_LIMIT` can still backtrack catastrophically; this package applies no
@@ -2157,7 +2157,7 @@ next change knows what it is reopening. `Layer` names who owns the concept, and 
   `defineEntry`, `freezeEntry`, `serializeForm`, `extractGroups`, `auditSchema`, the budgets, and
   the control-by-rule matrix.
 - [`tests/src/core/validators.test.ts`](../tests/src/core/validators.test.ts) — every guard against
-  valid, off-shape, and hostile input, plus guard/parser soundness in both directions.
+  valid, off-shape, and untrusted input, plus guard/parser soundness in both directions.
 - [`tests/src/core/parsers.test.ts`](../tests/src/core/parsers.test.ts) — `parseValue`,
   `parseValues`, `parseForm`, the wire round trip, and answer parking.
 - [`tests/src/core/cloners.test.ts`](../tests/src/core/cloners.test.ts) — every clone is owned,
