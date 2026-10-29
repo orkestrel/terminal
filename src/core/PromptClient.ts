@@ -25,6 +25,7 @@ import {
 	sanitizeSchema,
 } from './helpers.js'
 import { isPendingForm } from './validators.js'
+import { PromptAnswers } from './PromptAnswers.js'
 import { arrayOf, isBoolean, isRecord, isString, parseJSON } from '@orkestrel/contract'
 import { Emitter } from '@orkestrel/emitter'
 import { createForm, isFieldError, parseForm } from '@orkestrel/form'
@@ -214,11 +215,7 @@ export class PromptClient implements PromptClientInterface {
 		this.#draining = true
 		try {
 			while (!this.#destroyed) {
-				let queued: readonly [string, FormSchema] | undefined
-				for (const entry of this.#queue) {
-					queued = entry
-					break
-				}
+				const queued = this.#next()
 				if (queued === undefined) return
 				const [id, schema] = queued
 				this.#queue.delete(id)
@@ -242,23 +239,27 @@ export class PromptClient implements PromptClientInterface {
 	}
 
 	async #render(id: string, schema: FormSchema): Promise<void> {
-		let values: FormValues | undefined
-		let errors: readonly FieldError[] = []
+		const answers = new PromptAnswers()
 		while (this.#seen.has(id) && !this.#destroyed) {
-			const form = this.#createRenderingForm(schema, values)
+			const form = this.#createRenderingForm(schema, answers.values)
 			this.#active = { id, form, stopped: false }
-			for (const error of errors) form.invalidate(error.field, sanitizeDisplayText(error.message))
+			for (const error of answers.errors)
+				form.invalidate(error.field, sanitizeDisplayText(error.message))
 			const submitted = await this.#terminal.ask(form)
 			const active = this.#active
 			if (active?.id !== id || active.stopped) return
 			const rejected = await this.#post(id, submitted)
 			const posted = this.#active
 			if (posted?.id !== id || posted.stopped || rejected === undefined) return
-			values = submitted
-			errors = rejected
+			answers.replace(submitted, rejected)
 			form.destroy()
 			this.#active = undefined
 		}
+	}
+
+	#next(): readonly [string, FormSchema] | undefined {
+		for (const entry of this.#queue) return entry
+		return undefined
 	}
 
 	#createRenderingForm(schema: FormSchema, values?: FormValues): FormInterface {

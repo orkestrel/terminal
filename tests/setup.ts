@@ -10,9 +10,21 @@ import type {
 	TimerHandler,
 } from '@src/core'
 import type { FieldError, FormInterface, FormSchema, FormStatus, FormValues } from '@orkestrel/form'
-import { parseKey } from '@src/core'
-import { serializeForm } from '@orkestrel/form'
+import { DatabaseTerminalStore, parseKey } from '@src/core'
+import { createForm, serializeForm } from '@orkestrel/form'
+import { createDatabase, createMemoryDriver } from '@orkestrel/database'
+import { rawShape, stringShape } from '@orkestrel/contract'
 import { createRecorder } from '@orkestrel/test'
+
+/** Supplies a class-instance terminal error context. */
+export class TerminalContextFixture {
+	readonly id = 'terminal'
+}
+
+/** Creates a callable terminal error context. */
+export function createCallableTerminalContext(): (() => void) & { readonly id: string } {
+	return Object.assign(() => {}, { id: 'terminal' })
+}
 
 /** Describes a manually driven timer used at broker and reconnect boundaries. */
 export interface ManualTimerInterface {
@@ -23,22 +35,86 @@ export interface ManualTimerInterface {
 
 /** Creates an injected timer that fires only when the test calls `flush`. */
 export function createManualTimer(): ManualTimerInterface {
-	let timers: Array<{ readonly callback: () => void; cancelled: boolean }> = []
+	const timers = new TerminalTimerFixture()
 	return {
 		handler(callback: () => void): TimerCancelFunction {
-			const timer = { callback, cancelled: false }
-			timers.push(timer)
-			return () => {
-				timer.cancelled = true
-			}
+			return timers.add(callback)
 		},
 		get pending() {
-			return timers.filter((timer) => !timer.cancelled).length
+			return timers.pending
 		},
 		flush() {
-			const firing = timers
-			timers = []
-			for (const timer of firing) if (!timer.cancelled) timer.callback()
+			timers.flush()
+		},
+	}
+}
+
+/** Owns the registrations of one injected timer fixture. */
+export class TerminalTimerFixture {
+	#timers: Array<{ readonly callback: () => void; readonly abort: AbortController }> = []
+
+	get pending(): number {
+		return this.#timers.filter((timer) => !timer.abort.signal.aborted).length
+	}
+
+	add(callback: () => void): TimerCancelFunction {
+		const abort = new AbortController()
+		this.#timers.push({ callback, abort })
+		return () => abort.abort()
+	}
+
+	flush(): void {
+		const firing = this.#timers
+		this.#timers = []
+		for (const timer of firing) if (!timer.abort.signal.aborted) timer.callback()
+	}
+}
+
+/** Counts calls observed by a terminal fixture. */
+export class TerminalCallFixture {
+	#count = 0
+
+	get count(): number {
+		return this.#count
+	}
+
+	add(count = 1): void {
+		this.#count += count
+	}
+}
+
+/** Creates a text form for terminal routing scenarios. */
+export function createTerminalTextForm(name = 'answer'): FormInterface {
+	return createForm({ fields: [{ control: 'text', name }] })
+}
+
+/** Builds the real database table used by terminal store scenarios. */
+export function buildTerminalDatabaseTable() {
+	const driver = createMemoryDriver()
+	const database = createDatabase({
+		driver,
+		tables: { terminals: { id: stringShape(), snapshot: rawShape({}) } },
+	})
+	return database.table('terminals')
+}
+
+/** Creates a terminal store over a real memory-backed database. */
+export function createTerminalDatabaseStore(): TerminalStoreInterface {
+	return new DatabaseTerminalStore(buildTerminalDatabaseTable())
+}
+
+/** Creates the store boundary recorder used to inspect the scenario table. */
+export function createTerminalStoreRecorder(reached: Set<string>): TerminalStoreInterface {
+	return {
+		async get() {
+			reached.add('get')
+			return undefined
+		},
+		async set() {
+			reached.add('set')
+		},
+		async delete() {
+			reached.add('delete')
 		},
 	}
 }
@@ -77,9 +153,10 @@ export function feedReducer<TValue, TState>(
 	state: TState,
 	keys: readonly string[],
 ): PromptStep<TValue, TState> {
-	let step: PromptStep<TValue, TState> = { state, view: '', status: 'active' }
-	for (const key of keys) step = reduce(step.state, parseKey(key))
-	return step
+	return Iterator.from(keys).reduce<PromptStep<TValue, TState>>(
+		(step, key) => reduce(step.state, parseKey(key)),
+		{ state, view: '', status: 'active' },
+	)
 }
 
 /** Holds the immutable observation captured when a recording terminal receives a live form. */
@@ -414,3 +491,32 @@ export const TERMINAL_STORE_SCENARIOS: readonly TerminalStoreScenario[] = Object
 		],
 	},
 ])
+
+/** Creates the form used by the complete terminal transport scenario. */
+export function createTerminalProfileSchema(): FormSchema {
+	return {
+		name: 'profile',
+		label: 'Profile',
+		fields: [
+			{
+				control: 'text',
+				name: 'name',
+				label: 'Name',
+				rule: {
+					required: true,
+					custom: (value: unknown) => (value === 'Ada' ? true : 'Use Ada'),
+				},
+			},
+			{
+				control: 'select',
+				name: 'role',
+				label: 'Role',
+				choices: [
+					{ value: 'admin', label: 'Admin' },
+					{ value: 'viewer', label: 'Viewer' },
+				],
+				default: 'admin',
+			},
+		],
+	}
+}

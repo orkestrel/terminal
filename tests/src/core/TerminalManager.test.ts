@@ -1,13 +1,9 @@
 import type { TerminalManagerEventMap } from '@src/core'
-import { createManualTimer } from '../../setup.js'
+import { createManualTimer, createTerminalTextForm } from '../../setup.js'
 import { createMemoryTerminalStore, createTerminalManager, isTerminalError } from '@src/core'
 import { createForm, isFormError } from '@orkestrel/form'
 import { createRecorders, requireValue } from '@orkestrel/test'
 import { describe, expect, it } from 'vitest'
-
-function createTextForm(name = 'answer') {
-	return createForm({ fields: [{ control: 'text', name }] })
-}
 
 describe('TerminalManager', () => {
 	it('adds brokers idempotently and preserves insertion-order accessors', () => {
@@ -32,7 +28,7 @@ describe('TerminalManager', () => {
 			'pending',
 			'answer',
 		])
-		const form = createTextForm('name')
+		const form = createTerminalTextForm('name')
 		const answer = manager.ask('user', 'agent', form)
 		const pending = requireValue(manager.pending('agent')[0], 'Missing pending form for agent')
 
@@ -52,7 +48,7 @@ describe('TerminalManager', () => {
 	it('preserves TARGET with the known endpoint list', async () => {
 		const manager = createTerminalManager()
 		manager.add('known')
-		const form = createTextForm()
+		const form = createTerminalTextForm()
 		void form.answer.catch(() => undefined)
 
 		const error = await manager.ask('user', 'missing', form).catch((reason: unknown) => reason)
@@ -66,13 +62,13 @@ describe('TerminalManager', () => {
 	it('preserves direct and transitive DEADLOCK paths', async () => {
 		const manager = createTerminalManager()
 		for (const name of ['a', 'b', 'c']) manager.add(name)
-		const ab = createTextForm('ab')
-		const bc = createTextForm('bc')
+		const ab = createTerminalTextForm('ab')
+		const bc = createTerminalTextForm('bc')
 		void ab.answer.catch(() => undefined)
 		void bc.answer.catch(() => undefined)
 		void manager.ask('a', 'b', ab)
 		void manager.ask('b', 'c', bc)
-		const closing = createTextForm('ca')
+		const closing = createTerminalTextForm('ca')
 		void closing.answer.catch(() => undefined)
 
 		const error = await manager.ask('c', 'a', closing).catch((reason: unknown) => reason)
@@ -100,7 +96,7 @@ describe('TerminalManager', () => {
 		const id = requireValue(manager.pending('b')[0], 'Missing pending form for b').id
 
 		expect(manager.answer('b', id, { word: 'no' }).success).toBe(false)
-		const blocked = createTextForm('blocked')
+		const blocked = createTerminalTextForm('blocked')
 		void blocked.answer.catch(() => undefined)
 		const deadlock = await manager.ask('b', 'a', blocked).catch((reason: unknown) => reason)
 		expect(isTerminalError(deadlock) && deadlock.code).toBe('DEADLOCK')
@@ -108,7 +104,7 @@ describe('TerminalManager', () => {
 
 		expect(manager.answer('b', id, { word: 'yes' }).success).toBe(true)
 		expect(await settled).toEqual({ word: 'yes' })
-		const reverse = createTextForm('reverse')
+		const reverse = createTerminalTextForm('reverse')
 		const reversed = manager.ask('b', 'a', reverse)
 		const reverseId = requireValue(manager.pending('a')[0], 'Missing pending form for a').id
 		manager.answer('a', reverseId, { reverse: 'ok' })
@@ -121,7 +117,7 @@ describe('TerminalManager', () => {
 		const manager = createTerminalManager({ timer: timer.handler })
 		manager.add('a')
 		manager.add('b')
-		const held = createTextForm('held')
+		const held = createTerminalTextForm('held')
 		const abandoned = manager.ask('a', 'b', held).catch((error: unknown) => error)
 		const events = createRecorders<TerminalManagerEventMap, 'expire'>(manager.emitter, ['expire'])
 		const id = requireValue(manager.pending('b')[0], 'Missing pending form for b').id
@@ -129,7 +125,7 @@ describe('TerminalManager', () => {
 		timer.flush()
 		expect(isFormError(await abandoned) && held.status).toBe('abandoned')
 		expect(events.expire.calls).toEqual([['b', id]])
-		const reverse = createTextForm('reverse')
+		const reverse = createTerminalTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
 		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
 			reverse: 'ok',
@@ -142,12 +138,12 @@ describe('TerminalManager', () => {
 		const manager = createTerminalManager()
 		manager.add('a')
 		manager.add('b')
-		const held = createTextForm('held')
+		const held = createTerminalTextForm('held')
 		const abandoned = manager.ask('a', 'b', held).catch((error: unknown) => error)
 
 		expect(manager.remove('b')).toBe(true)
 		expect(isFormError(await abandoned) && held.status).toBe('abandoned')
-		const reverse = createTextForm('reverse')
+		const reverse = createTerminalTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
 		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
 			reverse: 'ok',
@@ -225,7 +221,7 @@ describe('TerminalManager', () => {
 	it('destroy abandons every ask and permanently refuses new registry work', async () => {
 		const manager = createTerminalManager()
 		manager.add('agent')
-		const forms = [createTextForm('a'), createTextForm('b')]
+		const forms = [createTerminalTextForm('a'), createTerminalTextForm('b')]
 		const answers = forms.map((form) =>
 			manager.ask('user', 'agent', form).catch((error: unknown) => error),
 		)
@@ -246,9 +242,9 @@ describe('TerminalManager', () => {
 		manager.emitter.on('pending', (pending) => {
 			manager.answer('b', pending.id, { value: 'done' })
 		})
-		const form = createTextForm('value')
+		const form = createTerminalTextForm('value')
 		expect(await manager.ask('a', 'b', form)).toEqual({ value: 'done' })
-		const reverse = createTextForm('reverse')
+		const reverse = createTerminalTextForm('reverse')
 		const answer = manager.ask('b', 'a', reverse)
 		manager.answer('a', requireValue(manager.pending('a')[0], 'Missing pending form for a').id, {
 			reverse: 'ok',

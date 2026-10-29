@@ -230,10 +230,10 @@ export class TerminalManager implements TerminalManagerInterface {
 			return
 		}
 		if (isArray(names)) {
-			let removed = true
-			for (const name of names) {
-				if (!this.#removeOne(name)) removed = false
-			}
+			const removed = Iterator.from(names).reduce(
+				(result, name) => this.#removeOne(name) && result,
+				true,
+			)
 			return removed
 		}
 		return this.#removeOne(names)

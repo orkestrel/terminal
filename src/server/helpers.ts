@@ -93,11 +93,7 @@ export function supportsRawMode(input: InputStreamInterface): boolean {
  * @returns The number of lines the view spans (always at least 1)
  */
 export function lineCount(view: string): number {
-	let lines = 1
-	for (const character of view) {
-		if (character === '\n') lines += 1
-	}
-	return lines
+	return Iterator.from(view).reduce((lines, character) => lines + Number(character === '\n'), 1)
 }
 
 /**

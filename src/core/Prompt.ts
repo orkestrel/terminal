@@ -121,11 +121,10 @@ export class Prompt implements PromptInterface {
 			return
 		}
 		if (isArray(ids)) {
-			let stopped = true
-			for (const id of ids) {
+			const stopped = Iterator.from(ids).reduce((result, id) => {
 				const parked = this.#parked.get(id)
-				if (parked === undefined || parked.pending.status !== 'pending') stopped = false
-			}
+				return parked !== undefined && parked.pending.status === 'pending' && result
+			}, true)
 			for (const id of ids) this.#expire(id)
 			return stopped
 		}

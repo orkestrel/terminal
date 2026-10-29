@@ -1,5 +1,6 @@
 import type { FetchInit, PromptClientEventMap } from '@src/core'
 import {
+	TerminalCallFixture,
 	createHostileWireSchema,
 	createJSONResponse,
 	createPendingForm,
@@ -327,17 +328,17 @@ describe('PromptClient', () => {
 
 	it('destroy is permanent and a later connect performs no fetch', async () => {
 		const terminal = createRecordingTerminal()
-		let fetches = 0
+		const fetches = new TerminalCallFixture()
 		const client = createPromptClient({
 			url: 'http://localhost/prompts',
 			terminal,
 			fetch: async () => {
-				fetches += 1
+				fetches.add()
 				return createSSEResponse([])
 			},
 		})
 		client.destroy()
 		await client.connect()
-		expect(fetches).toBe(0)
+		expect(fetches.count).toBe(0)
 	})
 })

@@ -20,12 +20,13 @@ import {
 } from '@src/server'
 import { RETURN, createPromptTheme } from '@src/core'
 import { createStyler, strip } from '@orkestrel/console'
+import { createMinimalTerminalInput } from '../../setupServer.js'
 import { PassThrough } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 
 describe('stream guards', () => {
 	it('accepts exactly the minimal input stream shape', () => {
-		const input = { on() {}, off() {} }
+		const input = createMinimalTerminalInput()
 		expect(isInputStream(input)).toBe(true)
 		expect(isInputStream({ on() {} })).toBe(false)
 		expect(isInputStream(null)).toBe(false)

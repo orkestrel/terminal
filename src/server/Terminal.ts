@@ -47,6 +47,9 @@ import { createStyler } from '@orkestrel/console'
 import { isStreamTarget } from '@orkestrel/console/server'
 import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
+import { attempt } from '@orkestrel/contract'
+import { TerminalRead } from './TerminalRead.js'
+import { TerminalWalk } from './TerminalWalk.js'
 import {
 	CURSOR_HIDE,
 	CURSOR_SHOW,
@@ -163,14 +166,14 @@ export class Terminal implements TerminalInterface {
 	 * ends the walk between fields as well as under an active read.
 	 */
 	async #walk(form: FormInterface, fields: readonly FormField[]): Promise<void> {
-		let group: string | undefined
+		const walk = new TerminalWalk()
 		for (const field of fields) {
 			if (form.status !== 'editing') return
 			if (field.hidden === true) continue
 			if (form.disabled.has(field.name)) continue
-			if (field.group !== group) {
-				group = field.group
-				if (group !== undefined) this.#writeGroup(form, group)
+			if (field.group !== walk.group) {
+				walk.enter(field.group)
+				if (walk.group !== undefined) this.#writeGroup(form, walk.group)
 			}
 			if (field.locked === true) {
 				this.#writeLocked(form, field)
@@ -431,21 +434,22 @@ export class Terminal implements TerminalInterface {
 		return new Promise<T>((resolve, reject) => {
 			// Render the first view, tracking how many lines it spans so the next redraw climbs over them.
 			this.#output.write(CURSOR_HIDE)
-			let firstView: string
-			try {
-				firstView = reduce(initial, parseKey('')).view
-				this.#output.write(firstView)
-			} catch (error) {
+			const firstView = attempt(() => {
+				const view = reduce(initial, parseKey('')).view
+				this.#output.write(view)
+				return view
+			})
+			if (!firstView.success) {
 				// Raw mode was never entered yet, but the cursor was hidden — restore it before rejecting.
 				this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
-				reject(error)
+				reject(firstView.error)
 				return
 			}
 			const token = {}
 			const handler = this.#createHandler(
 				token,
 				initial,
-				lineCount(firstView),
+				lineCount(firstView.value),
 				reduce,
 				resolve,
 				reject,
@@ -465,19 +469,18 @@ export class Terminal implements TerminalInterface {
 		resolve: (value: T | PromiseLike<T>) => void,
 		reject: (reason?: unknown) => void,
 	): (chunk: string | Uint8Array) => void {
-		let state = initial
-		let lines = initialLines
+		const read = new TerminalRead(initial, initialLines)
 		return (chunk) => {
 			try {
-				const step = reduce(state, parseKey(chunk))
-				state = step.state
+				const step = reduce(read.state, parseKey(chunk))
+				read.advance(step.state)
 				if (step.status === 'active') {
-					this.#render(step.view, lines)
-					lines = lineCount(step.view)
+					this.#render(step.view, read.lines)
+					read.paint(lineCount(step.view))
 					return
 				}
 				// Terminal step (submit / cancel): paint the final committed view, then tear down.
-				this.#render(step.view, lines)
+				this.#render(step.view, read.lines)
 				this.#leaveRaw(token)
 				this.#output.write(`${CURSOR_SHOW}${NEWLINE}`)
 				if (step.status === 'cancel') reject(new TerminalError('CANCEL', 'Prompt cancelled'))

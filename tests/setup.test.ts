@@ -7,11 +7,11 @@
 // audit, the real console stripper, the real pending-form guard, and the host clock. Production
 // behavior belongs to the suites that own it and is never re-proven here.
 
-import type { TerminalStoreInterface } from '@src/core'
 import { ACCEPT_EVENT_STREAM, CTRL_C, RETURN, isPendingForm } from '@src/core'
 import { FIELD_CONTROLS, auditSchema, createForm, parseForm, serializeForm } from '@orkestrel/form'
 import {
 	TERMINAL_STORE_SCENARIOS,
+	createTerminalStoreRecorder,
 	createFormSchema,
 	createHostilePattern,
 	createHostileSchema,
@@ -308,18 +308,7 @@ describe('TERMINAL_STORE_SCENARIOS', () => {
 		// values each case expects are the store contract, proven by the MemoryTerminalStore and
 		// DatabaseTerminalStore suites that run this table against the real backends.
 		const reached = new Set<string>()
-		const store: TerminalStoreInterface = {
-			async get() {
-				reached.add('get')
-				return undefined
-			},
-			async set() {
-				reached.add('set')
-			},
-			async delete() {
-				reached.add('delete')
-			},
-		}
+		const store = createTerminalStoreRecorder(reached)
 
 		for (const scenario of TERMINAL_STORE_SCENARIOS) await scenario.act(store)
 

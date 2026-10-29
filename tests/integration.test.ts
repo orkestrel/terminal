@@ -2,143 +2,24 @@
 // server, a real PromptClient driven over that real HTTP connection, and a real server Terminal
 // walking scripted TTY streams — composed with no part of the system under test replaced.
 
-import type { PendingForm, PromptInterface, WireEvent } from '@src/core'
-import type { FormSchema } from '@orkestrel/form'
-import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import {
-	CTRL_D,
-	RETURN,
-	createPrompt,
-	createPromptClient,
-	serializeExpire,
-	serializePending,
-} from '@src/core'
+import type { TerminalFixtureServer } from './setupServer.js'
+import { CTRL_D, RETURN, createPrompt, createPromptClient } from '@src/core'
 import { createTerminal } from '@src/server'
-import { createHostilePattern, createHostileText, createHostileWireSchema } from './setup.js'
-import { createFakeTTY } from './setupServer.js'
-import { createForm, isFormValues, serializeForm } from '@orkestrel/form'
-import { createLoopback } from '@orkestrel/test/server'
-import { createServer } from 'node:http'
+import {
+	createTerminalProfileSchema,
+	createHostilePattern,
+	createHostileText,
+	createHostileWireSchema,
+} from './setup.js'
+import {
+	createFakeTTY,
+	startTerminalFixtureServer,
+	hasTerminalControlBytes,
+} from './setupServer.js'
+import { createForm, serializeForm } from '@orkestrel/form'
 import { afterEach, describe, expect, it } from 'vitest'
 
-/** One live fixture connection and its pending-form catch-up state. */
-interface FixtureClient {
-	readonly response: ServerResponse
-}
-
-/** A real, protocol-faithful SSE broker endpoint driving the system under test end to end. */
-interface FixtureServer {
-	readonly url: string
-	readonly posts: number
-	/** Resolve with the broker's `answer` result the next time a POST lands. */
-	post(): Promise<unknown>
-	close(): Promise<void>
-}
-
-/** Write one wire frame to one open SSE connection. */
-function writeFrame(response: ServerResponse, frame: WireEvent): void {
-	response.write(`event: ${frame.event}\ndata: ${frame.data}\n\n`)
-}
-
-/** Build the listener that forwards each newly parked form to every open fixture client. */
-function createPendingHandler(clients: ReadonlySet<FixtureClient>): (form: PendingForm) => void {
-	return (form) => {
-		for (const client of clients) writeFrame(client.response, serializePending(form))
-	}
-}
-
-/** Build the listener that forwards each expiry to every open fixture client. */
-function createExpireHandler(clients: ReadonlySet<FixtureClient>): (id: string) => void {
-	return (id) => {
-		for (const client of clients) writeFrame(client.response, serializeExpire(id))
-	}
-}
-
-/**
- * Start a real `node:http` server that forwards a real {@link PromptInterface} broker over SSE and
- * lands every POST back through `prompt.answer` — the transport TU8 proves, built from the
- * package's own transport-neutral `serializePending` / `serializeExpire` wire seam.
- */
-async function startFixtureServer(prompt: PromptInterface): Promise<FixtureServer> {
-	let posts = 0
-	let postWaiters: Array<(result: unknown) => void> = []
-	const clients = new Set<FixtureClient>()
-	const onPending = createPendingHandler(clients)
-	const onExpire = createExpireHandler(clients)
-	prompt.emitter.on('pending', onPending)
-	prompt.emitter.on('expire', onExpire)
-
-	const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
-		if (request.method === 'GET') {
-			response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-			for (const form of prompt.pending()) writeFrame(response, serializePending(form))
-			const client: FixtureClient = { response }
-			clients.add(client)
-			request.on('close', () => clients.delete(client))
-			return
-		}
-		if (request.method === 'POST') {
-			const chunks: Buffer[] = []
-			request.on('data', (chunk: Buffer) => chunks.push(chunk))
-			request.on('end', () => {
-				posts += 1
-				const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-				const id =
-					typeof parsed === 'object' && parsed !== null
-						? Object.getOwnPropertyDescriptor(parsed, 'id')?.value
-						: undefined
-				const values =
-					typeof parsed === 'object' && parsed !== null
-						? Object.getOwnPropertyDescriptor(parsed, 'values')?.value
-						: undefined
-				if (typeof id !== 'string' || !isFormValues(values)) {
-					response.writeHead(400)
-					response.end()
-					return
-				}
-				const result = prompt.answer(id, values)
-				response.writeHead(200, { 'Content-Type': 'application/json' })
-				response.end(JSON.stringify(result))
-				const waiters = postWaiters
-				postWaiters = []
-				for (const waiter of waiters) waiter(result)
-			})
-			return
-		}
-		response.writeHead(404)
-		response.end()
-	})
-
-	const loopback = await createLoopback(server)
-	return {
-		get posts() {
-			return posts
-		},
-		url: `${loopback.url}/prompts`,
-		post: () => new Promise((waiter) => postWaiters.push(waiter)),
-		close: async () => {
-			prompt.emitter.off('pending', onPending)
-			prompt.emitter.off('expire', onExpire)
-			for (const client of clients) client.response.end()
-			await loopback.destroy()
-		},
-	}
-}
-
-/**
- * Whether stripped text still carries a smuggled C0 control byte or DEL — the exact class
- * {@link createHostileText} injects. `\n` and `\r` are excluded: they are the terminal's own
- * legitimate line breaks and redraw carriage returns, present in every real render regardless of
- * schema content, so flagging them would make this instrument fail on clean output.
- */
-function hasControlBytes(text: string): boolean {
-	return [...text].some((character) => {
-		const code = character.charCodeAt(0)
-		return (code < 32 && code !== 10 && code !== 13) || code === 127
-	})
-}
-
-const openServers: FixtureServer[] = []
+const openServers: TerminalFixtureServer[] = []
 
 afterEach(async () => {
 	while (openServers.length > 0) {
@@ -150,33 +31,9 @@ afterEach(async () => {
 describe('terminal end to end', () => {
 	it('parks, transports, renders, and answers one whole form across the real wire', async () => {
 		const prompt = createPrompt()
-		const server = await startFixtureServer(prompt)
+		const server = await startTerminalFixtureServer(prompt)
 		openServers.push(server)
-		const schema: FormSchema = {
-			name: 'profile',
-			label: 'Profile',
-			fields: [
-				{
-					control: 'text',
-					name: 'name',
-					label: 'Name',
-					rule: {
-						required: true,
-						custom: (value: unknown) => (value === 'Ada' ? true : 'Use Ada'),
-					},
-				},
-				{
-					control: 'select',
-					name: 'role',
-					label: 'Role',
-					choices: [
-						{ value: 'admin', label: 'Admin' },
-						{ value: 'viewer', label: 'Viewer' },
-					],
-					default: 'admin',
-				},
-			],
-		}
+		const schema = createTerminalProfileSchema()
 		const form = createForm(schema)
 		const id = prompt.park(form)
 
@@ -203,7 +60,7 @@ describe('terminal end to end', () => {
 
 	it('drives a hostile schema through the real TTY with no rendered control bytes, proven against a failing control', async () => {
 		const prompt = createPrompt()
-		const server = await startFixtureServer(prompt)
+		const server = await startTerminalFixtureServer(prompt)
 		openServers.push(server)
 		const schema = createHostileWireSchema()
 		const form = createForm(schema)
@@ -252,7 +109,7 @@ describe('terminal end to end', () => {
 		// `text()` strips the terminal's OWN legitimate styling ANSI (color, cursor, bold), the byte
 		// class this instrument must not flag, leaving only bytes the schema itself smuggled in.
 		const output = tty.text()
-		expect(hasControlBytes(output)).toBe(false)
+		expect(hasTerminalControlBytes(output)).toBe(false)
 		expect(server.posts).toBe(1)
 
 		// Negative control drawn from outside the sanitize pipeline: writing the raw hostile text
@@ -261,6 +118,6 @@ describe('terminal end to end', () => {
 		// rather than passing on anything it is given.
 		const raw = createFakeTTY()
 		raw.output.write(createHostileText('unsanitized'))
-		expect(hasControlBytes(raw.text())).toBe(true)
+		expect(hasTerminalControlBytes(raw.text())).toBe(true)
 	})
 })

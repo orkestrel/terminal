@@ -28,7 +28,11 @@ const MODULES = Object.freeze({
  * intentional rather than forgotten — and the assertion that follows it fails when a name
  * here stops being stranded, so the list cannot rot.
  */
-const INTERNAL: readonly string[] = Object.freeze([])
+const INTERNAL: readonly string[] = Object.freeze([
+	'class PromptAnswers',
+	'class TerminalRead',
+	'class TerminalWalk',
+])
 
 /** The NUL byte a hostile wire string smuggles into an identity slot, built without a raw control character. */
 const NUL = String.fromCharCode(0)
@@ -56,7 +60,8 @@ await new GuideCommand({
 		isExternalLink,
 		resolveLink,
 	} = await import('@orkestrel/guide')
-	const { requireValue } = await import('@orkestrel/test')
+	const { captureError, requireValue } = await import('@orkestrel/test')
+	const { createTerminalGuideInput } = await import('./setupServer.js')
 	const {
 		createCheckboxState,
 		createConfirmState,
@@ -355,9 +360,9 @@ await new GuideCommand({
 		})
 
 		it('returns the reducer values the direct-drive fence claims', () => {
-			let text = createInputState({ control: 'text', name: 'name', label: 'Name' })
-			expect(strip(renderInputView(text))).toBe('? Name › ')
-			text = reduceInput(text, parseKey('A')).state
+			const initialText = createInputState({ control: 'text', name: 'name', label: 'Name' })
+			expect(strip(renderInputView(initialText))).toBe('? Name › ')
+			const text = reduceInput(initialText, parseKey('A')).state
 			expect(reduceInput(text, parseKey(RETURN))).toMatchObject({ status: 'submit', value: 'A' })
 
 			const confirm = createConfirmState({ control: 'confirm', name: 'ok', label: 'Continue?' })
@@ -370,8 +375,12 @@ await new GuideCommand({
 		})
 
 		it('masks the typed value the direct-drive fence claims a password view hides', () => {
-			let password = createPasswordState({ control: 'password', name: 'token', label: 'Token' })
-			password = reducePassword(password, parseKey('s')).state
+			const initialPassword = createPasswordState({
+				control: 'password',
+				name: 'token',
+				label: 'Token',
+			})
+			const password = reducePassword(initialPassword, parseKey('s')).state
 			const view = renderPasswordView(password)
 			expect(strip(view)).toBe('? Token › *')
 			// The typed character reaches the submitted value without ever reaching the view.
@@ -383,7 +392,7 @@ await new GuideCommand({
 		})
 
 		it('moves and wraps the select focus the direct-drive fence claims', () => {
-			let select = createSelectState({
+			const initialSelect = createSelectState({
 				control: 'select',
 				name: 'role',
 				label: 'Role',
@@ -393,15 +402,15 @@ await new GuideCommand({
 					{ value: 'viewer', label: 'Viewer' },
 				],
 			})
-			select = reduceSelect(select, parseKey(`${CSI}B`)).state
+			const select = reduceSelect(initialSelect, parseKey(`${CSI}B`)).state
 			expect(strip(renderSelectView(select))).toBe('? Role\n  ○ Admin\n› ● Viewer')
 			// Down again from the last row returns to the first, which is the fence's wrapping claim.
-			select = reduceSelect(select, parseKey(`${CSI}B`)).state
-			expect(strip(renderSelectView(select))).toBe('? Role\n› ● Admin\n  ○ Viewer')
+			const wrapped = reduceSelect(select, parseKey(`${CSI}B`)).state
+			expect(strip(renderSelectView(wrapped))).toBe('? Role\n› ● Admin\n  ○ Viewer')
 		})
 
 		it('toggles the focused box the direct-drive fence claims', () => {
-			let checkbox = createCheckboxState({
+			const initialCheckbox = createCheckboxState({
 				control: 'checkbox',
 				name: 'scopes',
 				label: 'Scopes',
@@ -413,9 +422,11 @@ await new GuideCommand({
 			})
 			// The fence's `default: ['read']` ticks the first box, so the space that follows is
 			// observably a toggle rather than a set.
-			expect(strip(renderCheckboxView(checkbox))).toBe('? Scopes\n› ☑ Read\n  ☐ Write\n1 selected')
-			const seeded = checkbox.checked
-			checkbox = reduceCheckbox(checkbox, parseKey(' ')).state
+			expect(strip(renderCheckboxView(initialCheckbox))).toBe(
+				'? Scopes\n› ☑ Read\n  ☐ Write\n1 selected',
+			)
+			const seeded = initialCheckbox.checked
+			const checkbox = reduceCheckbox(initialCheckbox, parseKey(' ')).state
 			expect(strip(renderCheckboxView(checkbox))).toBe('? Scopes\n› ☐ Read\n  ☐ Write\n0 selected')
 			expect(toggleIndex(checkbox.checked, 1)).toEqual([1])
 			// Copy-on-write: the list the reducer read is the list it left behind.
@@ -423,13 +434,13 @@ await new GuideCommand({
 		})
 
 		it('commits and renders the editor lines the direct-drive fence claims', () => {
-			let editor = createEditorState({ control: 'editor', name: 'notes', label: 'Notes' })
-			editor = reduceEditor(editor, parseKey('h')).state
+			const initialEditor = createEditorState({ control: 'editor', name: 'notes', label: 'Notes' })
+			const editor = reduceEditor(initialEditor, parseKey('h')).state
 			expect(strip(renderEditorView(editor))).toBe('? Notes (Ctrl+D to finish)\n› h')
 			// Return commits the line in progress, so the view then carries a committed line too.
-			editor = reduceEditor(editor, parseKey(RETURN)).state
-			editor = reduceEditor(editor, parseKey('i')).state
-			expect(strip(renderEditorView(editor))).toBe('? Notes (Ctrl+D to finish)\nh\n› i')
+			const committed = reduceEditor(editor, parseKey(RETURN)).state
+			const edited = reduceEditor(committed, parseKey('i')).state
+			expect(strip(renderEditorView(edited))).toBe('? Notes (Ctrl+D to finish)\nh\n› i')
 		})
 
 		it('renders the themed line shapes the re-theme fence claims', () => {
@@ -531,15 +542,12 @@ await new GuideCommand({
 			expect(await manager.open('agent')).toBe(agent)
 
 			const bounded = manager.add('bounded', { cap: 100 })
-			for (let index = 0; index < 100; index += 1) {
+			Array.from({ length: 100 }).forEach(() => {
 				bounded.park(createForm({ fields: [{ control: 'text', name: 'name' }] }))
-			}
-			let refusal: unknown
-			try {
+			})
+			const refusal = captureError(() => {
 				bounded.park(createForm({ fields: [{ control: 'text', name: 'name' }] }))
-			} catch (error: unknown) {
-				refusal = error
-			}
+			})
 			expect(isTerminalError(refusal)).toBe(true)
 			expect(refusal).toMatchObject({ code: 'LIMIT' })
 
@@ -570,14 +578,7 @@ await new GuideCommand({
 		})
 
 		it('returns the server-helper values the injected-streams fence claims', () => {
-			const input = {
-				on: () => undefined,
-				off: () => undefined,
-				setRawMode: () => undefined,
-				resume: () => undefined,
-				pause: () => undefined,
-				isTTY: true,
-			}
+			const input = createTerminalGuideInput()
 			expect(isInputStream(input)).toBe(true)
 			expect(supportsRawMode(input)).toBe(true)
 			expect(isReadable(stdin)).toBe(true)

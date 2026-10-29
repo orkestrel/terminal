@@ -1,10 +1,5 @@
 import type { TerminalErrorCode } from './types.js'
-import { isInstance } from '@orkestrel/contract'
-
-// `.claude/rules/typescript.md` § Errors and outcomes: a real error type, not a sentinel. Callers
-// branch on the machine-readable
-// `error.code` rather than parsing the message, and the guard narrows with `instanceof`,
-// mirroring the agents-module errors.
+import { holds, INTRINSICS, isError, isFunction, isObject } from '@orkestrel/contract'
 
 /**
  * Represents the error the terminal surfaces for its own refusals: parking on a destroyed or full broker, an
@@ -36,6 +31,7 @@ export class TerminalError extends Error {
 		context?: Readonly<Record<string, unknown>>,
 	) {
 		super(message)
+		INTRINSICS.define(this, Symbol.for('@orkestrel/terminal.TerminalError'), { value: this })
 		this.name = 'TerminalError'
 		this.code = code
 		if (context !== undefined) this.context = context
@@ -44,6 +40,9 @@ export class TerminalError extends Error {
 
 /**
  * Narrows an unknown caught value to a {@link TerminalError}, so a caller can branch on its `code`.
+ *
+ * @remarks
+ * Recognizes branded errors across package copies, including subclasses, and refuses transparent proxies.
  *
  * @param value - The value to test (typically a `catch` binding or a rejected prompt call)
  * @returns True if `value` is a {@link TerminalError}; false otherwise
@@ -60,5 +59,22 @@ export class TerminalError extends Error {
  * ```
  */
 export function isTerminalError(value: unknown): value is TerminalError {
-	return isInstance(value, TerminalError)
+	return holds(() => {
+		if (!isError(value) || INTRINSICS.prototype(value) === Error.prototype) return false
+		const brand = INTRINSICS.describe(value, Symbol.for('@orkestrel/terminal.TerminalError'))
+		if (brand === undefined || brand.value !== value) return false
+		const code: unknown = INTRINSICS.reflect.read(value, 'code')
+		if (
+			code !== 'EXPIRE' &&
+			code !== 'CANCEL' &&
+			code !== 'DRIVER' &&
+			code !== 'DEADLOCK' &&
+			code !== 'TARGET' &&
+			code !== 'LIMIT' &&
+			code !== 'DESTROYED'
+		)
+			return false
+		const context: unknown = INTRINSICS.reflect.read(value, 'context')
+		return context === undefined || isObject(context) || isFunction(context)
+	})
 }

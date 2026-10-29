@@ -564,11 +564,15 @@ export function reduceConfirm(
 	if (key.ctrl && key.name === 'c')
 		return { state, view: renderConfirmView(state), status: 'cancel' }
 
-	let answer: boolean | undefined
 	const choice = key.name?.toLowerCase()
-	if (key.name === 'return') answer = state.default
-	else if (choice === 'y') answer = true
-	else if (choice === 'n') answer = false
+	const answer =
+		key.name === 'return'
+			? state.default
+			: choice === 'y'
+				? true
+				: choice === 'n'
+					? false
+					: undefined
 
 	if (answer === undefined) return { state, view: renderConfirmView(state), status: 'active' }
 	return {

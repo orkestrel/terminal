@@ -49,6 +49,7 @@ import {
 	toggleIndex,
 } from '@src/core'
 import {
+	TerminalCallFixture,
 	createHostilePattern,
 	createHostileSchema,
 	createHostileText,
@@ -488,17 +489,17 @@ describe('host seams', () => {
 	})
 
 	it('defaultTimer fires on real short time and its cancel is idempotent', async () => {
-		let count = 0
+		const count = new TerminalCallFixture()
 		defaultTimer(() => {
-			count += 1
+			count.add()
 		}, 10)
 		const cancel = defaultTimer(() => {
-			count += 10
+			count.add(10)
 		}, 10)
 		cancel()
 		cancel()
 		await waitForDelay(20)
-		expect(count).toBe(1)
+		expect(count.count).toBe(1)
 	})
 
 	it('manual timers retain arm order and ignore cancelled deadlines', () => {
