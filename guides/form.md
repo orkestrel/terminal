@@ -49,11 +49,6 @@ The document itself — what a form asks, in the order it asks it. All data, no 
 control's own interface adds its members to `FieldBase`, and the control values themselves are
 worked through in [Controls](#controls).
 
-A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
-optional member and `plus` introducing its call-signature members, and a type alias's own type
-literal with a union's arms escaped as `\|`. An extended interface's name comes before `plus`,
-with the members it adds after.
-
 | Name            | Kind      | Signature                                                                                                                                                                                     | Summary                                                                                       |
 | --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `FormSchema`    | interface | `{ name?, label?, help?, groups?, fields }`                                                                                                                                                   | Describes everything a form asks.                                                             |
@@ -80,10 +75,6 @@ with the members it adds after.
 
 What a form holds, what its answers must satisfy, and how a failure reports itself.
 
-A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
-optional member and `plus` introducing its call-signature members, and a type alias's own type
-literal with a union's arms escaped as `\|`.
-
 | Name                | Kind      | Signature                                                                                            | Summary                                                    |
 | ------------------- | --------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | `FieldValue`        | type      | `string \| number \| boolean \| readonly string[]`                                                   | Represents every value a field can hold.                   |
@@ -97,12 +88,6 @@ literal with a union's arms escaped as `\|`.
 ### The form
 
 The entity, its factory, its contract, and the error it raises.
-
-A `Shape` cell holds an interface's data members as bare names in braces, `?` marking an
-optional member and `plus` introducing its call-signature members, and a type alias's own type
-literal with a union's arms escaped as `\|`. A function row's `Shape` cell holds its signature,
-and a guard row's the type it narrows to. A class row's `Shape` cell holds the interface it
-implements, or its constructor signature where it implements none.
 
 | Name                    | Kind      | Signature                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Summary                                                                                                            |
 | ----------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
@@ -119,8 +104,8 @@ implements, or its constructor signature where it implements none.
 | `FormErrorCode`         | type      | `'SCHEMA' \| 'FIELD' \| 'CONTROL' \| 'SETTLED' \| 'ABANDONED' \| 'PENDING'`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Names the machine-readable code a form error carries.                                                              |
 | `isFormError`           | function  | `(input: unknown) => input is FormError`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Determines whether an unknown value is a form error.                                                               |
 
-`FormInterface`'s readonly data members are the names in its `Shape` cell before `plus`, and they
-stay here rather than in `## Methods`; the call-signature members after `plus` are documented under
+`FormInterface`'s readonly data members are the names its `Signature` cell lists without
+parentheses, and they stay here rather than in `## Methods`; the members it lists with parentheses are documented under
 [Methods](#methods).
 
 ### Constants
@@ -133,8 +118,6 @@ control; `COLOR_PATTERN`, `DATE_PATTERN`, `TIME_PATTERN`, and `DATETIME_PATTERN`
 `color`, `date`, `time`, and `datetime` value must have. Each budget's row names its ceiling.
 [Budgets](#budgets) then works each ceiling through beside the unit it counts, and
 [Patterns and where trust lives](#patterns-and-where-trust-lives) does the same for `PATTERN_LIMIT`.
-
-A `Shape` cell holds the constant's declared type.
 
 | Name                   | Kind  | Signature                                           | Summary                                                                                                                         |
 | ---------------------- | ----- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -154,12 +137,7 @@ A `Shape` cell holds the constant's declared type.
 | `PATTERN_LIMIT`        | const | `256`                                               | Caps the accepted source length for an authored regular expression, at 256.                                                     |
 | `FIELD_LIMIT`          | const | `512`                                               | Caps the number of fields one schema may declare, at 512.                                                                       |
 | `GROUP_LIMIT`          | const | `64`                                                | Caps the number of groups one schema may declare, at 64.                                                                        |
-| `CHOICE_LIMIT`         | const | `1024`                                              | Caps the number of choices one `select` or `checkbox` field may offer, at 1024.                                                 |
 | `LIST_LIMIT`           | const | `1024`                                              | Caps the number of entries one list-valued answer may hold, at 1024.                                                            |
-| `NAME_LIMIT`           | const | `128`                                               | Caps the length, in UTF-16 code units, of a schema, group, or field name, at 128.                                               |
-| `STRING_LIMIT`         | const | `65536`                                             | Caps the length, in UTF-16 code units, of any single retained string, at 65536.                                                 |
-| `TEXT_LIMIT`           | const | `1048576`                                           | Caps the total length, in UTF-16 code units, of every string one schema retains, at 1048576.                                    |
-| `NODE_LIMIT`           | const | `16384`                                             | Caps the total number of records, arrays, and leaves one schema retains, at 16384.                                              |
 
 ### Guards
 
@@ -167,8 +145,6 @@ Total `is*` guards over unknown input. None throws, none coerces, and each retur
 anything off-shape — including an unexpected prototype, a symbol key, or a cyclic value. `isFieldValue`
 also refuses a number that is not finite, so `NaN` and `Infinity` are not field values, and
 `isFormSchema` reads structure alone: domain soundness is `auditSchema`'s question.
-
-In a guard table a `Shape` cell holds the type the guard narrows to.
 
 | Name             | Kind     | Signature                                   | Summary                                                                    |
 | ---------------- | -------- | ------------------------------------------- | -------------------------------------------------------------------------- |
@@ -876,7 +852,8 @@ evaluateField(long, 'aaa', {})
 `PATTERN_LIMIT` is one of the budgets. The others bound how much a schema and its answers can be, so
 a document that arrives from a wire cannot cost unbounded memory or unbounded scanning before
 anything decides to trust it. Every one is exported, so a host can check against the same number the
-package checks against.
+package checks against: `CHOICE_LIMIT`, `NAME_LIMIT`, `STRING_LIMIT`, `TEXT_LIMIT`, and
+`NODE_LIMIT` from `@orkestrel/contract`, and the rest from this package.
 
 | Constant       | Value   | Unit                    | Bounds                                    |
 | -------------- | ------- | ----------------------- | ----------------------------------------- |
@@ -896,19 +873,19 @@ text, and total nodes — `meta` included, because it is retained like everythin
 human diagnostic per breach, beside `PATTERN_LIMIT`'s. `createForm` throws `SCHEMA` carrying them
 and `parseForm` refuses the schema, so no over-budget schema is ever held.
 
-**The value door refuses.** `matchesField` checks `STRING_LIMIT` on any string and `LIST_LIMIT` on
-any list before it consults the control, so the check happens **before any regular expression sees
-the value**. `fill` and a seeded value throw `CONTROL`; `parseValue` and `parseValues` return
-`undefined`.
+**The value door refuses.** `matchesField` checks `STRING_LIMIT`, from `@orkestrel/contract`, on
+any string and `LIST_LIMIT` on any list before it consults the control, so the check happens **before
+any regular expression sees the value**. `fill` and a seeded value throw `CONTROL`; `parseValue` and
+`parseValues` return `undefined`.
 
-`STRING_LIMIT` is the one that stands at both: the same ceiling holds a schema's own strings and an
-answer's, so no string this package retains is longer than 65536 code units whichever way it
-arrived.
+`STRING_LIMIT` is the one that stands at both: the same ceiling holds a
+schema's own strings and an answer's, so no string this package retains is longer than 65536 code
+units whichever way it arrived.
 
 The whole-schema ceilings are what make the arithmetic safe. Whatever the per-item limits admit, one
 audited schema retains at most 1048576 string code units and at most 16384 nodes — roughly two
-megabytes of text — so the worst case is `TEXT_LIMIT` and `NODE_LIMIT`, never the product of the
-others.
+megabytes of text — so the worst case is `TEXT_LIMIT` and `NODE_LIMIT`, from
+`@orkestrel/contract`, never the product of the others.
 
 Regular-expression time, a `custom` validator's own work, and the structural read at the parse door
 stay unbounded, each for its own reason. Regular-expression **time** is not bounded here, exactly as
@@ -921,14 +898,15 @@ what it does.
 The structural **read** at the parse door is unbounded for a different reason, and refusing an
 over-budget schema is where it shows. The budgets bound what a schema may **retain**, and they bound
 how far the audit **walks** to name a fault: the field pass stops at `FIELD_LIMIT` and the node pass
-stops at `NODE_LIMIT`, so a fault beyond either ceiling goes unnamed while the breached ceiling
-itself is reported. They do not bound the read that happens before any of that. `parseForm` copies
-and guards every field that arrived before the audit sees one of them, so a payload four times over
-`FIELD_LIMIT` is read four times over and then refused. Bound the size of a payload at the transport
+stops at `NODE_LIMIT`, so a fault beyond either ceiling goes unnamed while
+the breached ceiling itself is reported. They do not bound the read that happens before any of that.
+`parseForm` copies and guards every field that arrived before the audit sees one of them, so a
+payload four times over `FIELD_LIMIT` is read four times over and then refused. Bound the size of a payload at the transport
 that delivers it, which is the only layer holding the bytes.
 
 ```ts
-import { auditSchema, matchesField, LIST_LIMIT, STRING_LIMIT } from '@orkestrel/form'
+import { STRING_LIMIT } from '@orkestrel/contract'
+import { auditSchema, matchesField, LIST_LIMIT } from '@orkestrel/form'
 import type { CheckboxField } from '@orkestrel/form'
 
 auditSchema({ fields: [{ control: 'text', name: 'n'.repeat(129) }] })
@@ -1932,8 +1910,8 @@ matchesValues({ topics: ['a'] }, { topics: ['a'] }) // true
 ## Methods
 
 The public methods of `FormInterface`, which the `Form` class implements exactly and adds nothing
-to. Its readonly data members stay in the preceding `## Surface` rows, in the `Shape` cell before
-`plus`, and are not repeated here.
+to. Its readonly data members stay in the preceding `## Surface` rows, in the `Signature` cell, and
+are not repeated here.
 
 A record of answers and a list of names are checked in full before anything moves, so a refused call
 changes nothing.
@@ -2087,10 +2065,11 @@ These invariants hold across [`src/core`](../src/core) and this guide.
     A pattern within `PATTERN_LIMIT` can still backtrack catastrophically; this package applies no
     time bound, so evaluating an untrusted pattern spends the caller's thread.
 11. **Every retained size is budgeted.** `auditSchema` reports a breach of `FIELD_LIMIT`,
-    `GROUP_LIMIT`, `CHOICE_LIMIT`, `NAME_LIMIT`, `STRING_LIMIT`, `TEXT_LIMIT`, `NODE_LIMIT`, or
-    `PATTERN_LIMIT`, so `createForm` throws `SCHEMA` and `parseForm` refuses; `matchesField` refuses
-    a value breaching `STRING_LIMIT` or `LIST_LIMIT` before any regular expression sees it, so
-    `fill` and a seeded value throw `CONTROL` and the parsers return `undefined`. `TEXT_LIMIT` and
+    `GROUP_LIMIT`, or `PATTERN_LIMIT`, or of `CHOICE_LIMIT`, `NAME_LIMIT`, `STRING_LIMIT`,
+    `TEXT_LIMIT`, or `NODE_LIMIT` from `@orkestrel/contract`, so `createForm` throws `SCHEMA` and `parseForm`
+    refuses; `matchesField` refuses a value breaching `STRING_LIMIT` or this package's
+    `LIST_LIMIT` before any regular expression sees it, so `fill` and a seeded value throw
+    `CONTROL` and the parsers return `undefined`. `TEXT_LIMIT` and
     `NODE_LIMIT` are whole-schema ceilings, `meta` included, so the per-item limits never multiply.
     They bound retention and the audit's own walk, never the structural read at the parse door,
     which is the transport's to bound. Regular-expression time and a `custom` validator's own work
