@@ -85,17 +85,17 @@
 	"dependencies": {
 		"@orkestrel/console": "^0.0.20",
 		"@orkestrel/contract": "^0.0.23",
-		"@orkestrel/database": "^0.0.23",
+		"@orkestrel/database": "^0.0.24",
 		"@orkestrel/emitter": "^0.0.16",
-		"@orkestrel/form": "^0.0.17",
+		"@orkestrel/form": "^0.0.18",
 		"@orkestrel/sse": "^0.0.14"
 	},
 	"devDependencies": {
 		"@microsoft/api-extractor": "^7.60.1",
 		"@orkestrel/guide": "^0.0.31",
-		"@orkestrel/probe": "^0.0.29",
-		"@orkestrel/scaffold": "^0.0.131",
-		"@orkestrel/test": "^0.0.34",
+		"@orkestrel/probe": "^0.0.30",
+		"@orkestrel/scaffold": "^0.0.134",
+		"@orkestrel/test": "^0.0.38",
 		"@types/node": "^24.19.2",
 		"oxfmt": "^0.78.0",
 		"oxlint": "^1.93.0",
