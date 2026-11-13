@@ -1,6 +1,6 @@
 {
 	"name": "@orkestrel/terminal",
-	"version": "0.0.25",
+	"version": "0.0.26",
 	"description": "An interactive terminal-prompt toolkit — a headless prompt state-machine broker, an SSE client bridge, and a raw-mode terminal driver. Part of the @orkestrel line.",
 	"keywords": [
 		"cli",
@@ -104,6 +104,6 @@
 		"vitest": "^5.1.0"
 	},
 	"engines": {
-		"node": ">=22.18.0"
+		"node": "^22.18.0 || >=24.4.0"
 	}
 }
