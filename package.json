@@ -1,6 +1,6 @@
 {
 	"name": "@orkestrel/terminal",
-	"version": "0.0.28",
+	"version": "0.0.29",
 	"description": "An interactive terminal-prompt toolkit — a headless prompt state-machine broker, an SSE client bridge, and a raw-mode terminal driver. Part of the @orkestrel line.",
 	"keywords": [
 		"cli",
@@ -83,12 +83,12 @@
 		"test:setup": "vitest run --config vite.config.ts --no-cache --reporter=dot --project setup"
 	},
 	"dependencies": {
-		"@orkestrel/console": "^0.0.22",
+		"@orkestrel/console": "^0.0.23",
 		"@orkestrel/contract": "^0.0.27",
-		"@orkestrel/database": "^0.0.28",
+		"@orkestrel/database": "^0.0.29",
 		"@orkestrel/emitter": "^0.0.19",
-		"@orkestrel/form": "^0.0.20",
-		"@orkestrel/sse": "^0.0.16"
+		"@orkestrel/form": "^0.0.21",
+		"@orkestrel/sse": "^0.0.17"
 	},
 	"devDependencies": {
 		"@microsoft/api-extractor": "^7.60.1",
